@@ -12,7 +12,9 @@ In this section, we cover the following web applications:
 | [Mastodon](#mastodon)     | ✅       | Natively supported    |
 | [Matrix](#matrix)     | ✅       |  Tested with `synapse-s3-storage-provider`    |
 | [ejabberd](#ejabberd)     | ✅       |  `mod_s3_upload`    |
-| [Pixelfed](#pixelfed)     | ✅       |  Natively supported    |
+| [Ente](#ente)     | ✅       |  Natively supported |
+| [Pixelfed](#pixelfed)     | ❓       |  Natively supported    |
+>>>>>>> b98c90f0 (Adding ente documentation)
 | [Pleroma](#pleroma)     | ❓       |  Not yet tested    |
 | [Lemmy](#lemmy)     | ✅        |  Supported with pict-rs    |
 | [Funkwhale](#funkwhale)     | ❓       | Not yet tested     |
@@ -566,6 +568,75 @@ The module can then be configured with:
 
 Other configuration options can be found in the
 [configuration YAML file](https://github.com/processone/ejabberd-contrib/blob/master/mod_s3_upload/conf/mod_s3_upload.yml).
+
+
+## Ente
+
+Ente is an alternative for Google Photos and Apple Photos. It can be selfhosted and is working fine with Garage.  
+As a first step we need to create a bucket and a key for Ente:
+
+```bash
+garage bucket create ente
+garage key create ente-key
+garage bucket allow ente --read --write --key ente-key
+```
+
+We also need to setup some CORS rules to allow the Ente frontend to access the bucket:
+
+```bash
+export CORS='{"CORSRules":[{"AllowedHeaders":["*"],"AllowedMethods":["GET"],"AllowedOrigins":["*"]}]}'
+aws s3api put-bucket-cors --bucket ente --cors-configuration $CORS
+```
+
+Now we need to configure ente-server to use our bucket.  
+Prepare a configuration file for ente `museum.yaml`
+
+```yaml
+credentials-file: /credentials.yaml
+apps:
+  public-albums: https://albums.example.tld # If you want to use the share album feature
+    internal:
+hardcoded-ott:
+  local-domain-suffix: "@example.com" # Your domain
+  local-domain-value: 123456 # Custom OTP since not sending mail by default
+key:
+  encryption: yvmG/RnzKrbCb9L3mgsmoxXr9H7i2Z4qlbT0mL3ln4w=                                          # You might want to change those next 3 which are the default one
+  hash: KXYiG07wC7GIgvCSdg+WmyWdXDAn6XKYJtp/wkEU7x573+byBRAYtpTP0wwvi8i/4l37uicX1dVTUzwH3sLZyw==    # Someone has made an image that can do it for you : https://github.com/EdyTheCow/ente-selfhost/blob/main/images/ente-server-tools/Dockerfile
+jwt:
+  secret: i2DecQmfGreG6q1vBj5tCokhlN41gcfS2cjOs9Po-u8=                                              # Simply build it yourself or run docker run --rm ghcr.io/edythecow/ente-server-tools go run tools/gen-random-keys/main.go
+```
+
+Full configuration file can be found [here](https://github.com/ente-io/ente/blob/main/server/configurations/local.yaml)
+
+Prepare a credentials file for ente `credentials.yaml`
+
+```yaml
+db:
+    host: postgres
+    port: 5432
+    name: ente_db
+    user: pguser
+    password: pgpass
+
+s3:
+    are_local_buckets: true ## Put that to false if you want to use https
+    b2-eu-cen: ## Don't change this key it seems to be hardcoded
+        key: keyID 
+        secret: keySecret 
+        endpoint: garage:3900 
+        region: region 
+        bucket: bucketName 
+        use_path_style: true
+```
+
+Finally you can run it with Docker : 
+
+```bash
+docker run -d --name ente-server --restart unless-stopped -v /path/to/museum.yaml:/museum.yaml -v /path/to/credentials.yaml:/credentials.yaml -p 8080:8080 ghcr.io/ente-io/ente-server
+```
+
+For more information on deployment you can check the [ente documentation](https://help.ente.io/self-hosting/)
+
 
 ## Pixelfed
 
