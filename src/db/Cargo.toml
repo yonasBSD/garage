@@ -19,6 +19,7 @@ heed = { workspace = true, optional = true }
 rusqlite = { workspace = true, optional = true, features = ["backup"] }
 r2d2 = { workspace = true, optional = true }
 r2d2_sqlite = { workspace = true, optional = true }
+fjall = { workspace = true, optional = true }
 
 [dev-dependencies]
 mktemp.workspace = true
@@ -27,4 +28,5 @@ mktemp.workspace = true
 default = [ "lmdb", "sqlite" ]
 bundled-libs = [ "rusqlite?/bundled" ]
 lmdb = [ "heed" ]
+fjall = [ "dep:fjall" ]
 sqlite = [ "rusqlite", "r2d2", "r2d2_sqlite" ]
