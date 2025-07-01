@@ -191,6 +191,20 @@ fn UpdateAdminToken() -> () {}
 )]
 fn DeleteAdminToken() -> () {}
 
+#[utoipa::path(get,
+    path = "/v2/IntrospectAdminToken",
+    tag = "Admin API token",
+    description = "
+Return information about the calling admin API token.
+    ",
+    params(IntrospectAdminTokenRequest),
+    responses(
+            (status = 200, description = "Information about the admin token", body = IntrospectAdminTokenResponse),
+            (status = 500, description = "Internal server error")
+    ),
+)]
+fn IntrospectAdminToken() -> () {}
+
 // **********************************************
 //      Layout operations
 // **********************************************
@@ -872,6 +886,7 @@ impl Modify for SecurityAddon {
         CreateAdminToken,
         UpdateAdminToken,
         DeleteAdminToken,
+        IntrospectAdminToken,
         // Layout operations
         GetClusterLayout,
         GetClusterLayoutHistory,

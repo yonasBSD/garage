@@ -83,6 +83,21 @@ macro_rules! router_match {
             parse_json_body::< [<$api Request>], _, Error>($req).await?
         })
     }};
+   (@@gen_parse_request $api:ident, (admin_token), $query: expr, $req:expr) => {{
+        paste!({
+            let auth_header = $req.headers()
+                .get(hyper::header::AUTHORIZATION)
+                .ok_or_else(|| Error::bad_request("Missing Authorization header"))?
+                .to_str()
+                .map_err(|_| Error::bad_request("Invalid Authorization header"))?;
+
+            let admin_token = auth_header.strip_prefix("Bearer ")
+                .ok_or_else(|| Error::bad_request("Authorization header must be Bearer token"))?
+                .to_string();
+
+            [< $api Request >] { admin_token }
+        })
+    }};
     (@@gen_parse_request $api:ident, (body_field, $($conv:ident $(($conv_arg:expr))? :: $param:ident),*), $query: expr, $req:expr)
         =>
     {{

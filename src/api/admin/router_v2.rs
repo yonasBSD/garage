@@ -40,6 +40,7 @@ impl AdminApiRequest {
 			POST CreateAdminToken (body),
 			POST UpdateAdminToken (body_field, query::id),
 			POST DeleteAdminToken (query::id),
+			GET IntrospectAdminToken (admin_token),
 			// Layout endpoints
 			GET GetClusterLayout (),
 			GET GetClusterLayoutHistory (),

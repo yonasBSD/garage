@@ -56,6 +56,7 @@ admin_endpoints![
 	CreateAdminToken,
 	UpdateAdminToken,
 	DeleteAdminToken,
+	IntrospectAdminToken,
 
 	// Layout operations
 	GetClusterLayout,
@@ -391,6 +392,29 @@ pub struct DeleteAdminTokenRequest {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DeleteAdminTokenResponse;
 
+#[derive(Debug, Clone, Serialize, Deserialize, IntoParams)]
+pub struct IntrospectAdminTokenRequest {
+	pub admin_token: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct IntrospectAdminTokenResponse {
+	/// Identifier of the admin token (which is also a prefix of the full bearer token)
+	pub id: Option<String>,
+	/// Creation date
+	pub created: Option<DateTime<Utc>>,
+	/// Name of the admin API token
+	pub name: String,
+	/// Expiration time and date, formatted according to RFC 3339
+	pub expiration: Option<DateTime<Utc>>,
+	/// Whether this admin token is expired already
+	pub expired: bool,
+	/// Scope of the admin API token, a list of admin endpoint names (such as
+	/// `GetClusterStatus`, etc), or the special value `*` to allow all
+	/// admin endpoints
+	pub scope: Vec<String>,
+}
 // **********************************************
 //      Layout operations
 // **********************************************

@@ -175,6 +175,79 @@ impl RequestHandler for DeleteAdminTokenRequest {
 	}
 }
 
+impl RequestHandler for IntrospectAdminTokenRequest {
+	type Response = IntrospectAdminTokenResponse;
+
+	async fn handle(
+		self,
+		garage: &Arc<Garage>,
+		_admin: &Admin,
+	) -> Result<IntrospectAdminTokenResponse, Error> {
+		let now = now_msec();
+
+		if garage
+			.config
+			.admin
+			.metrics_token
+			.as_ref()
+			.is_some_and(|s| s == &self.admin_token)
+		{
+			return Ok(IntrospectAdminTokenResponse {
+				id: None,
+				created: None,
+				name: "metrics_token (from daemon configuration)".into(),
+				expiration: None,
+				expired: false,
+				scope: vec!["Metrics".into()],
+			});
+		}
+
+		if garage
+			.config
+			.admin
+			.admin_token
+			.as_ref()
+			.is_some_and(|s| s == &self.admin_token)
+		{
+			return Ok(IntrospectAdminTokenResponse {
+				id: None,
+				created: None,
+				name: "admin_token (from daemon configuration)".into(),
+				expiration: None,
+				expired: false,
+				scope: vec!["*".into()],
+			});
+		}
+
+		let (prefix, _) = self.admin_token.split_once('.').unwrap();
+
+		let candidates = garage
+			.admin_token_table
+			.get_range(
+				&EmptyKey,
+				None,
+				Some(KeyFilter::MatchesAndNotDeleted(
+					prefix.clone().parse().unwrap(),
+				)),
+				10,
+				EnumerationOrder::Forward,
+			)
+			.await?
+			.into_iter()
+			.collect::<Vec<_>>();
+		if candidates.len() != 1 {
+			return Err(Error::bad_request(format!(
+				"{} matching admin tokens",
+				candidates.len()
+			)));
+		}
+		Ok(my_admin_token_info_results(
+			&candidates.into_iter().next().unwrap(),
+			now,
+		))
+	}
+}
+
 // ---- helpers ----
 
 fn admin_token_info_results(token: &AdminApiToken, now: u64) -> GetAdminTokenInfoResponse {
@@ -232,4 +305,22 @@ fn apply_token_updates(
 	}
 
 	Ok(())
+}
+
+fn my_admin_token_info_results(token: &AdminApiToken, now: u64) -> IntrospectAdminTokenResponse {
+	let params = token.params().unwrap();
+
+	IntrospectAdminTokenResponse {
+		id: Some(token.prefix.clone()),
+		created: Some(
+			DateTime::from_timestamp_millis(params.created as i64)
+				.expect("invalid timestamp stored in db"),
+		),
+		name: params.name.get().to_string(),
+		expiration: params.expiration.get().map(|x| {
+			DateTime::from_timestamp_millis(x as i64).expect("invalid timestamp stored in db")
+		}),
+		expired: params.is_expired(now),
+		scope: params.scope.get().0.clone(),
+	}
 }
