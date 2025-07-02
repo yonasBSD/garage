@@ -197,7 +197,6 @@ fn DeleteAdminToken() -> () {}
     description = "
 Return information about the calling admin API token.
     ",
-    params(IntrospectAdminTokenRequest),
     responses(
             (status = 200, description = "Information about the admin token", body = IntrospectAdminTokenResponse),
             (status = 500, description = "Internal server error")

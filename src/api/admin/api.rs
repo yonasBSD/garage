@@ -392,7 +392,7 @@ pub struct DeleteAdminTokenRequest {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DeleteAdminTokenResponse;
 
-#[derive(Debug, Clone, Serialize, Deserialize, IntoParams)]
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct IntrospectAdminTokenRequest {
 	pub admin_token: String,
 }
