@@ -1108,20 +1108,20 @@
         }
       }
     },
-    "/v2/IntrospectAdminToken": {
+    "/v2/GetCurrentAdminTokenInfo": {
       "get": {
         "tags": [
           "Admin API token"
         ],
         "description": "\nReturn information about the calling admin API token.\n    ",
-        "operationId": "IntrospectAdminToken",
+        "operationId": "GetCurrentAdminTokenInfo",
         "responses": {
           "200": {
             "description": "Information about the admin token",
             "content": {
               "application/json": {
                 "schema": {
-                  "$ref": "#/components/schemas/IntrospectAdminTokenResponse"
+                  "$ref": "#/components/schemas/GetCurrentAdminTokenInfoResponse"
                 }
               }
             }
@@ -2832,7 +2832,7 @@
           }
         }
       },
-      "IntrospectAdminTokenResponse": {
+      "GetCurrentAdminTokenInfoResponse": {
         "type": "object",
         "required": [
           "name",

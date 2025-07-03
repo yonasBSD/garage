@@ -56,7 +56,7 @@ admin_endpoints![
 	CreateAdminToken,
 	UpdateAdminToken,
 	DeleteAdminToken,
-	IntrospectAdminToken,
+	GetCurrentAdminTokenInfo,
 
 	// Layout operations
 	GetClusterLayout,
@@ -393,13 +393,13 @@ pub struct DeleteAdminTokenRequest {
 pub struct DeleteAdminTokenResponse;
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
-pub struct IntrospectAdminTokenRequest {
+pub struct GetCurrentAdminTokenInfoRequest {
 	pub admin_token: String,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
-pub struct IntrospectAdminTokenResponse {
+pub struct GetCurrentAdminTokenInfoResponse {
 	/// Identifier of the admin token (which is also a prefix of the full bearer token)
 	pub id: Option<String>,
 	/// Creation date

@@ -175,14 +175,14 @@ impl RequestHandler for DeleteAdminTokenRequest {
 	}
 }
 
-impl RequestHandler for IntrospectAdminTokenRequest {
-	type Response = IntrospectAdminTokenResponse;
+impl RequestHandler for GetCurrentAdminTokenInfoRequest {
+	type Response = GetCurrentAdminTokenInfoResponse;
 
 	async fn handle(
 		self,
 		garage: &Arc<Garage>,
 		_admin: &Admin,
-	) -> Result<IntrospectAdminTokenResponse, Error> {
+	) -> Result<GetCurrentAdminTokenInfoResponse, Error> {
 		let now = now_msec();
 
 		if garage
@@ -192,7 +192,7 @@ impl RequestHandler for IntrospectAdminTokenRequest {
 			.as_ref()
 			.is_some_and(|s| s == &self.admin_token)
 		{
-			return Ok(IntrospectAdminTokenResponse {
+			return Ok(GetCurrentAdminTokenInfoResponse {
 				id: None,
 				created: None,
 				name: "metrics_token (from daemon configuration)".into(),
@@ -209,7 +209,7 @@ impl RequestHandler for IntrospectAdminTokenRequest {
 			.as_ref()
 			.is_some_and(|s| s == &self.admin_token)
 		{
-			return Ok(IntrospectAdminTokenResponse {
+			return Ok(GetCurrentAdminTokenInfoResponse {
 				id: None,
 				created: None,
 				name: "admin_token (from daemon configuration)".into(),
@@ -307,10 +307,10 @@ fn apply_token_updates(
 	Ok(())
 }
 
-fn my_admin_token_info_results(token: &AdminApiToken, now: u64) -> IntrospectAdminTokenResponse {
+fn my_admin_token_info_results(token: &AdminApiToken, now: u64) -> GetCurrentAdminTokenInfoResponse {
 	let params = token.params().unwrap();
 
-	IntrospectAdminTokenResponse {
+	GetCurrentAdminTokenInfoResponse {
 		id: Some(token.prefix.clone()),
 		created: Some(
 			DateTime::from_timestamp_millis(params.created as i64)
