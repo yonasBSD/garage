@@ -816,6 +816,30 @@
         }
       }
     },
+    "/v2/GetCurrentAdminTokenInfo": {
+      "get": {
+        "tags": [
+          "Admin API token"
+        ],
+        "description": "\nReturn information about the calling admin API token.\n    ",
+        "operationId": "GetCurrentAdminTokenInfo",
+        "responses": {
+          "200": {
+            "description": "Information about the admin token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetCurrentAdminTokenInfoResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error"
+          }
+        }
+      }
+    },
     "/v2/GetKeyInfo": {
       "get": {
         "tags": [
@@ -1101,30 +1125,6 @@
           },
           "404": {
             "description": "Object not found"
-          },
-          "500": {
-            "description": "Internal server error"
-          }
-        }
-      }
-    },
-    "/v2/GetCurrentAdminTokenInfo": {
-      "get": {
-        "tags": [
-          "Admin API token"
-        ],
-        "description": "\nReturn information about the calling admin API token.\n    ",
-        "operationId": "GetCurrentAdminTokenInfo",
-        "responses": {
-          "200": {
-            "description": "Information about the admin token",
-            "content": {
-              "application/json": {
-                "schema": {
-                  "$ref": "#/components/schemas/GetCurrentAdminTokenInfoResponse"
-                }
-              }
-            }
           },
           "500": {
             "description": "Internal server error"
@@ -2618,6 +2618,9 @@
           }
         }
       },
+      "GetCurrentAdminTokenInfoResponse": {
+        "$ref": "#/components/schemas/GetAdminTokenInfoResponse"
+      },
       "GetKeyInfoResponse": {
         "type": "object",
         "required": [
@@ -2829,54 +2832,6 @@
           "uuid": {
             "type": "string",
             "description": "Version ID"
-          }
-        }
-      },
-      "GetCurrentAdminTokenInfoResponse": {
-        "type": "object",
-        "required": [
-          "name",
-          "expired",
-          "scope"
-        ],
-        "properties": {
-          "created": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "format": "date-time",
-            "description": "Creation date"
-          },
-          "expiration": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "format": "date-time",
-            "description": "Expiration time and date, formatted according to RFC 3339"
-          },
-          "expired": {
-            "type": "boolean",
-            "description": "Whether this admin token is expired already"
-          },
-          "id": {
-            "type": [
-              "string",
-              "null"
-            ],
-            "description": "Identifier of the admin token (which is also a prefix of the full bearer token)"
-          },
-          "name": {
-            "type": "string",
-            "description": "Name of the admin API token"
-          },
-          "scope": {
-            "type": "array",
-            "items": {
-              "type": "string"
-            },
-            "description": "Scope of the admin API token, a list of admin endpoint names (such as\n`GetClusterStatus`, etc), or the special value `*` to allow all\nadmin endpoints"
           }
         }
       },

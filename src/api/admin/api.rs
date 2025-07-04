@@ -399,22 +399,8 @@ pub struct GetCurrentAdminTokenInfoRequest {
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
-pub struct GetCurrentAdminTokenInfoResponse {
-	/// Identifier of the admin token (which is also a prefix of the full bearer token)
-	pub id: Option<String>,
-	/// Creation date
-	pub created: Option<DateTime<Utc>>,
-	/// Name of the admin API token
-	pub name: String,
-	/// Expiration time and date, formatted according to RFC 3339
-	pub expiration: Option<DateTime<Utc>>,
-	/// Whether this admin token is expired already
-	pub expired: bool,
-	/// Scope of the admin API token, a list of admin endpoint names (such as
-	/// `GetClusterStatus`, etc), or the special value `*` to allow all
-	/// admin endpoints
-	pub scope: Vec<String>,
-}
+pub struct GetCurrentAdminTokenInfoResponse(pub GetAdminTokenInfoResponse);
+
 // **********************************************
 //      Layout operations
 // **********************************************

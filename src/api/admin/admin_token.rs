@@ -192,14 +192,16 @@ impl RequestHandler for GetCurrentAdminTokenInfoRequest {
 			.as_ref()
 			.is_some_and(|s| s == &self.admin_token)
 		{
-			return Ok(GetCurrentAdminTokenInfoResponse {
-				id: None,
-				created: None,
-				name: "metrics_token (from daemon configuration)".into(),
-				expiration: None,
-				expired: false,
-				scope: vec!["Metrics".into()],
-			});
+			return Ok(GetCurrentAdminTokenInfoResponse(
+				GetAdminTokenInfoResponse {
+					id: None,
+					created: None,
+					name: "metrics_token (from daemon configuration)".into(),
+					expiration: None,
+					expired: false,
+					scope: vec!["Metrics".into()],
+				},
+			));
 		}
 
 		if garage
@@ -209,42 +211,24 @@ impl RequestHandler for GetCurrentAdminTokenInfoRequest {
 			.as_ref()
 			.is_some_and(|s| s == &self.admin_token)
 		{
-			return Ok(GetCurrentAdminTokenInfoResponse {
-				id: None,
-				created: None,
-				name: "admin_token (from daemon configuration)".into(),
-				expiration: None,
-				expired: false,
-				scope: vec!["*".into()],
-			});
+			return Ok(GetCurrentAdminTokenInfoResponse(
+				GetAdminTokenInfoResponse {
+					id: None,
+					created: None,
+					name: "admin_token (from daemon configuration)".into(),
+					expiration: None,
+					expired: false,
+					scope: vec!["*".into()],
+				},
+			));
 		}
 
 		let (prefix, _) = self.admin_token.split_once('.').unwrap();
+		let token = get_existing_admin_token(&garage, &prefix.to_string()).await?;
 
-		let candidates = garage
-			.admin_token_table
-			.get_range(
-				&EmptyKey,
-				None,
-				Some(KeyFilter::MatchesAndNotDeleted(
-					prefix.clone().parse().unwrap(),
-				)),
-				10,
-				EnumerationOrder::Forward,
-			)
-			.await?
-			.into_iter()
-			.collect::<Vec<_>>();
-		if candidates.len() != 1 {
-			return Err(Error::bad_request(format!(
-				"{} matching admin tokens",
-				candidates.len()
-			)));
-		}
-		Ok(my_admin_token_info_results(
-			&candidates.into_iter().next().unwrap(),
-			now,
-		))
+		Ok(GetCurrentAdminTokenInfoResponse(admin_token_info_results(
+			&token, now,
+		)))
 	}
 }
 
@@ -305,22 +289,4 @@ fn apply_token_updates(
 	}
 
 	Ok(())
-}
-
-fn my_admin_token_info_results(token: &AdminApiToken, now: u64) -> GetCurrentAdminTokenInfoResponse {
-	let params = token.params().unwrap();
-
-	GetCurrentAdminTokenInfoResponse {
-		id: Some(token.prefix.clone()),
-		created: Some(
-			DateTime::from_timestamp_millis(params.created as i64)
-				.expect("invalid timestamp stored in db"),
-		),
-		name: params.name.get().to_string(),
-		expiration: params.expiration.get().map(|x| {
-			DateTime::from_timestamp_millis(x as i64).expect("invalid timestamp stored in db")
-		}),
-		expired: params.is_expired(now),
-		scope: params.scope.get().0.clone(),
-	}
 }
