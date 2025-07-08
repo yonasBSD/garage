@@ -59,11 +59,13 @@ Garage themselves for the following tasks:
 
 - Hosting of their homepage, [privacyguides.org](https://www.privacyguides.org/), and various other static sites
 
-- As a Mastodon object storage backend for [mstdn.party](https://mstdn.party/) and [mstdn.plus](https://mstdn.plus/)
+- As a PowerDNS authoritative zone backend through [Lightning Stream](https://doc.powerdns.com/lightningstream/latest/index.html) and [LMDB](https://doc.powerdns.com/authoritative/backends/lmdb.html)
+
+- As a Mastodon media storage backend for [mstdn.party](https://mstdn.party/) and [mstdn.plus](https://mstdn.plus/)
 
 - As a PeerTube storage backend for [neat.tube](https://neat.tube/)
 
 - As a [Matrix media backend](https://github.com/matrix-org/synapse-s3-storage-provider)
 
 Triplebit's Garage cluster is a multi-site cluster currently composed of
-10 nodes in 3 physical locations.
+15 storage nodes in 3 physical locations.
