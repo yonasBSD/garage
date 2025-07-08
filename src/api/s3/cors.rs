@@ -29,7 +29,7 @@ pub async fn handle_get_cors(ctx: ReqCtx) -> Result<Response<ResBody>, Error> {
 			.body(string_body(xml))?)
 	} else {
 		Ok(Response::builder()
-			.status(StatusCode::NO_CONTENT)
+			.status(StatusCode::NOT_FOUND)
 			.body(empty_body())?)
 	}
 }
