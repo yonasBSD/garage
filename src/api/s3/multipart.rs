@@ -5,6 +5,7 @@ use std::sync::Arc;
 use base64::prelude::*;
 use crc_fast::{CrcAlgorithm, Digest as CrcDigest};
 use futures::prelude::*;
+use http::StatusCode;
 use hyper::{header::HeaderValue, HeaderMap, Request, Response};
 use md5::{Digest, Md5};
 use sha1::Sha1;
@@ -548,7 +549,9 @@ pub async fn handle_abort_multipart_upload(
 	let final_object = Object::new(*bucket_id, key.to_string(), vec![object_version]);
 	garage.object_table.insert(&final_object).await?;
 
-	Ok(Response::new(empty_body()))
+	Ok(Response::builder()
+		.status(StatusCode::NO_CONTENT)
+		.body(empty_body())?)
 }
 
 // ======== helpers ============
