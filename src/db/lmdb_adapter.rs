@@ -1,8 +1,8 @@
 use core::ops::Bound;
-use core::ptr::NonNull;
 
 use std::collections::HashMap;
 use std::convert::TryInto;
+use std::marker::PhantomPinned;
 use std::path::PathBuf;
 use std::pin::Pin;
 use std::sync::{Arc, RwLock};
@@ -159,13 +159,15 @@ impl IDb for LmdbDb {
 	fn iter(&self, tree: usize) -> Result<ValueIter<'_>> {
 		let tree = self.get_tree(tree)?;
 		let tx = self.db.read_txn()?;
-		TxAndIterator::make(tx, |tx| Ok(tree.iter(tx)?))
+		// Safety: the cloture does not store its argument anywhere,
+		unsafe { TxAndIterator::make(tx, |tx| Ok(tree.iter(tx)?)) }
 	}
 
 	fn iter_rev(&self, tree: usize) -> Result<ValueIter<'_>> {
 		let tree = self.get_tree(tree)?;
 		let tx = self.db.read_txn()?;
-		TxAndIterator::make(tx, |tx| Ok(tree.rev_iter(tx)?))
+		// Safety: the cloture does not store its argument anywhere,
+		unsafe { TxAndIterator::make(tx, |tx| Ok(tree.rev_iter(tx)?)) }
 	}
 
 	fn range<'r>(
@@ -176,7 +178,8 @@ impl IDb for LmdbDb {
 	) -> Result<ValueIter<'_>> {
 		let tree = self.get_tree(tree)?;
 		let tx = self.db.read_txn()?;
-		TxAndIterator::make(tx, |tx| Ok(tree.range(tx, &(low, high))?))
+		// Safety: the cloture does not store its argument anywhere,
+		unsafe { TxAndIterator::make(tx, |tx| Ok(tree.range(tx, &(low, high))?)) }
 	}
 	fn range_rev<'r>(
 		&self,
@@ -186,7 +189,8 @@ impl IDb for LmdbDb {
 	) -> Result<ValueIter<'_>> {
 		let tree = self.get_tree(tree)?;
 		let tx = self.db.read_txn()?;
-		TxAndIterator::make(tx, |tx| Ok(tree.rev_range(tx, &(low, high))?))
+		// Safety: the cloture does not store its argument anywhere,
+		unsafe { TxAndIterator::make(tx, |tx| Ok(tree.rev_range(tx, &(low, high))?)) }
 	}
 
 	// ----
@@ -316,28 +320,41 @@ where
 {
 	tx: RoTxn<'a>,
 	iter: Option<I>,
+	_pin: PhantomPinned,
 }
 
 impl<'a, I> TxAndIterator<'a, I>
 where
 	I: Iterator<Item = IteratorItem<'a>> + 'a,
 {
-	fn make<F>(tx: RoTxn<'a>, iterfun: F) -> Result<ValueIter<'a>>
+	fn iter(self: Pin<&mut Self>) -> &mut Option<I> {
+		// Safety: iter is not structural
+		unsafe { &mut self.get_unchecked_mut().iter }
+	}
+
+	/// Safety: iterfun must not store its argument anywhere but in its result.
+	unsafe fn make<F>(tx: RoTxn<'a>, iterfun: F) -> Result<ValueIter<'a>>
 	where
 		F: FnOnce(&'a RoTxn<'a>) -> Result<I>,
 	{
-		let res = TxAndIterator { tx, iter: None };
+		let res = TxAndIterator {
+			tx,
+			iter: None,
+			_pin: PhantomPinned,
+		};
 		let mut boxed = Box::pin(res);
 
-		// This unsafe allows us to bypass lifetime checks
-		let tx = unsafe { NonNull::from(&boxed.tx).as_ref() };
-		let iter = iterfun(tx)?;
+		let tx_lifetime_overextended: &'a RoTxn<'a> = {
+			let tx = &boxed.tx;
+			// Safety: Artificially extending the lifetime because
+			// this reference will only be stored and accessed from the
+			// returned ValueIter which guarantees that it is destroyed
+			// before the tx it is pointing  to.
+			unsafe { &*&raw const *tx }
+		};
+		let iter = iterfun(&tx_lifetime_overextended)?;
 
-		let mut_ref = Pin::as_mut(&mut boxed);
-		// This unsafe allows us to write in a field of the pinned struct
-		unsafe {
-			Pin::get_unchecked_mut(mut_ref).iter = Some(iter);
-		}
+		*boxed.as_mut().iter() = Some(iter);
 
 		Ok(Box::new(TxAndIteratorPin(boxed)))
 	}
@@ -348,8 +365,10 @@ where
 	I: Iterator<Item = IteratorItem<'a>> + 'a,
 {
 	fn drop(&mut self) {
-		// ensure the iterator is dropped before the RoTxn it references
-		drop(self.iter.take());
+		// Safety: `new_unchecked` is okay because we know this value is never
+		// used again after being dropped.
+		let this = unsafe { Pin::new_unchecked(self) };
+		drop(this.iter().take());
 	}
 }
 
@@ -365,13 +384,12 @@ where
 
 	fn next(&mut self) -> Option<Self::Item> {
 		let mut_ref = Pin::as_mut(&mut self.0);
-		// This unsafe allows us to mutably access the iterator field
-		let next = unsafe { Pin::get_unchecked_mut(mut_ref).iter.as_mut()?.next() };
-		match next {
-			None => None,
-			Some(Err(e)) => Some(Err(e.into())),
-			Some(Ok((k, v))) => Some(Ok((k.to_vec(), v.to_vec()))),
-		}
+		let next = mut_ref.iter().as_mut()?.next()?;
+		let res = match next {
+			Err(e) => Err(e.into()),
+			Ok((k, v)) => Ok((k.to_vec(), v.to_vec())),
+		};
+		Some(res)
 	}
 }
 
