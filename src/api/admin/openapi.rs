@@ -191,6 +191,19 @@ fn UpdateAdminToken() -> () {}
 )]
 fn DeleteAdminToken() -> () {}
 
+#[utoipa::path(get,
+    path = "/v2/GetCurrentAdminTokenInfo",
+    tag = "Admin API token",
+    description = "
+Return information about the calling admin API token.
+    ",
+    responses(
+            (status = 200, description = "Information about the admin token", body = GetCurrentAdminTokenInfoResponse),
+            (status = 500, description = "Internal server error")
+    ),
+)]
+fn GetCurrentAdminTokenInfo() -> () {}
+
 // **********************************************
 //      Layout operations
 // **********************************************
@@ -872,6 +885,7 @@ impl Modify for SecurityAddon {
         CreateAdminToken,
         UpdateAdminToken,
         DeleteAdminToken,
+        GetCurrentAdminTokenInfo,
         // Layout operations
         GetClusterLayout,
         GetClusterLayoutHistory,

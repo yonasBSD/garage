@@ -816,6 +816,30 @@
         }
       }
     },
+    "/v2/GetCurrentAdminTokenInfo": {
+      "get": {
+        "tags": [
+          "Admin API token"
+        ],
+        "description": "\nReturn information about the calling admin API token.\n    ",
+        "operationId": "GetCurrentAdminTokenInfo",
+        "responses": {
+          "200": {
+            "description": "Information about the admin token",
+            "content": {
+              "application/json": {
+                "schema": {
+                  "$ref": "#/components/schemas/GetCurrentAdminTokenInfoResponse"
+                }
+              }
+            }
+          },
+          "500": {
+            "description": "Internal server error"
+          }
+        }
+      }
+    },
     "/v2/GetKeyInfo": {
       "get": {
         "tags": [
@@ -2593,6 +2617,9 @@
             "description": "List of nodes that are either currently connected, part of the\ncurrent cluster layout, or part of an older cluster layout that\nis still active in the cluster (being drained)."
           }
         }
+      },
+      "GetCurrentAdminTokenInfoResponse": {
+        "$ref": "#/components/schemas/GetAdminTokenInfoResponse"
       },
       "GetKeyInfoResponse": {
         "type": "object",

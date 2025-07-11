@@ -56,6 +56,7 @@ admin_endpoints![
 	CreateAdminToken,
 	UpdateAdminToken,
 	DeleteAdminToken,
+	GetCurrentAdminTokenInfo,
 
 	// Layout operations
 	GetClusterLayout,
@@ -390,6 +391,15 @@ pub struct DeleteAdminTokenRequest {
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct DeleteAdminTokenResponse;
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct GetCurrentAdminTokenInfoRequest {
+	pub admin_token: String,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct GetCurrentAdminTokenInfoResponse(pub GetAdminTokenInfoResponse);
 
 // **********************************************
 //      Layout operations

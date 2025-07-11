@@ -175,6 +175,63 @@ impl RequestHandler for DeleteAdminTokenRequest {
 	}
 }
 
+impl RequestHandler for GetCurrentAdminTokenInfoRequest {
+	type Response = GetCurrentAdminTokenInfoResponse;
+
+	async fn handle(
+		self,
+		garage: &Arc<Garage>,
+		_admin: &Admin,
+	) -> Result<GetCurrentAdminTokenInfoResponse, Error> {
+		let now = now_msec();
+
+		if garage
+			.config
+			.admin
+			.metrics_token
+			.as_ref()
+			.is_some_and(|s| s == &self.admin_token)
+		{
+			return Ok(GetCurrentAdminTokenInfoResponse(
+				GetAdminTokenInfoResponse {
+					id: None,
+					created: None,
+					name: "metrics_token (from daemon configuration)".into(),
+					expiration: None,
+					expired: false,
+					scope: vec!["Metrics".into()],
+				},
+			));
+		}
+
+		if garage
+			.config
+			.admin
+			.admin_token
+			.as_ref()
+			.is_some_and(|s| s == &self.admin_token)
+		{
+			return Ok(GetCurrentAdminTokenInfoResponse(
+				GetAdminTokenInfoResponse {
+					id: None,
+					created: None,
+					name: "admin_token (from daemon configuration)".into(),
+					expiration: None,
+					expired: false,
+					scope: vec!["*".into()],
+				},
+			));
+		}
+
+		let (prefix, _) = self.admin_token.split_once('.').unwrap();
+		let token = get_existing_admin_token(&garage, &prefix.to_string()).await?;
+
+		Ok(GetCurrentAdminTokenInfoResponse(admin_token_info_results(
+			&token, now,
+		)))
+	}
+}
+
 // ---- helpers ----
 
 fn admin_token_info_results(token: &AdminApiToken, now: u64) -> GetAdminTokenInfoResponse {

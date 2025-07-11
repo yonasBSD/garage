@@ -23,6 +23,7 @@ use garage_util::time::now_msec;
 use garage_api_common::generic_server::*;
 use garage_api_common::helpers::*;
 
+use crate::api::AdminApiRequest::GetCurrentAdminTokenInfo;
 use crate::api::*;
 use crate::error::*;
 use crate::router_v0;
@@ -273,7 +274,8 @@ fn verify_authorization(
 			.get_local(&EmptyKey, &prefix.to_string())?
 			.and_then(|k| k.state.into_option())
 			.filter(|p| !p.is_expired(now_msec()))
-			.filter(|p| p.has_scope(endpoint_name))
+			// GetCurrentAdminTokenInfo endpoint must be accessible even if it is not in the token scopes
+			.filter(|p| p.has_scope(endpoint_name) || endpoint_name == "GetCurrentAdminTokenInfo")
 			.ok_or_else(|| Error::forbidden(invalid_msg))?
 			.token_hash
 	} else {
