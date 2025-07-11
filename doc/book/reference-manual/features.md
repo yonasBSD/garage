@@ -129,5 +129,5 @@ related to objects stored in an S3 bucket.
 In the context of our research project, [Aérogramme](https://aerogramme.deuxfleurs.fr),
 K2V is used to provide metadata and log storage for operations on encrypted e-mail storage.
 
-Learn more on the specification of K2V [here](https://git.deuxfleurs.fr/Deuxfleurs/garage/src/branch/k2v/doc/drafts/k2v-spec.md)
+Learn more on the specification of K2V [here](https://git.deuxfleurs.fr/Deuxfleurs/garage/src/commit/f8be15c37db857e177d543de7be863692628d567/doc/drafts/k2v-spec.md)
 and on how to enable it in Garage [here](@/documentation/reference-manual/k2v.md).
