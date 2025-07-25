@@ -134,7 +134,9 @@ impl RequestHandler for GetClusterHealthRequest {
 			known_nodes: health.known_nodes,
 			connected_nodes: health.connected_nodes,
 			storage_nodes: health.storage_nodes,
-			storage_nodes_ok: health.storage_nodes_ok,
+			// Translating storage_nodes_up (admin API context) to storage_nodes_ok (metrics context)
+			// TODO: when releasing major release, consider renaming all the fields in the metrics to storage_nodes_up
+			storage_nodes_up: health.storage_nodes_ok,
 			partitions: health.partitions,
 			partitions_quorum: health.partitions_quorum,
 			partitions_all_ok: health.partitions_all_ok,

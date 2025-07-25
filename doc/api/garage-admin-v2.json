@@ -2443,7 +2443,7 @@
           "knownNodes",
           "connectedNodes",
           "storageNodes",
-          "storageNodesOk",
+          "storageNodesUp",
           "partitions",
           "partitionsQuorum",
           "partitionsAllOk"
@@ -2483,7 +2483,7 @@
             "description": "the number of storage nodes currently registered in the cluster layout",
             "minimum": 0
           },
-          "storageNodesOk": {
+          "storageNodesUp": {
             "type": "integer",
             "description": "the number of storage nodes to which a connection is currently open",
             "minimum": 0
