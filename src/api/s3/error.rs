@@ -176,6 +176,7 @@ impl ApiError for Error {
 		use hyper::header;
 
 		header_map.append(header::CONTENT_TYPE, "application/xml".parse().unwrap());
+        header_map.append(header::ACCESS_CONTROL_ALLOW_ORIGIN, "*".parse().unwrap());
 
 		#[allow(clippy::single_match)]
 		match self {
