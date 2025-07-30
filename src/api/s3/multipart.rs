@@ -303,8 +303,11 @@ pub async fn handle_complete_multipart_upload(
 	let body = req_body.collect().await?;
 
 	let body_xml = roxmltree::Document::parse(std::str::from_utf8(&body)?)?;
-	let body_list_of_parts = parse_complete_multipart_upload_body(&body_xml)
-		.ok_or_bad_request("Invalid CompleteMultipartUpload XML")?;
+	let body_list_of_parts =
+		parse_complete_multipart_upload_body(&body_xml).ok_or_bad_request(format!(
+			"Invalid CompleteMultipartUpload XML:\n{}",
+			String::from_utf8_lossy(&body)
+		))?;
 	debug!(
 		"CompleteMultipartUpload list of parts: {:?}",
 		body_list_of_parts
