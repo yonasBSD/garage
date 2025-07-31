@@ -611,9 +611,21 @@ macro_rules! extract_checksum_from {
 		if false { None }
 		$(
 			else if let Some(node) = $node.children().find(|e| e.has_tag_name($name)) {
-				Some(ChecksumValue::$variant(
-					BASE64_STANDARD.decode(node.text()?).ok()?[..].try_into().ok()?
-				))
+				match node.last_child().map(|x| x.text()) {
+					// Child is text but empty post-trim, ignore it.
+					Some(Some(text)) if text.trim().is_empty() => None,
+
+					// Child is non-empty text, parse it.
+					Some(Some(text)) => Some(ChecksumValue::$variant(
+						BASE64_STANDARD.decode(text).ok()?[..].try_into().ok()?
+					)),
+
+					// Child is not text, reject it.
+					Some(None) => return None,
+
+					// No child, ignore it.
+					None => None,
+				}
 			}
 		)*
 		else { None }
