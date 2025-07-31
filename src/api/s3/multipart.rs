@@ -606,6 +606,20 @@ struct CompleteMultipartUploadPart {
 	checksum: Option<ChecksumValue>,
 }
 
+macro_rules! extract_checksum_from {
+	($node:ident { $($name:expr => $variant:ident),* $(,)? }) => {
+		if false { None }
+		$(
+			else if let Some(node) = $node.children().find(|e| e.has_tag_name($name)) {
+				Some(ChecksumValue::$variant(
+					BASE64_STANDARD.decode(node.text()?).ok()?[..].try_into().ok()?
+				))
+			}
+		)*
+		else { None }
+	}
+}
+
 fn parse_complete_multipart_upload_body(
 	xml: &roxmltree::Document,
 ) -> Option<Vec<CompleteMultipartUploadPart>> {
@@ -629,46 +643,15 @@ fn parse_complete_multipart_upload_body(
 				.children()
 				.find(|e| e.has_tag_name("PartNumber"))?
 				.text()?;
-			let checksum = if let Some(crc32) =
-				item.children().find(|e| e.has_tag_name("ChecksumCRC32"))
-			{
-				Some(ChecksumValue::Crc32(
-					BASE64_STANDARD.decode(crc32.text()?).ok()?[..]
-						.try_into()
-						.ok()?,
-				))
-			} else if let Some(crc32c) = item.children().find(|e| e.has_tag_name("ChecksumCRC32C"))
-			{
-				Some(ChecksumValue::Crc32c(
-					BASE64_STANDARD.decode(crc32c.text()?).ok()?[..]
-						.try_into()
-						.ok()?,
-				))
-			} else if let Some(crc64nvme) = item
-				.children()
-				.find(|e| e.has_tag_name("ChecksumCRC64NVME"))
-			{
-				Some(ChecksumValue::Crc64Nvme(
-					BASE64_STANDARD.decode(crc64nvme.text()?).ok()?[..]
-						.try_into()
-						.ok()?,
-				))
-			} else if let Some(sha1) = item.children().find(|e| e.has_tag_name("ChecksumSHA1")) {
-				Some(ChecksumValue::Sha1(
-					BASE64_STANDARD.decode(sha1.text()?).ok()?[..]
-						.try_into()
-						.ok()?,
-				))
-			} else if let Some(sha256) = item.children().find(|e| e.has_tag_name("ChecksumSHA256"))
-			{
-				Some(ChecksumValue::Sha256(
-					BASE64_STANDARD.decode(sha256.text()?).ok()?[..]
-						.try_into()
-						.ok()?,
-				))
-			} else {
-				None
-			};
+
+			let checksum = extract_checksum_from!(item {
+				"ChecksumCRC32" => Crc32,
+				"ChecksumCRC32C" => Crc32c,
+				"ChecksumCRC64NVME" => Crc64Nvme,
+				"ChecksumSHA1" => Sha1,
+				"ChecksumSHA256" => Sha256,
+			});
+
 			parts.push(CompleteMultipartUploadPart {
 				etag: etag.trim_matches('"').to_string(),
 				part_number: part_number.parse().ok()?,
