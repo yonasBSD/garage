@@ -1,5 +1,5 @@
 use std::collections::HashMap;
-use std::convert::TryInto;
+use std::convert::{Infallible, TryInto};
 use std::ops::RangeInclusive;
 use std::sync::Arc;
 use std::task::{Context, Poll};
@@ -9,22 +9,29 @@ use bytes::Bytes;
 use chrono::{DateTime, Duration, Utc};
 use futures::{Stream, StreamExt};
 use hyper::header::{self, HeaderMap, HeaderName, HeaderValue};
-use hyper::{Body, Request, Response, StatusCode};
+use hyper::{body::Incoming as IncomingBody, Request, Response, StatusCode};
 use multer::{Constraints, Multipart, SizeLimit};
 use serde::Deserialize;
 
 use garage_model::garage::Garage;
+use garage_model::s3::object_table::*;
 
-use crate::s3::error::*;
-use crate::s3::put::{get_headers, save_stream};
-use crate::s3::xml as s3_xml;
-use crate::signature::payload::{parse_date, verify_v4};
+use garage_api_common::cors::*;
+use garage_api_common::helpers::*;
+use garage_api_common::signature::checksum::*;
+use garage_api_common::signature::payload::{verify_v4, Authorization};
+
+use crate::api_server::ResBody;
+use crate::encryption::EncryptionParams;
+use crate::error::*;
+use crate::put::{extract_metadata_headers, save_stream, ChecksumMode};
+use crate::xml as s3_xml;
 
 pub async fn handle_post_object(
 	garage: Arc<Garage>,
-	req: Request<Body>,
+	req: Request<IncomingBody>,
 	bucket_name: String,
-) -> Result<Response<Body>, Error> {
+) -> Result<Response<ResBody>, Error> {
 	let boundary = req
 		.headers()
 		.get(header::CONTENT_TYPE)
@@ -41,16 +48,21 @@ pub async fn handle_post_object(
 	);
 
 	let (head, body) = req.into_parts();
-	let mut multipart = Multipart::with_constraints(body, boundary, constraints);
+	let stream = body_stream::<_, Error>(body);
+	let mut multipart = Multipart::with_constraints(stream, boundary, constraints);
 
 	let mut params = HeaderMap::new();
-	let field = loop {
+	let file_field = loop {
 		let field = if let Some(field) = multipart.next_field().await? {
 			field
 		} else {
 			return Err(Error::bad_request("Request did not contain a file"));
 		};
-		let name: HeaderName = if let Some(Ok(name)) = field.name().map(TryInto::try_into) {
+		let name: HeaderName = if let Some(Ok(name)) = field
+			.name()
+			.map(str::to_ascii_lowercase)
+			.map(TryInto::try_into)
+		{
 			name
 		} else {
 			continue;
@@ -60,21 +72,11 @@ pub async fn handle_post_object(
 		}
 
 		if let Ok(content) = HeaderValue::from_str(&field.text().await?) {
-			match name.as_str() {
-				"tag" => (/* tag need to be reencoded, but we don't support them yet anyway */),
-				"acl" => {
-					if params.insert("x-amz-acl", content).is_some() {
-						return Err(Error::bad_request("Field 'acl' provided more than once"));
-					}
-				}
-				_ => {
-					if params.insert(&name, content).is_some() {
-						return Err(Error::bad_request(format!(
-							"Field '{}' provided more than once",
-							name
-						)));
-					}
-				}
+			if params.insert(&name, content).is_some() {
+				return Err(Error::bad_request(format!(
+					"Field '{}' provided more than once",
+					name
+				)));
 			}
 		}
 	};
@@ -84,26 +86,15 @@ pub async fn handle_post_object(
 		.get("key")
 		.ok_or_bad_request("No key was provided")?
 		.to_str()?;
-	let credential = params
-		.get("x-amz-credential")
-		.ok_or_else(|| Error::forbidden("Garage does not support anonymous access yet"))?
-		.to_str()?;
 	let policy = params
 		.get("policy")
 		.ok_or_bad_request("No policy was provided")?
 		.to_str()?;
-	let signature = params
-		.get("x-amz-signature")
-		.ok_or_bad_request("No signature was provided")?
-		.to_str()?;
-	let date = params
-		.get("x-amz-date")
-		.ok_or_bad_request("No date was provided")?
-		.to_str()?;
+	let authorization = Authorization::parse_form(&params)?;
 
 	let key = if key.contains("${filename}") {
 		// if no filename is provided, don't replace. This matches the behavior of AWS.
-		if let Some(filename) = field.file_name() {
+		if let Some(filename) = file_field.file_name() {
 			key.replace("${filename}", filename)
 		} else {
 			key.to_owned()
@@ -112,21 +103,13 @@ pub async fn handle_post_object(
 		key.to_owned()
 	};
 
-	let date = parse_date(date)?;
-	let api_key = verify_v4(
-		&garage,
-		"s3",
-		credential,
-		&date,
-		signature,
-		policy.as_bytes(),
-	)
-	.await?;
+	let api_key = verify_v4(&garage, "s3", &authorization, policy.as_bytes()).await?;
 
 	let bucket_id = garage
 		.bucket_helper()
 		.resolve_bucket(&bucket_name, &api_key)
-		.await?;
+		.await
+		.map_err(pass_helper_error)?;
 
 	if !api_key.allow_write(&bucket_id) {
 		return Err(Error::forbidden("Operation is not allowed for this key."));
@@ -136,6 +119,12 @@ pub async fn handle_post_object(
 		.bucket_helper()
 		.get_existing_bucket(bucket_id)
 		.await?;
+	let bucket_params = bucket.state.into_option().unwrap();
+	let matching_cors_rule = find_matching_cors_rule(
+		&bucket_params,
+		&Request::from_parts(head.clone(), empty_body::<Infallible>()),
+	)?
+	.cloned();
 
 	let decoded_policy = BASE64_STANDARD
 		.decode(policy)
@@ -153,9 +142,8 @@ pub async fn handle_post_object(
 	let mut conditions = decoded_policy.into_conditions()?;
 
 	for (param_key, value) in params.iter() {
-		let mut param_key = param_key.to_string();
-		param_key.make_ascii_lowercase();
-		match param_key.as_str() {
+		let param_key = param_key.as_str();
+		match param_key {
 			"policy" | "x-amz-signature" => (), // this is always accepted, as it's required to validate other fields
 			"content-type" => {
 				let conds = conditions.params.remove("content-type").ok_or_else(|| {
@@ -200,7 +188,7 @@ pub async fn handle_post_object(
 					// how aws seems to behave.
 					continue;
 				}
-				let conds = conditions.params.remove(&param_key).ok_or_else(|| {
+				let conds = conditions.params.remove(param_key).ok_or_else(|| {
 					Error::bad_request(format!("Key '{}' is not allowed in policy", param_key))
 				})?;
 				for cond in conds {
@@ -226,23 +214,52 @@ pub async fn handle_post_object(
 		)));
 	}
 
-	let headers = get_headers(&params)?;
+	// if we ever start supporting ACLs, we likely want to map "acl" to x-amz-acl" somewhere
+	// around here to make sure the rest of the machinery takes our acl into account.
+	let headers = extract_metadata_headers(&params)?;
 
-	let stream = field.map(|r| r.map_err(Into::into));
-	let (_, md5) = save_stream(
-		garage,
+	let checksum_algorithm = request_checksum_algorithm(&params)?;
+	let expected_checksums = ExpectedChecksums {
+		md5: params
+			.get("content-md5")
+			.map(HeaderValue::to_str)
+			.transpose()?
+			.map(str::to_string),
+		sha256: None,
+		extra: checksum_algorithm
+			.map(|algo| extract_checksum_value(&params, algo))
+			.transpose()?,
+	};
+
+	let meta = ObjectVersionMetaInner {
 		headers,
+		checksum: expected_checksums.extra,
+	};
+
+	let encryption = EncryptionParams::new_from_headers(&garage, &params)?;
+
+	let stream = file_field.map(|r| r.map_err(Into::into));
+	let ctx = ReqCtx {
+		garage,
+		bucket_id,
+		bucket_name,
+		bucket_params,
+		api_key,
+	};
+
+	let res = save_stream(
+		&ctx,
+		meta,
+		encryption,
 		StreamLimiter::new(stream, conditions.content_length),
-		&bucket,
 		&key,
-		None,
-		None,
+		ChecksumMode::Verify(&expected_checksums),
 	)
 	.await?;
 
-	let etag = format!("\"{}\"", md5);
+	let etag = format!("\"{}\"", res.etag);
 
-	let resp = if let Some(mut target) = params
+	let mut resp = if let Some(mut target) = params
 		.get("success_action_redirect")
 		.and_then(|h| h.to_str().ok())
 		.and_then(|u| url::Url::parse(u).ok())
@@ -250,20 +267,20 @@ pub async fn handle_post_object(
 	{
 		target
 			.query_pairs_mut()
-			.append_pair("bucket", &bucket_name)
+			.append_pair("bucket", &ctx.bucket_name)
 			.append_pair("key", &key)
 			.append_pair("etag", &etag);
 		let target = target.to_string();
-		Response::builder()
+		let mut resp = Response::builder()
 			.status(StatusCode::SEE_OTHER)
 			.header(header::LOCATION, target.clone())
-			.header(header::ETAG, etag)
-			.body(target.into())?
+			.header(header::ETAG, etag);
+		encryption.add_response_headers(&mut resp);
+		resp.body(string_body(target))?
 	} else {
 		let path = head
 			.uri
-			.into_parts()
-			.path_and_query
+			.path_and_query()
 			.map(|paq| paq.path().to_string())
 			.unwrap_or_else(|| "/".to_string());
 		let authority = head
@@ -286,27 +303,33 @@ pub async fn handle_post_object(
 			.get("success_action_status")
 			.and_then(|h| h.to_str().ok())
 			.unwrap_or("204");
-		let builder = Response::builder()
+		let mut builder = Response::builder()
 			.header(header::LOCATION, location.clone())
 			.header(header::ETAG, etag.clone());
+		encryption.add_response_headers(&mut builder);
 		match action {
-			"200" => builder.status(StatusCode::OK).body(Body::empty())?,
+			"200" => builder.status(StatusCode::OK).body(empty_body())?,
 			"201" => {
 				let xml = s3_xml::PostObject {
 					xmlns: (),
 					location: s3_xml::Value(location),
-					bucket: s3_xml::Value(bucket_name),
+					bucket: s3_xml::Value(ctx.bucket_name),
 					key: s3_xml::Value(key),
 					etag: s3_xml::Value(etag),
 				};
 				let body = s3_xml::to_xml_with_header(&xml)?;
 				builder
 					.status(StatusCode::CREATED)
-					.body(Body::from(body.into_bytes()))?
+					.body(string_body(body))?
 			}
-			_ => builder.status(StatusCode::NO_CONTENT).body(Body::empty())?,
+			_ => builder.status(StatusCode::NO_CONTENT).body(empty_body())?,
 		}
 	};
+
+	if let Some(rule) = matching_cors_rule {
+		add_cors_headers(&mut resp, &rule)
+			.ok_or_internal_error("Invalid bucket CORS configuration")?;
+	}
 
 	Ok(resp)
 }

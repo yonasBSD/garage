@@ -13,7 +13,6 @@ static GARAGE_TEST_SECRET: &str =
 
 #[derive(Debug, Default, Clone)]
 pub struct Key {
-	pub name: Option<String>,
 	pub id: String,
 	pub secret: String,
 }
@@ -42,6 +41,10 @@ impl Instance {
 			.ok()
 			.unwrap_or_else(|| env::temp_dir().join(format!("garage-integ-test-{}", port)));
 
+		let db_engine = env::var("GARAGE_TEST_INTEGRATION_DB_ENGINE")
+			.ok()
+			.unwrap_or_else(|| "lmdb".into());
+
 		// Clean test runtime directory
 		if path.exists() {
 			fs::remove_dir_all(&path).expect("Could not clean test runtime directory");
@@ -52,12 +55,15 @@ impl Instance {
 			r#"
 metadata_dir = "{path}/meta"
 data_dir = "{path}/data"
+db_engine = "{db_engine}"
 
-replication_mode = "1"
+replication_factor = 1
 
 rpc_bind_addr = "127.0.0.1:{rpc_port}"
 rpc_public_addr = "127.0.0.1:{rpc_port}"
 rpc_secret = "{secret}"
+
+allow_punycode = true
 
 [s3_api]
 s3_region = "{region}"
@@ -95,7 +101,10 @@ api_bind_addr = "127.0.0.1:{admin_port}"
 			.arg("server")
 			.stdout(stdout)
 			.stderr(stderr)
-			.env("RUST_LOG", "garage=info,garage_api=trace")
+			.env(
+				"RUST_LOG",
+				"garage=debug,garage_api_common=trace,garage_api_s3=trace",
+			)
 			.spawn()
 			.expect("Could not start garage");
 
@@ -141,7 +150,7 @@ api_bind_addr = "127.0.0.1:{admin_port}"
 		self.command()
 			.args(["layout", "assign"])
 			.arg(node_short_id)
-			.args(["-c", "1", "-z", "unzonned"])
+			.args(["-c", "1G", "-z", "unzonned"])
 			.quiet()
 			.expect_success_status("Could not assign garage node layout");
 		self.command()
@@ -186,9 +195,9 @@ api_bind_addr = "127.0.0.1:{admin_port}"
 		let mut key = Key::default();
 
 		let mut cmd = self.command();
-		let base = cmd.args(["key", "new"]);
+		let base = cmd.args(["key", "create"]);
 		let with_name = match maybe_name {
-			Some(name) => base.args(["--name", name]),
+			Some(name) => base.args([name]),
 			None => base,
 		};
 
@@ -208,10 +217,7 @@ api_bind_addr = "127.0.0.1:{admin_port}"
 		assert!(!key.id.is_empty(), "Invalid key: Key ID is empty");
 		assert!(!key.secret.is_empty(), "Invalid key: Key secret is empty");
 
-		Key {
-			name: maybe_name.map(String::from),
-			..key
-		}
+		key
 	}
 }
 

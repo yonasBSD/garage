@@ -9,7 +9,7 @@ On a new version release, there is 2 possibilities:
   - protocols and data structures remained the same ➡️ this is a **minor upgrade**
   - protocols or data structures changed  ➡️  this is a **major upgrade**
 
-You can quickly now what type of update you will have to operate by looking at the version identifier:
+You can quickly know what type of update you will have to operate by looking at the version identifier:
 when we require our users to do a major upgrade, we will always bump the first nonzero component of the version identifier
 (e.g. from v0.7.2 to v0.8.0).
 Conversely, for versions that only require a minor upgrade, the first nonzero component will always stay the same (e.g. from v0.8.0 to v0.8.1).
@@ -71,7 +71,19 @@ The entire procedure would look something like this:
 
 2. Take each node offline individually to back up its metadata folder, bring them back online once the backup is done.
   You can do all of the nodes in a single zone at once as that won't impact global cluster availability.
-  Do not try to make a backup of the metadata folder of a running node.
+  Do not try to manually copy the metadata folder of a running node.
+
+  **Since Garage v0.9.4,** you can use the `garage meta snapshot --all` command
+  to take a simultaneous snapshot of the metadata database files of all your
+  nodes.  This avoids the tedious process of having to take them down one by
+  one before upgrading. Be careful that if automatic snapshotting is enabled,
+  Garage only keeps the last two snapshots and deletes older ones, so you might
+  want to disable automatic snapshotting in your upgraded configuration file
+  until you have confirmed that the upgrade ran successfully.  In addition to
+  snapshotting the metadata databases of your nodes, you should back-up at
+  least the `cluster_layout` file of one of your Garage instances (this file
+  should be the same on all nodes and you can copy it safely while Garage is
+  running).
 
 3. Prepare your binaries and configuration files for the new Garage version
 
@@ -80,6 +92,6 @@ The entire procedure would look something like this:
 5. If any specific migration procedure is required, it is usually in one of the two cases:
 
   - It can be run on online nodes after the new version has started, during regular cluster operation.
-  - it has to be run offline
+  - it has to be run offline, in which case you will have to again take all nodes offline one after the other to run the repair
 
    For this last step, please refer to the specific documentation pertaining to the version upgrade you are doing.

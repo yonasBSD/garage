@@ -3,6 +3,7 @@ use std::sync::Arc;
 use garage_db as db;
 
 use garage_util::data::*;
+use garage_util::error::*;
 
 use garage_table::crdt::*;
 use garage_table::replication::TableShardedReplication;
@@ -10,61 +11,10 @@ use garage_table::*;
 
 use crate::s3::block_ref_table::*;
 
-mod v05 {
+mod v08 {
 	use garage_util::crdt;
 	use garage_util::data::{Hash, Uuid};
 	use serde::{Deserialize, Serialize};
-
-	/// A version of an object
-	#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
-	pub struct Version {
-		/// UUID of the version, used as partition key
-		pub uuid: Uuid,
-
-		// Actual data: the blocks for this version
-		// In the case of a multipart upload, also store the etags
-		// of individual parts and check them when doing CompleteMultipartUpload
-		/// Is this version deleted
-		pub deleted: crdt::Bool,
-		/// list of blocks of data composing the version
-		pub blocks: crdt::Map<VersionBlockKey, VersionBlock>,
-		/// Etag of each part in case of a multipart upload, empty otherwise
-		pub parts_etags: crdt::Map<u64, String>,
-
-		// Back link to bucket+key so that we can figure if
-		// this was deleted later on
-		/// Bucket in which the related object is stored
-		pub bucket: String,
-		/// Key in which the related object is stored
-		pub key: String,
-	}
-
-	#[derive(PartialEq, Eq, Clone, Copy, Debug, Serialize, Deserialize)]
-	pub struct VersionBlockKey {
-		/// Number of the part
-		pub part_number: u64,
-		/// Offset of this sub-segment in its part
-		pub offset: u64,
-	}
-
-	/// Informations about a single block
-	#[derive(PartialEq, Eq, Ord, PartialOrd, Clone, Copy, Debug, Serialize, Deserialize)]
-	pub struct VersionBlock {
-		/// Blake2 sum of the block
-		pub hash: Hash,
-		/// Size of the block
-		pub size: u64,
-	}
-
-	impl garage_util::migrate::InitialFormat for Version {}
-}
-
-mod v08 {
-	use garage_util::crdt;
-	use garage_util::data::Uuid;
-	use serde::{Deserialize, Serialize};
-
-	use super::v05;
 
 	/// A version of an object
 	#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
@@ -90,52 +40,115 @@ mod v08 {
 		pub key: String,
 	}
 
-	pub use v05::{VersionBlock, VersionBlockKey};
+	#[derive(PartialEq, Eq, Clone, Copy, Debug, Serialize, Deserialize)]
+	pub struct VersionBlockKey {
+		/// Number of the part
+		pub part_number: u64,
+		/// Offset of this sub-segment in its part as sent by the client
+		/// (before any kind of compression or encryption)
+		pub offset: u64,
+	}
+
+	/// Information about a single block
+	#[derive(PartialEq, Eq, Ord, PartialOrd, Clone, Copy, Debug, Serialize, Deserialize)]
+	pub struct VersionBlock {
+		/// Blake2 sum of the block
+		pub hash: Hash,
+		/// Size of the block, before any kind of compression or encryption
+		pub size: u64,
+	}
+
+	impl garage_util::migrate::InitialFormat for Version {}
+}
+
+pub(crate) mod v09 {
+	use garage_util::crdt;
+	use garage_util::data::Uuid;
+	use serde::{Deserialize, Serialize};
+
+	use super::v08;
+
+	pub use v08::{VersionBlock, VersionBlockKey};
+
+	/// A version of an object
+	#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+	pub struct Version {
+		/// UUID of the version, used as partition key
+		pub uuid: Uuid,
+
+		// Actual data: the blocks for this version
+		// In the case of a multipart upload, also store the etags
+		// of individual parts and check them when doing CompleteMultipartUpload
+		/// Is this version deleted
+		pub deleted: crdt::Bool,
+		/// list of blocks of data composing the version
+		pub blocks: crdt::Map<VersionBlockKey, VersionBlock>,
+
+		// Back link to owner of this version (either an object or a multipart
+		// upload), used to find whether it has been deleted and this version
+		// should in turn be deleted (see versions repair procedure)
+		pub backlink: VersionBacklink,
+	}
+
+	#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+	pub enum VersionBacklink {
+		Object {
+			/// Bucket in which the related object is stored
+			bucket_id: Uuid,
+			/// Key in which the related object is stored
+			key: String,
+		},
+		MultipartUpload {
+			upload_id: Uuid,
+		},
+	}
 
 	impl garage_util::migrate::Migrate for Version {
-		type Previous = v05::Version;
+		const VERSION_MARKER: &'static [u8] = b"G09s3v";
 
-		fn migrate(old: v05::Version) -> Version {
-			use garage_util::data::blake2sum;
+		type Previous = v08::Version;
 
+		fn migrate(old: v08::Version) -> Version {
 			Version {
 				uuid: old.uuid,
 				deleted: old.deleted,
 				blocks: old.blocks,
-				parts_etags: old.parts_etags,
-				bucket_id: blake2sum(old.bucket.as_bytes()),
-				key: old.key,
+				backlink: VersionBacklink::Object {
+					bucket_id: old.bucket_id,
+					key: old.key,
+				},
 			}
 		}
 	}
 }
 
-pub use v08::*;
+pub use v09::*;
 
 impl Version {
-	pub fn new(uuid: Uuid, bucket_id: Uuid, key: String, deleted: bool) -> Self {
+	pub fn new(uuid: Uuid, backlink: VersionBacklink, deleted: bool) -> Self {
 		Self {
 			uuid,
 			deleted: deleted.into(),
 			blocks: crdt::Map::new(),
-			parts_etags: crdt::Map::new(),
-			bucket_id,
-			key,
+			backlink,
 		}
 	}
 
 	pub fn has_part_number(&self, part_number: u64) -> bool {
-		let case1 = self
-			.parts_etags
-			.items()
-			.binary_search_by(|(k, _)| k.cmp(&part_number))
-			.is_ok();
-		let case2 = self
-			.blocks
+		self.blocks
 			.items()
 			.binary_search_by(|(k, _)| k.part_number.cmp(&part_number))
-			.is_ok();
-		case1 || case2
+			.is_ok()
+	}
+
+	pub fn n_parts(&self) -> Result<u64, Error> {
+		Ok(self
+			.blocks
+			.items()
+			.last()
+			.ok_or_message("version has no parts")?
+			.0
+			.part_number)
 	}
 }
 
@@ -175,10 +188,8 @@ impl Crdt for Version {
 
 		if self.deleted.get() {
 			self.blocks.clear();
-			self.parts_etags.clear();
 		} else {
 			self.blocks.merge(&other.blocks);
-			self.parts_etags.merge(&other.parts_etags);
 		}
 	}
 }

@@ -54,9 +54,9 @@ how to configure this.
 Create your key and bucket:
 
 ```bash
-garage key new my-key
-garage bucket create backup
-garage bucket allow backup --read --write --key my-key
+garage key create my-key
+garage bucket create backups
+garage bucket allow backups --read --write --key my-key
 ```
 
 Then register your Key ID and Secret key in your environment:
@@ -105,6 +105,7 @@ restic restore 79766175 --target /var/lib/postgresql
 Restic has way more features than the ones presented here.
 You can discover all of them by accessing its documentation from the link below.
 
+Files on Android devices can also be backed up with [restic-android](https://github.com/lhns/restic-android).
 
 *External links:* [Restic Documentation > Amazon S3](https://restic.readthedocs.io/en/stable/030_preparing_a_new_repo.html#amazon-s3)
 

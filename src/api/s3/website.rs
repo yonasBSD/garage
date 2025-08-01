@@ -1,23 +1,22 @@
 use quick_xml::de::from_reader;
-use std::sync::Arc;
 
-use hyper::{Body, Request, Response, StatusCode};
+use hyper::{header::HeaderName, Request, Response, StatusCode};
 use serde::{Deserialize, Serialize};
 
-use crate::s3::error::*;
-use crate::s3::xml::{to_xml_with_header, xmlns_tag, IntValue, Value};
-use crate::signature::verify_signed_content;
-
 use garage_model::bucket_table::*;
-use garage_model::garage::Garage;
-use garage_util::data::*;
 
-pub async fn handle_get_website(bucket: &Bucket) -> Result<Response<Body>, Error> {
-	let param = bucket
-		.params()
-		.ok_or_internal_error("Bucket should not be deleted at this point")?;
+use garage_api_common::helpers::*;
 
-	if let Some(website) = param.website_config.get() {
+use crate::api_server::{ReqBody, ResBody};
+use crate::error::*;
+use crate::xml::{to_xml_with_header, xmlns_tag, IntValue, Value};
+
+pub const X_AMZ_WEBSITE_REDIRECT_LOCATION: HeaderName =
+	HeaderName::from_static("x-amz-website-redirect-location");
+
+pub async fn handle_get_website(ctx: ReqCtx) -> Result<Response<ResBody>, Error> {
+	let ReqCtx { bucket_params, .. } = ctx;
+	if let Some(website) = bucket_params.website_config.get() {
 		let wc = WebsiteConfiguration {
 			xmlns: (),
 			error_document: website.error_document.as_ref().map(|v| Key {
@@ -33,63 +32,59 @@ pub async fn handle_get_website(bucket: &Bucket) -> Result<Response<Body>, Error
 		Ok(Response::builder()
 			.status(StatusCode::OK)
 			.header(http::header::CONTENT_TYPE, "application/xml")
-			.body(Body::from(xml))?)
+			.body(string_body(xml))?)
 	} else {
 		Ok(Response::builder()
 			.status(StatusCode::NO_CONTENT)
-			.body(Body::empty())?)
+			.body(empty_body())?)
 	}
 }
 
-pub async fn handle_delete_website(
-	garage: Arc<Garage>,
-	bucket_id: Uuid,
-) -> Result<Response<Body>, Error> {
-	let mut bucket = garage
-		.bucket_helper()
-		.get_existing_bucket(bucket_id)
+pub async fn handle_delete_website(ctx: ReqCtx) -> Result<Response<ResBody>, Error> {
+	let ReqCtx {
+		garage,
+		bucket_id,
+		mut bucket_params,
+		..
+	} = ctx;
+	bucket_params.website_config.update(None);
+	garage
+		.bucket_table
+		.insert(&Bucket::present(bucket_id, bucket_params))
 		.await?;
-
-	let param = bucket.params_mut().unwrap();
-
-	param.website_config.update(None);
-	garage.bucket_table.insert(&bucket).await?;
 
 	Ok(Response::builder()
 		.status(StatusCode::NO_CONTENT)
-		.body(Body::empty())?)
+		.body(empty_body())?)
 }
 
 pub async fn handle_put_website(
-	garage: Arc<Garage>,
-	bucket_id: Uuid,
-	req: Request<Body>,
-	content_sha256: Option<Hash>,
-) -> Result<Response<Body>, Error> {
-	let body = hyper::body::to_bytes(req.into_body()).await?;
+	ctx: ReqCtx,
+	req: Request<ReqBody>,
+) -> Result<Response<ResBody>, Error> {
+	let ReqCtx {
+		garage,
+		bucket_id,
+		mut bucket_params,
+		..
+	} = ctx;
 
-	if let Some(content_sha256) = content_sha256 {
-		verify_signed_content(content_sha256, &body[..])?;
-	}
-
-	let mut bucket = garage
-		.bucket_helper()
-		.get_existing_bucket(bucket_id)
-		.await?;
-
-	let param = bucket.params_mut().unwrap();
+	let body = req.into_body().collect().await?;
 
 	let conf: WebsiteConfiguration = from_reader(&body as &[u8])?;
 	conf.validate()?;
 
-	param
+	bucket_params
 		.website_config
 		.update(Some(conf.into_garage_website_config()?));
-	garage.bucket_table.insert(&bucket).await?;
+	garage
+		.bucket_table
+		.insert(&Bucket::present(bucket_id, bucket_params))
+		.await?;
 
 	Ok(Response::builder()
 		.status(StatusCode::OK)
-		.body(Body::empty())?)
+		.body(empty_body())?)
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
@@ -277,7 +272,7 @@ impl Redirect {
 				return Err(Error::bad_request("Bad XML: invalid protocol"));
 			}
 		}
-		// TODO there are probably more invalide cases, but which ones?
+		// TODO there are probably more invalid cases, but which ones?
 		Ok(())
 	}
 }

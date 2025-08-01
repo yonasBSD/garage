@@ -6,7 +6,6 @@ use serde_bytes::ByteBuf;
 use tokio::sync::Notify;
 
 use garage_db as db;
-use garage_db::counted_tree_hack::CountedTree;
 
 use garage_util::data::*;
 use garage_util::error::*;
@@ -34,9 +33,9 @@ pub struct TableData<F: TableSchema, R: TableReplication> {
 	pub(crate) merkle_todo_notify: Notify,
 
 	pub(crate) insert_queue: db::Tree,
-	pub(crate) insert_queue_notify: Notify,
+	pub(crate) insert_queue_notify: Arc<Notify>,
 
-	pub(crate) gc_todo: CountedTree,
+	pub(crate) gc_todo: db::Tree,
 
 	pub(crate) metrics: TableMetrics,
 }
@@ -61,7 +60,6 @@ impl<F: TableSchema, R: TableReplication> TableData<F, R> {
 		let gc_todo = db
 			.open_tree(format!("{}:gc_todo_v2", F::TABLE_NAME))
 			.expect("Unable to open GC DB tree");
-		let gc_todo = CountedTree::new(gc_todo).expect("Cannot count gc_todo_v2");
 
 		let metrics = TableMetrics::new(
 			F::TABLE_NAME,
@@ -80,7 +78,7 @@ impl<F: TableSchema, R: TableReplication> TableData<F, R> {
 			merkle_todo,
 			merkle_todo_notify: Notify::new(),
 			insert_queue,
-			insert_queue_notify: Notify::new(),
+			insert_queue_notify: Arc::new(Notify::new()),
 			gc_todo,
 			metrics,
 		})
@@ -203,14 +201,14 @@ impl<F: TableSchema, R: TableReplication> TableData<F, R> {
 	) -> Result<Option<F::E>, Error> {
 		let tree_key = self.tree_key(partition_key, sort_key);
 
-		let changed = self.store.db().transaction(|mut tx| {
+		let changed = self.store.db().transaction(|tx| {
 			let (old_entry, old_bytes, new_entry) = match tx.get(&self.store, &tree_key)? {
 				Some(old_bytes) => {
 					let old_entry = self.decode_entry(&old_bytes).map_err(db::TxError::Abort)?;
-					let new_entry = update_fn(&mut tx, Some(old_entry.clone()))?;
+					let new_entry = update_fn(tx, Some(old_entry.clone()))?;
 					(Some(old_entry), Some(old_bytes), new_entry)
 				}
-				None => (None, None, update_fn(&mut tx, None)?),
+				None => (None, None, update_fn(tx, None)?),
 			};
 
 			// Changed can be true in two scenarios
@@ -233,7 +231,7 @@ impl<F: TableSchema, R: TableReplication> TableData<F, R> {
 				tx.insert(&self.store, &tree_key, new_bytes)?;
 
 				self.instance
-					.updated(&mut tx, old_entry.as_ref(), Some(&new_entry))?;
+					.updated(tx, old_entry.as_ref(), Some(&new_entry))?;
 
 				Ok(Some((new_entry, new_bytes_hash)))
 			} else {
@@ -254,7 +252,8 @@ impl<F: TableSchema, R: TableReplication> TableData<F, R> {
 				// of the GC algorithm, as in all cases GC is suspended if
 				// any node of the partition is unavailable.
 				let pk_hash = Hash::try_from(&tree_key[..32]).unwrap();
-				let nodes = self.replication.write_nodes(&pk_hash);
+				// TODO: this probably breaks when the layout changes
+				let nodes = self.replication.storage_nodes(&pk_hash);
 				if nodes.first() == Some(&self.system.id) {
 					GcTodoEntry::new(tree_key, new_bytes_hash).save(&self.gc_todo)?;
 				}
@@ -270,14 +269,14 @@ impl<F: TableSchema, R: TableReplication> TableData<F, R> {
 		let removed = self
 			.store
 			.db()
-			.transaction(|mut tx| match tx.get(&self.store, k)? {
+			.transaction(|tx| match tx.get(&self.store, k)? {
 				Some(cur_v) if cur_v == v => {
 					let old_entry = self.decode_entry(v).map_err(db::TxError::Abort)?;
 
 					tx.remove(&self.store, k)?;
 					tx.insert(&self.merkle_todo, k, vec![])?;
 
-					self.instance.updated(&mut tx, Some(&old_entry), None)?;
+					self.instance.updated(tx, Some(&old_entry), None)?;
 					Ok(true)
 				}
 				_ => Ok(false),
@@ -298,14 +297,14 @@ impl<F: TableSchema, R: TableReplication> TableData<F, R> {
 		let removed = self
 			.store
 			.db()
-			.transaction(|mut tx| match tx.get(&self.store, k)? {
+			.transaction(|tx| match tx.get(&self.store, k)? {
 				Some(cur_v) if blake2sum(&cur_v[..]) == vhash => {
 					let old_entry = self.decode_entry(&cur_v[..]).map_err(db::TxError::Abort)?;
 
 					tx.remove(&self.store, k)?;
 					tx.insert(&self.merkle_todo, k, vec![])?;
 
-					self.instance.updated(&mut tx, Some(&old_entry), None)?;
+					self.instance.updated(tx, Some(&old_entry), None)?;
 					Ok(true)
 				}
 				_ => Ok(false),
@@ -339,7 +338,9 @@ impl<F: TableSchema, R: TableReplication> TableData<F, R> {
 			.map_err(Error::RmpEncode)
 			.map_err(db::TxError::Abort)?;
 		tx.insert(&self.insert_queue, &tree_key, new_entry)?;
-		self.insert_queue_notify.notify_one();
+
+		let notif = self.insert_queue_notify.clone();
+		tx.on_commit(move || notif.notify_one());
 
 		Ok(())
 	}
@@ -347,9 +348,7 @@ impl<F: TableSchema, R: TableReplication> TableData<F, R> {
 	// ---- Utility functions ----
 
 	pub fn tree_key(&self, p: &F::P, s: &F::S) -> Vec<u8> {
-		let mut ret = p.hash().to_vec();
-		ret.extend(s.sort_key());
-		ret
+		[p.hash().as_slice(), s.sort_key()].concat()
 	}
 
 	pub fn decode_entry(&self, bytes: &[u8]) -> Result<F::E, Error> {
@@ -369,6 +368,6 @@ impl<F: TableSchema, R: TableReplication> TableData<F, R> {
 	}
 
 	pub fn gc_todo_len(&self) -> Result<usize, Error> {
-		Ok(self.gc_todo.len())
+		Ok(self.gc_todo.len()?)
 	}
 }

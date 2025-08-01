@@ -7,7 +7,7 @@ use serde::{Deserialize, Serialize};
 
 use garage_db as db;
 
-use garage_rpc::ring::Ring;
+use garage_rpc::layout::LayoutHelper;
 use garage_rpc::system::System;
 use garage_util::background::BackgroundRunner;
 use garage_util::data::*;
@@ -83,9 +83,9 @@ impl<T: CountedItem> Entry<T::CP, T::CS> for CounterEntry<T> {
 }
 
 impl<T: CountedItem> CounterEntry<T> {
-	pub fn filtered_values(&self, ring: &Ring) -> HashMap<String, i64> {
-		let nodes = &ring.layout.node_id_vec[..];
-		self.filtered_values_with_nodes(nodes)
+	pub fn filtered_values(&self, layout: &LayoutHelper) -> HashMap<String, i64> {
+		let nodes = layout.all_nongateway_nodes();
+		self.filtered_values_with_nodes(&nodes)
 	}
 
 	pub fn filtered_values_with_nodes(&self, nodes: &[Uuid]) -> HashMap<String, i64> {
@@ -232,7 +232,7 @@ impl<T: CountedItem> IndexCounter<T> {
 
 		let now = now_msec();
 		for (s, inc) in counts.iter() {
-			let mut ent = entry.values.entry(s.to_string()).or_insert((0, 0));
+			let ent = entry.values.entry(s.to_string()).or_insert((0, 0));
 			ent.0 = std::cmp::max(ent.0 + 1, now);
 			ent.1 += *inc;
 		}
@@ -294,7 +294,7 @@ impl<T: CountedItem> IndexCounter<T> {
 				let counter_entry = local_counter.into_counter_entry(self.this_node);
 				self.local_counter
 					.db()
-					.transaction(|mut tx| self.table.queue_insert(&mut tx, &counter_entry))?;
+					.transaction(|tx| self.table.queue_insert(tx, &counter_entry))?;
 
 				next_start = Some(local_counter_k);
 			}
@@ -348,7 +348,7 @@ impl<T: CountedItem> IndexCounter<T> {
 					},
 				};
 				for (s, v) in counts.iter() {
-					let mut tv = local_counter.values.entry(s.to_string()).or_insert((0, 0));
+					let tv = local_counter.values.entry(s.to_string()).or_insert((0, 0));
 					tv.0 = std::cmp::max(tv.0 + 1, now);
 					tv.1 += v;
 				}
@@ -360,7 +360,7 @@ impl<T: CountedItem> IndexCounter<T> {
 				let counter_entry = local_counter.into_counter_entry(self.this_node);
 				self.local_counter
 					.db()
-					.transaction(|mut tx| self.table.queue_insert(&mut tx, &counter_entry))?;
+					.transaction(|tx| self.table.queue_insert(tx, &counter_entry))?;
 
 				next_start = Some(counted_entry_k);
 			}

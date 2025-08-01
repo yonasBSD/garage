@@ -37,7 +37,7 @@ Second, we suppose you have created a key and a bucket.
 As a reminder, you can create a key for your nextcloud instance as follow:
 
 ```bash
-garage key new --name nextcloud-key
+garage key create nextcloud-key
 ```
 
 Keep the Key ID and the Secret key in a pad, they will be needed later.  
@@ -69,7 +69,7 @@ $CONFIG = array(
         'hostname' => '127.0.0.1', // Can also be a domain name, eg. garage.example.com
         'port' => 3900,            // Put your reverse proxy port or your S3 API port
         'use_ssl' => false,        // Set it to true if you have a TLS enabled reverse proxy
-        'region' => 'garage',      // Garage has only one region named "garage"
+        'region' => 'garage',      // Garage default region is named "garage", edit according to your cluster config
         'use_path_style' => true   // Garage supports only path style, must be set to true
     ],
 ],
@@ -80,6 +80,53 @@ To test your new configuration, just reload your Nextcloud webpage and start sen
 
 *External link:* [Nextcloud Documentation > Primary Storage](https://docs.nextcloud.com/server/latest/admin_manual/configuration_files/primary_storage.html)
 
+#### SSE-C encryption (since Garage v1.0)
+
+Since version 1.0, Garage supports server-side encryption with customer keys
+(SSE-C).  In this mode, Garage is responsible for encrypting and decrypting
+objects, but it does not store the encryption key itself. The encryption key
+should be provided by Nextcloud upon each request.  This mode of operation is
+supported by Nextcloud and it has successfully been tested together with
+Garage.
+
+To enable SSE-C encryption:
+
+1. Make sure your Garage server is accessible via SSL through a reverse proxy
+   such as Nginx, and that it is using a valid public certificate (Nextcloud
+   might be able to connect to an S3 server that is using a self-signed
+   certificate, but you will lose many hours while trying, so don't).
+   Configure values for `use_ssl` and `port` accordingly in your `config.php`
+   file.
+
+2. Generate an encryption key using the following command:
+
+    ```
+    openssl rand -base64 32
+    ```
+
+    Make sure to keep this key **secret**!
+
+3. Add the encryption key in your `config.php` file as follows:
+
+
+    ```php
+    <?php
+    $CONFIG = array(
+    'objectstore' => [
+        'class' => '\\OC\\Files\\ObjectStore\\S3',
+        'arguments' => [
+            ...
+            'sse_c_key' => 'exampleencryptionkeyLbU+5fKYQcVoqnn+RaIOXgo=',
+            ...
+        ],
+    ],
+    ```
+
+Nextcloud will now make Garage encrypt files at rest in the storage bucket.
+These files will not be readable by an S3 client that has credentials to the
+bucket but doesn't also know the secret encryption key.
+
+
 ### External Storage
 
 **From the GUI.** Activate the "External storage support" app from the "Applications" page (click on your account icon on the top right corner of your screen to display the menu). Go to your parameters page (also located below your account icon). Click on external storage (or the corresponding translation in your language).
@@ -88,7 +135,7 @@ To test your new configuration, just reload your Nextcloud webpage and start sen
 *Click on the picture to zoom*
 
 Add a new external storage. Put what you want in "folder name" (eg. "shared"). Select "Amazon S3". Keep "Access Key" for the Authentication field.
-In Configuration, put your bucket name (eg. nextcloud), the host (eg. 127.0.0.1), the port (eg. 3900 or 443), the region (garage). Tick the SSL box if you have put an HTTPS proxy in front of garage. You must tick the "Path access" box and you must leave the "Legacy authentication (v2)" box empty. Put your Key ID (eg. GK...) and your Secret Key in the last two input boxes. Finally click on the tick symbol on the right of your screen.
+In Configuration, put your bucket name (eg. nextcloud), the host (eg. 127.0.0.1), the port (eg. 3900 or 443), the region ("garage" if you use the default, or the one your configured in your `garage.toml`). Tick the SSL box if you have put an HTTPS proxy in front of garage. You must tick the "Path access" box and you must leave the "Legacy authentication (v2)" box empty. Put your Key ID (eg. GK...) and your Secret Key in the last two input boxes. Finally click on the tick symbol on the right of your screen.
 
 Now go to your "Files" app and a new "linked folder" has appeared with the name you chose earlier (eg. "shared").
 
@@ -139,7 +186,7 @@ a reasonable trade-off for some instances.
 Create a key for Peertube:
 
 ```bash
-garage key new --name peertube-key
+garage key create peertube-key
 ```
 
 Keep the Key ID and the Secret key in a pad, they will be needed later.  
@@ -191,7 +238,7 @@ object_storage:
   # Put localhost only if you have a garage instance running on that node
   endpoint: 'http://localhost:3900' # or "garage.example.com" if you have TLS on port 443
 
-  # Garage supports only one region for now, named garage
+  # Garage default region is named "garage", edit according to your config
   region: 'garage'
 
   credentials:
@@ -245,7 +292,7 @@ with average object size ranging from 50 KB to 150 KB.
 As such, your Garage cluster should be configured appropriately for good performance:
 
 - use Garage v0.8.0 or higher with the [LMDB database engine](@documentation/reference-manual/configuration.md#db-engine-since-v0-8-0).
-  With the default Sled database engine, your database could quickly end up taking tens of GB of disk space.
+  Older versions of Garage used the Sled database engine which had issues, such as databases quickly ending up taking tens of GB of disk space.
 - the Garage database should be stored on a SSD
 
 ### Creating your bucket
@@ -253,7 +300,7 @@ As such, your Garage cluster should be configured appropriately for good perform
 This is the usual Garage setup:
 
 ```bash
-garage key new --name mastodon-key
+garage key create mastodon-key
 garage bucket create mastodon-data
 garage bucket allow mastodon-data --read --write --key mastodon-key
 ```
@@ -288,6 +335,7 @@ From the [official Mastodon documentation](https://docs.joinmastodon.org/admin/t
 
 ```bash
 $ RAILS_ENV=production bin/tootctl media remove --days 3
+$ RAILS_ENV=production bin/tootctl media remove --days 15 --prune-profiles
 $ RAILS_ENV=production bin/tootctl media remove-orphans
 $ RAILS_ENV=production bin/tootctl preview_cards remove --days 15
 ```
@@ -305,8 +353,6 @@ Backups:	0 Bytes
 Imports:	1.7 KB
 Settings:	0 Bytes
 ```
-
-Unfortunately, [old avatars and headers cannot currently be cleaned up](https://github.com/mastodon/mastodon/issues/9567).
 
 ### Migrating your data
 
@@ -379,7 +425,7 @@ Supposing you have a working synapse installation, you can add the module with p
 Now create a bucket and a key for your matrix instance (note your Key ID and Secret Key somewhere, they will be needed later):
 
 ```bash
-garage key new --name matrix-key
+garage key create matrix-key
 garage bucket create matrix
 garage bucket allow matrix --read --write --key matrix-key
 ```
@@ -395,7 +441,7 @@ media_storage_providers:
   store_synchronous: True  # do we want to wait that the file has been written before returning?
   config:
     bucket: matrix       # the name of our bucket, we chose matrix earlier
-    region_name: garage  # only "garage" is supported for the region field
+    region_name: garage  # "garage" by default, edit according to your cluster config
     endpoint_url: http://localhost:3900 # the path to the S3 endpoint
     access_key_id: "GKxxx" # your Key ID
     secret_access_key: "xxxx" # your Secret Key
@@ -421,7 +467,7 @@ Now we can write a simple script (eg `~/.local/bin/matrix-cache-gc`):
 ## CONFIGURATION ##
 AWS_ACCESS_KEY_ID=GKxxx
 AWS_SECRET_ACCESS_KEY=xxxx
-S3_ENDPOINT=http://localhost:3900
+AWS_ENDPOINT_URL=http://localhost:3900
 S3_BUCKET=matrix
 MEDIA_STORE=/var/lib/matrix-synapse/media
 PG_USER=matrix
@@ -442,7 +488,7 @@ EOF
 
 s3_media_upload update-db 1d
 s3_media_upload --no-progress check-deleted $MEDIA_STORE
-s3_media_upload --no-progress upload $MEDIA_STORE $S3_BUCKET --delete --endpoint-url $S3_ENDPOINT
+s3_media_upload --no-progress upload $MEDIA_STORE $S3_BUCKET --delete --endpoint-url $AWS_ENDPOINT_URL
 ```
 
 This script will list all the medias that were not accessed in the 24 hours according to your database.

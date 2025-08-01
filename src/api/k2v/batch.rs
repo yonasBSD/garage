@@ -1,31 +1,30 @@
-use std::sync::Arc;
-
 use base64::prelude::*;
-use hyper::{Body, Request, Response, StatusCode};
+use hyper::{Request, Response, StatusCode};
 use serde::{Deserialize, Serialize};
-
-use garage_util::data::*;
 
 use garage_table::{EnumerationOrder, TableSchema};
 
-use garage_model::garage::Garage;
-use garage_model::k2v::causality::*;
 use garage_model::k2v::item_table::*;
 
-use crate::helpers::*;
-use crate::k2v::error::*;
-use crate::k2v::range::read_range;
+use garage_api_common::helpers::*;
+
+use crate::api_server::{ReqBody, ResBody};
+use crate::error::*;
+use crate::item::parse_causality_token;
+use crate::range::read_range;
 
 pub async fn handle_insert_batch(
-	garage: Arc<Garage>,
-	bucket_id: Uuid,
-	req: Request<Body>,
-) -> Result<Response<Body>, Error> {
-	let items = parse_json_body::<Vec<InsertBatchItem>>(req).await?;
+	ctx: ReqCtx,
+	req: Request<ReqBody>,
+) -> Result<Response<ResBody>, Error> {
+	let ReqCtx {
+		garage, bucket_id, ..
+	} = &ctx;
+	let items = req.into_body().json::<Vec<InsertBatchItem>>().await?;
 
 	let mut items2 = vec![];
 	for it in items {
-		let ct = it.ct.map(|s| CausalContext::parse_helper(&s)).transpose()?;
+		let ct = it.ct.map(|s| parse_causality_token(&s)).transpose()?;
 		let v = match it.v {
 			Some(vs) => DvvsValue::Value(
 				BASE64_STANDARD
@@ -37,24 +36,23 @@ pub async fn handle_insert_batch(
 		items2.push((it.pk, it.sk, ct, v));
 	}
 
-	garage.k2v.rpc.insert_batch(bucket_id, items2).await?;
+	garage.k2v.rpc.insert_batch(*bucket_id, items2).await?;
 
 	Ok(Response::builder()
 		.status(StatusCode::NO_CONTENT)
-		.body(Body::empty())?)
+		.body(empty_body())?)
 }
 
 pub async fn handle_read_batch(
-	garage: Arc<Garage>,
-	bucket_id: Uuid,
-	req: Request<Body>,
-) -> Result<Response<Body>, Error> {
-	let queries = parse_json_body::<Vec<ReadBatchQuery>>(req).await?;
+	ctx: ReqCtx,
+	req: Request<ReqBody>,
+) -> Result<Response<ResBody>, Error> {
+	let queries = req.into_body().json::<Vec<ReadBatchQuery>>().await?;
 
 	let resp_results = futures::future::join_all(
 		queries
 			.into_iter()
-			.map(|q| handle_read_batch_query(&garage, bucket_id, q)),
+			.map(|q| handle_read_batch_query(&ctx, q)),
 	)
 	.await;
 
@@ -67,12 +65,15 @@ pub async fn handle_read_batch(
 }
 
 async fn handle_read_batch_query(
-	garage: &Arc<Garage>,
-	bucket_id: Uuid,
+	ctx: &ReqCtx,
 	query: ReadBatchQuery,
 ) -> Result<ReadBatchResponse, Error> {
+	let ReqCtx {
+		garage, bucket_id, ..
+	} = ctx;
+
 	let partition = K2VItemPartition {
-		bucket_id,
+		bucket_id: *bucket_id,
 		partition_key: query.partition_key.clone(),
 	};
 
@@ -137,16 +138,15 @@ async fn handle_read_batch_query(
 }
 
 pub async fn handle_delete_batch(
-	garage: Arc<Garage>,
-	bucket_id: Uuid,
-	req: Request<Body>,
-) -> Result<Response<Body>, Error> {
-	let queries = parse_json_body::<Vec<DeleteBatchQuery>>(req).await?;
+	ctx: ReqCtx,
+	req: Request<ReqBody>,
+) -> Result<Response<ResBody>, Error> {
+	let queries = req.into_body().json::<Vec<DeleteBatchQuery>>().await?;
 
 	let resp_results = futures::future::join_all(
 		queries
 			.into_iter()
-			.map(|q| handle_delete_batch_query(&garage, bucket_id, q)),
+			.map(|q| handle_delete_batch_query(&ctx, q)),
 	)
 	.await;
 
@@ -159,12 +159,15 @@ pub async fn handle_delete_batch(
 }
 
 async fn handle_delete_batch_query(
-	garage: &Arc<Garage>,
-	bucket_id: Uuid,
+	ctx: &ReqCtx,
 	query: DeleteBatchQuery,
 ) -> Result<DeleteBatchResponse, Error> {
+	let ReqCtx {
+		garage, bucket_id, ..
+	} = &ctx;
+
 	let partition = K2VItemPartition {
-		bucket_id,
+		bucket_id: *bucket_id,
 		partition_key: query.partition_key.clone(),
 	};
 
@@ -194,7 +197,7 @@ async fn handle_delete_batch_query(
 					.k2v
 					.rpc
 					.insert(
-						bucket_id,
+						*bucket_id,
 						i.partition.partition_key,
 						i.sort_key,
 						Some(cc),
@@ -234,7 +237,7 @@ async fn handle_delete_batch_query(
 			.collect::<Vec<_>>();
 		let n = items.len();
 
-		garage.k2v.rpc.insert_batch(bucket_id, items).await?;
+		garage.k2v.rpc.insert_batch(*bucket_id, items).await?;
 
 		n
 	};
@@ -250,14 +253,16 @@ async fn handle_delete_batch_query(
 }
 
 pub(crate) async fn handle_poll_range(
-	garage: Arc<Garage>,
-	bucket_id: Uuid,
+	ctx: ReqCtx,
 	partition_key: &str,
-	req: Request<Body>,
-) -> Result<Response<Body>, Error> {
+	req: Request<ReqBody>,
+) -> Result<Response<ResBody>, Error> {
+	let ReqCtx {
+		garage, bucket_id, ..
+	} = ctx;
 	use garage_model::k2v::sub::PollRange;
 
-	let query = parse_json_body::<PollRangeQuery>(req).await?;
+	let query = req.into_body().json::<PollRangeQuery>().await?;
 
 	let timeout_msec = query.timeout.unwrap_or(300).clamp(1, 600) * 1000;
 
@@ -277,7 +282,8 @@ pub(crate) async fn handle_poll_range(
 			query.seen_marker,
 			timeout_msec,
 		)
-		.await?;
+		.await
+		.map_err(pass_helper_error)?;
 
 	if let Some((items, seen_marker)) = resp {
 		let resp = PollRangeResponse {
@@ -292,7 +298,7 @@ pub(crate) async fn handle_poll_range(
 	} else {
 		Ok(Response::builder()
 			.status(StatusCode::NOT_MODIFIED)
-			.body(Body::empty())?)
+			.body(empty_body())?)
 	}
 }
 

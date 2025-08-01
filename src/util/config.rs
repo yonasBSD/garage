@@ -1,11 +1,12 @@
 //! Contains type and functions related to Garage configuration file
-use std::io::Read;
+use std::convert::TryFrom;
 use std::net::SocketAddr;
 use std::path::PathBuf;
 
 use serde::{de, Deserialize};
 
 use crate::error::Error;
+use crate::socket_address::UnixOrTCPSocketAddress;
 
 /// Represent the whole configuration
 #[derive(Deserialize, Debug, Clone)]
@@ -13,18 +14,51 @@ pub struct Config {
 	/// Path where to store metadata. Should be fast, but low volume
 	pub metadata_dir: PathBuf,
 	/// Path where to store data. Can be slower, but need higher volume
-	pub data_dir: PathBuf,
+	pub data_dir: DataDirEnum,
+
+	/// Whether to fsync after all metadata transactions (disabled by default)
+	#[serde(default)]
+	pub metadata_fsync: bool,
+	/// Whether to fsync after all data block writes (disabled by default)
+	#[serde(default)]
+	pub data_fsync: bool,
+
+	/// Disable automatic scrubbing of the data directory
+	#[serde(default)]
+	pub disable_scrub: bool,
+
+	/// Use local timezone
+	#[serde(default)]
+	pub use_local_tz: bool,
+
+	/// Optional directory where metadata snapshots will be store
+	pub metadata_snapshots_dir: Option<PathBuf>,
+
+	/// Automatic snapshot interval for metadata
+	#[serde(default)]
+	pub metadata_auto_snapshot_interval: Option<String>,
 
 	/// Size of data blocks to save to disk
-	#[serde(default = "default_block_size")]
+	#[serde(
+		deserialize_with = "deserialize_capacity",
+		default = "default_block_size"
+	)]
 	pub block_size: usize,
 
-	/// Replication mode. Supported values:
-	/// - none, 1 -> no replication
-	/// - 2 -> 2-way replication
-	/// - 3 -> 3-way replication
-	// (we can add more aliases for this later)
-	pub replication_mode: String,
+	/// Number of replicas. Can be any positive integer, but uneven numbers are more favorable.
+	/// - 1 for single-node clusters, or to disable replication
+	/// - 3 is the recommended and supported setting.
+	#[serde(default)]
+	pub replication_factor: Option<usize>,
+
+	/// Consistency mode for all for requests through this node
+	/// - Degraded -> Disable read quorum
+	/// - Dangerous -> Disable read and write quorum
+	#[serde(default = "default_consistency_mode")]
+	pub consistency_mode: String,
+
+	/// Legacy option
+	pub replication_mode: Option<String>,
 
 	/// Zstd compression level used on data blocks
 	#[serde(
@@ -33,22 +67,41 @@ pub struct Config {
 	)]
 	pub compression_level: Option<i32>,
 
+	/// Maximum amount of block data to buffer in RAM for sending to
+	/// remote nodes when these nodes are on slower links
+	#[serde(
+		deserialize_with = "deserialize_capacity",
+		default = "default_block_ram_buffer_max"
+	)]
+	pub block_ram_buffer_max: usize,
+
+	/// Skip the permission check of secret files. Useful when
+	/// POSIX ACLs (or more complex chmods) are used.
+	#[serde(default)]
+	pub allow_world_readable_secrets: bool,
+
 	/// RPC secret key: 32 bytes hex encoded
 	pub rpc_secret: Option<String>,
 	/// Optional file where RPC secret key is read from
-	pub rpc_secret_file: Option<String>,
-
+	pub rpc_secret_file: Option<PathBuf>,
 	/// Address to bind for RPC
 	pub rpc_bind_addr: SocketAddr,
+	/// Bind outgoing sockets to rpc_bind_addr's IP address as well
+	#[serde(default)]
+	pub rpc_bind_outgoing: bool,
 	/// Public IP address of this node
 	pub rpc_public_addr: Option<String>,
 
-	/// Timeout for Netapp's ping messagess
+	/// In case `rpc_public_addr` was not set, this can filter
+	/// the addresses announced to other peers to a specific subnet.
+	pub rpc_public_addr_subnet: Option<String>,
+
+	/// Timeout for Netapp's ping messages
 	pub rpc_ping_timeout_msec: Option<u64>,
 	/// Timeout for Netapp RPC calls
 	pub rpc_timeout_msec: Option<u64>,
 
-	// -- Bootstraping and discovery
+	// -- Bootstrapping and discovery
 	/// Bootstrap peers RPC address
 	#[serde(default)]
 	pub bootstrap_peers: Vec<String>,
@@ -61,16 +114,13 @@ pub struct Config {
 	pub kubernetes_discovery: Option<KubernetesDiscoveryConfig>,
 
 	// -- DB
-	/// Database engine to use for metadata (options: sled, sqlite, lmdb)
+	/// Database engine to use for metadata (options: sqlite, lmdb)
 	#[serde(default = "default_db_engine")]
 	pub db_engine: String,
 
-	/// Sled cache size, in bytes
-	#[serde(default = "default_sled_cache_capacity")]
-	pub sled_cache_capacity: u64,
-	/// Sled flush interval in milliseconds
-	#[serde(default = "default_sled_flush_every_ms")]
-	pub sled_flush_every_ms: u64,
+	/// LMDB map size
+	#[serde(deserialize_with = "deserialize_capacity", default)]
+	pub lmdb_map_size: usize,
 
 	// -- APIs
 	/// Configuration for S3 api
@@ -85,13 +135,37 @@ pub struct Config {
 	/// Configuration for the admin API endpoint
 	#[serde(default = "Default::default")]
 	pub admin: AdminConfig,
+
+	/// Allow punycode in bucket names
+	#[serde(default)]
+	pub allow_punycode: bool,
+}
+
+/// Value for data_dir: either a single directory or a list of dirs with attributes
+#[derive(Deserialize, Debug, Clone)]
+#[serde(untagged)]
+pub enum DataDirEnum {
+	Single(PathBuf),
+	Multiple(Vec<DataDir>),
+}
+
+#[derive(Deserialize, Debug, Clone)]
+pub struct DataDir {
+	/// Path to the data directory
+	pub path: PathBuf,
+	/// Capacity of the drive (required if read_only is false)
+	#[serde(default)]
+	pub capacity: Option<String>,
+	/// Whether this is a legacy read-only path (capacity should be None)
+	#[serde(default)]
+	pub read_only: bool,
 }
 
 /// Configuration for S3 api
 #[derive(Deserialize, Debug, Clone)]
 pub struct S3ApiConfig {
 	/// Address and port to bind for api serving
-	pub api_bind_addr: Option<SocketAddr>,
+	pub api_bind_addr: Option<UnixOrTCPSocketAddress>,
 	/// S3 region to use
 	pub s3_region: String,
 	/// Suffix to remove from domain name to find bucket. If None,
@@ -103,33 +177,36 @@ pub struct S3ApiConfig {
 #[derive(Deserialize, Debug, Clone)]
 pub struct K2VApiConfig {
 	/// Address and port to bind for api serving
-	pub api_bind_addr: SocketAddr,
+	pub api_bind_addr: UnixOrTCPSocketAddress,
 }
 
 /// Configuration for serving files as normal web server
 #[derive(Deserialize, Debug, Clone)]
 pub struct WebConfig {
 	/// Address and port to bind for web serving
-	pub bind_addr: SocketAddr,
+	pub bind_addr: UnixOrTCPSocketAddress,
 	/// Suffix to remove from domain name to find bucket
 	pub root_domain: String,
+	/// Whether to add the requested domain to exported Prometheus metrics
+	#[serde(default)]
+	pub add_host_to_metrics: bool,
 }
 
 /// Configuration for the admin and monitoring HTTP API
 #[derive(Deserialize, Debug, Clone, Default)]
 pub struct AdminConfig {
 	/// Address and port to bind for admin API serving
-	pub api_bind_addr: Option<SocketAddr>,
+	pub api_bind_addr: Option<UnixOrTCPSocketAddress>,
 
 	/// Bearer token to use to scrape metrics
 	pub metrics_token: Option<String>,
 	/// File to read metrics token from
-	pub metrics_token_file: Option<String>,
+	pub metrics_token_file: Option<PathBuf>,
 
 	/// Bearer token to use to access Admin API endpoints
 	pub admin_token: Option<String>,
 	/// File to read admin token from
-	pub admin_token_file: Option<String>,
+	pub admin_token_file: Option<PathBuf>,
 
 	/// OTLP server to where to export traces
 	pub trace_sink: Option<String>,
@@ -182,80 +259,26 @@ pub struct KubernetesDiscoveryConfig {
 	pub skip_crd: bool,
 }
 
-fn default_db_engine() -> String {
-	"sled".into()
+/// Read and parse configuration
+pub fn read_config(config_file: PathBuf) -> Result<Config, Error> {
+	let config = std::fs::read_to_string(config_file)?;
+
+	Ok(toml::from_str(&config)?)
 }
 
-fn default_sled_cache_capacity() -> u64 {
-	128 * 1024 * 1024
+fn default_db_engine() -> String {
+	"lmdb".into()
 }
-fn default_sled_flush_every_ms() -> u64 {
-	2000
-}
+
 fn default_block_size() -> usize {
 	1048576
 }
-
-/// Read and parse configuration
-pub fn read_config(config_file: PathBuf) -> Result<Config, Error> {
-	let mut file = std::fs::OpenOptions::new()
-		.read(true)
-		.open(config_file.as_path())?;
-
-	let mut config = String::new();
-	file.read_to_string(&mut config)?;
-
-	let mut parsed_config: Config = toml::from_str(&config)?;
-
-	secret_from_file(
-		&mut parsed_config.rpc_secret,
-		&parsed_config.rpc_secret_file,
-		"rpc_secret",
-	)?;
-	secret_from_file(
-		&mut parsed_config.admin.metrics_token,
-		&parsed_config.admin.metrics_token_file,
-		"admin.metrics_token",
-	)?;
-	secret_from_file(
-		&mut parsed_config.admin.admin_token,
-		&parsed_config.admin.admin_token_file,
-		"admin.admin_token",
-	)?;
-
-	Ok(parsed_config)
+fn default_block_ram_buffer_max() -> usize {
+	256 * 1024 * 1024
 }
 
-fn secret_from_file(
-	secret: &mut Option<String>,
-	secret_file: &Option<String>,
-	name: &'static str,
-) -> Result<(), Error> {
-	match (&secret, &secret_file) {
-		(_, None) => {
-			// no-op
-		}
-		(Some(_), Some(_)) => {
-			return Err(format!("only one of `{}` and `{}_file` can be set", name, name).into());
-		}
-		(None, Some(file_path)) => {
-			#[cfg(unix)]
-			if std::env::var("GARAGE_ALLOW_WORLD_READABLE_SECRETS").as_deref() != Ok("true") {
-				use std::os::unix::fs::MetadataExt;
-				let metadata = std::fs::metadata(file_path)?;
-				if metadata.mode() & 0o077 != 0 {
-					return Err(format!("File {} is world-readable! (mode: 0{:o}, expected 0600)\nRefusing to start until this is fixed, or environment variable GARAGE_ALLOW_WORLD_READABLE_SECRETS is set to true.", file_path, metadata.mode()).into());
-				}
-			}
-			let mut file = std::fs::OpenOptions::new().read(true).open(file_path)?;
-			let mut secret_buf = String::new();
-			file.read_to_string(&mut secret_buf)?;
-			// trim_end: allows for use case such as `echo "$(openssl rand -hex 32)" > somefile`.
-			//           also editors sometimes add a trailing newline
-			*secret = Some(String::from(secret_buf.trim_end()));
-		}
-	}
-	Ok(())
+fn default_consistency_mode() -> String {
+	"consistent".into()
 }
 
 fn default_compression() -> Option<i32> {
@@ -266,8 +289,6 @@ fn deserialize_compression<'de, D>(deserializer: D) -> Result<Option<i32>, D::Er
 where
 	D: de::Deserializer<'de>,
 {
-	use std::convert::TryFrom;
-
 	struct OptionVisitor;
 
 	impl<'de> serde::de::Visitor<'de> for OptionVisitor {
@@ -312,6 +333,50 @@ where
 	deserializer.deserialize_any(OptionVisitor)
 }
 
+fn deserialize_capacity<'de, D>(deserializer: D) -> Result<usize, D::Error>
+where
+	D: de::Deserializer<'de>,
+{
+	struct CapacityVisitor;
+
+	impl<'de> serde::de::Visitor<'de> for CapacityVisitor {
+		type Value = usize;
+		fn expecting(&self, formatter: &mut std::fmt::Formatter) -> std::fmt::Result {
+			formatter.write_str("int or '<capacity>'")
+		}
+
+		fn visit_str<E>(self, value: &str) -> Result<Self::Value, E>
+		where
+			E: de::Error,
+		{
+			value
+				.parse::<bytesize::ByteSize>()
+				.map(|x| x.as_u64())
+				.map_err(|e| E::custom(format!("invalid capacity value: {}", e)))
+				.and_then(|v| {
+					usize::try_from(v)
+						.map_err(|_| E::custom("capacity value out of bound".to_owned()))
+				})
+		}
+
+		fn visit_i64<E>(self, v: i64) -> Result<Self::Value, E>
+		where
+			E: de::Error,
+		{
+			usize::try_from(v).map_err(|_| E::custom("capacity value out of bound".to_owned()))
+		}
+
+		fn visit_u64<E>(self, v: u64) -> Result<Self::Value, E>
+		where
+			E: de::Error,
+		{
+			usize::try_from(v).map_err(|_| E::custom("capacity value out of bound".to_owned()))
+		}
+	}
+
+	deserializer.deserialize_any(CapacityVisitor)
+}
+
 #[cfg(test)]
 mod tests {
 	use crate::error::Error;
@@ -327,7 +392,7 @@ mod tests {
 			r#"
 			metadata_dir = "/tmp/garage/meta"
 			data_dir = "/tmp/garage/data"
-			replication_mode = "3"
+			replication_factor = 3
 			rpc_bind_addr = "[::]:3901"
 			rpc_secret = "foo"
 
@@ -342,85 +407,6 @@ mod tests {
 		drop(path2);
 		drop(file2);
 
-		Ok(())
-	}
-
-	#[test]
-	fn test_rpc_secret_file_works() -> Result<(), Error> {
-		let path_secret = mktemp::Temp::new_file()?;
-		let mut file_secret = File::create(path_secret.as_path())?;
-		writeln!(file_secret, "foo")?;
-		drop(file_secret);
-
-		let path_config = mktemp::Temp::new_file()?;
-		let mut file_config = File::create(path_config.as_path())?;
-		let path_secret_path = path_secret.as_path();
-		writeln!(
-			file_config,
-			r#"
-			metadata_dir = "/tmp/garage/meta"
-			data_dir = "/tmp/garage/data"
-			replication_mode = "3"
-			rpc_bind_addr = "[::]:3901"
-			rpc_secret_file = "{}"
-
-			[s3_api]
-			s3_region = "garage"
-			api_bind_addr = "[::]:3900"
-			"#,
-			path_secret_path.display()
-		)?;
-		let config = super::read_config(path_config.to_path_buf())?;
-		assert_eq!("foo", config.rpc_secret.unwrap());
-
-		#[cfg(unix)]
-		{
-			use std::os::unix::fs::PermissionsExt;
-			let metadata = std::fs::metadata(&path_secret_path)?;
-			let mut perm = metadata.permissions();
-			perm.set_mode(0o660);
-			std::fs::set_permissions(&path_secret_path, perm)?;
-
-			std::env::set_var("GARAGE_ALLOW_WORLD_READABLE_SECRETS", "false");
-			assert!(super::read_config(path_config.to_path_buf()).is_err());
-
-			std::env::set_var("GARAGE_ALLOW_WORLD_READABLE_SECRETS", "true");
-			assert!(super::read_config(path_config.to_path_buf()).is_ok());
-		}
-
-		drop(path_config);
-		drop(path_secret);
-		drop(file_config);
-		Ok(())
-	}
-
-	#[test]
-	fn test_rcp_secret_and_rpc_secret_file_cannot_be_set_both() -> Result<(), Error> {
-		let path_config = mktemp::Temp::new_file()?;
-		let mut file_config = File::create(path_config.as_path())?;
-		writeln!(
-			file_config,
-			r#"
-			metadata_dir = "/tmp/garage/meta"
-			data_dir = "/tmp/garage/data"
-			replication_mode = "3"
-			rpc_bind_addr = "[::]:3901"
-			rpc_secret= "dummy"
-			rpc_secret_file = "dummy"
-
-			[s3_api]
-			s3_region = "garage"
-			api_bind_addr = "[::]:3900"
-			"#
-		)?;
-		assert_eq!(
-			"only one of `rpc_secret` and `rpc_secret_file` can be set",
-			super::read_config(path_config.to_path_buf())
-				.unwrap_err()
-				.to_string()
-		);
-		drop(path_config);
-		drop(file_config);
 		Ok(())
 	}
 }

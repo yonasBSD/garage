@@ -2,22 +2,32 @@ use std::convert::TryInto;
 
 use err_derive::Error;
 use hyper::header::HeaderValue;
-use hyper::{Body, HeaderMap, StatusCode};
+use hyper::{HeaderMap, StatusCode};
 
 use garage_model::helper::error::Error as HelperError;
 
-use crate::common_error::CommonError;
-pub use crate::common_error::{CommonErrorDerivative, OkOrBadRequest, OkOrInternalError};
-use crate::generic_server::ApiError;
-use crate::s3::xml as s3_xml;
-use crate::signature::error::Error as SignatureError;
+pub(crate) use garage_api_common::common_error::pass_helper_error;
+
+use garage_api_common::common_error::{
+	commonErrorDerivative, helper_error_as_internal, CommonError,
+};
+
+pub use garage_api_common::common_error::{
+	CommonErrorDerivative, OkOrBadRequest, OkOrInternalError,
+};
+
+use garage_api_common::generic_server::ApiError;
+use garage_api_common::helpers::*;
+use garage_api_common::signature::error::Error as SignatureError;
+
+use crate::xml as s3_xml;
 
 /// Errors of this crate
 #[derive(Debug, Error)]
 pub enum Error {
 	#[error(display = "{}", _0)]
 	/// Error from common error
-	Common(CommonError),
+	Common(#[error(source)] CommonError),
 
 	// Category: cannot process
 	/// Authorization Header Malformed
@@ -62,39 +72,30 @@ pub enum Error {
 	#[error(display = "Invalid XML: {}", _0)]
 	InvalidXml(String),
 
-	/// The client sent a header with invalid value
-	#[error(display = "Invalid header value: {}", _0)]
-	InvalidHeader(#[error(source)] hyper::header::ToStrError),
-
 	/// The client sent a range header with invalid value
 	#[error(display = "Invalid HTTP range: {:?}", _0)]
 	InvalidRange(#[error(from)] (http_range::HttpRangeParseError, u64)),
+
+	/// The client sent a range header with invalid value
+	#[error(display = "Invalid encryption algorithm: {:?}, should be AES256", _0)]
+	InvalidEncryptionAlgorithm(String),
+
+	/// The provided digest (checksum) value was invalid
+	#[error(display = "Invalid digest: {}", _0)]
+	InvalidDigest(String),
 
 	/// The client sent a request for an action not supported by garage
 	#[error(display = "Unimplemented action: {}", _0)]
 	NotImplemented(String),
 }
 
-impl<T> From<T> for Error
-where
-	CommonError: From<T>,
-{
-	fn from(err: T) -> Self {
-		Error::Common(CommonError::from(err))
-	}
-}
+commonErrorDerivative!(Error);
 
-impl CommonErrorDerivative for Error {}
-
+// Helper errors are always passed as internal errors by default.
+// To pass the specific error code back to the client, use `pass_helper_error`.
 impl From<HelperError> for Error {
-	fn from(err: HelperError) -> Self {
-		match err {
-			HelperError::Internal(i) => Self::Common(CommonError::InternalError(i)),
-			HelperError::BadRequest(b) => Self::Common(CommonError::BadRequest(b)),
-			HelperError::InvalidBucketName(n) => Self::Common(CommonError::InvalidBucketName(n)),
-			HelperError::NoSuchBucket(n) => Self::Common(CommonError::NoSuchBucket(n)),
-			e => Self::bad_request(format!("{}", e)),
-		}
+	fn from(err: HelperError) -> Error {
+		Error::Common(helper_error_as_internal(err))
 	}
 }
 
@@ -118,7 +119,7 @@ impl From<SignatureError> for Error {
 				Self::AuthorizationHeaderMalformed(c)
 			}
 			SignatureError::InvalidUtf8Str(i) => Self::InvalidUtf8Str(i),
-			SignatureError::InvalidHeader(h) => Self::InvalidHeader(h),
+			SignatureError::InvalidDigest(d) => Self::InvalidDigest(d),
 		}
 	}
 }
@@ -143,9 +144,9 @@ impl Error {
 			Error::NotImplemented(_) => "NotImplemented",
 			Error::InvalidXml(_) => "MalformedXML",
 			Error::InvalidRange(_) => "InvalidRange",
-			Error::InvalidUtf8Str(_) | Error::InvalidUtf8String(_) | Error::InvalidHeader(_) => {
-				"InvalidRequest"
-			}
+			Error::InvalidDigest(_) => "InvalidDigest",
+			Error::InvalidUtf8Str(_) | Error::InvalidUtf8String(_) => "InvalidRequest",
+			Error::InvalidEncryptionAlgorithm(_) => "InvalidEncryptionAlgorithmError",
 		}
 	}
 }
@@ -163,10 +164,11 @@ impl ApiError for Error {
 			| Error::InvalidPart
 			| Error::InvalidPartOrder
 			| Error::EntityTooSmall
+			| Error::InvalidDigest(_)
+			| Error::InvalidEncryptionAlgorithm(_)
 			| Error::InvalidXml(_)
 			| Error::InvalidUtf8Str(_)
-			| Error::InvalidUtf8String(_)
-			| Error::InvalidHeader(_) => StatusCode::BAD_REQUEST,
+			| Error::InvalidUtf8String(_) => StatusCode::BAD_REQUEST,
 		}
 	}
 
@@ -189,22 +191,23 @@ impl ApiError for Error {
 		}
 	}
 
-	fn http_body(&self, garage_region: &str, path: &str) -> Body {
+	fn http_body(&self, garage_region: &str, path: &str) -> ErrorBody {
 		let error = s3_xml::Error {
 			code: s3_xml::Value(self.aws_code().to_string()),
 			message: s3_xml::Value(format!("{}", self)),
 			resource: Some(s3_xml::Value(path.to_string())),
 			region: Some(s3_xml::Value(garage_region.to_string())),
 		};
-		Body::from(s3_xml::to_xml_with_header(&error).unwrap_or_else(|_| {
+		let error_str = s3_xml::to_xml_with_header(&error).unwrap_or_else(|_| {
 			r#"
 <?xml version="1.0" encoding="UTF-8"?>
 <Error>
-	<Code>InternalError</Code>
-	<Message>XML encoding of error failed</Message>
+    <Code>InternalError</Code>
+    <Message>XML encoding of error failed</Message>
 </Error>
-			"#
+            "#
 			.into()
-		}))
+		});
+		error_body(error_str)
 	}
 }

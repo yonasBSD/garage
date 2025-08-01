@@ -1,26 +1,26 @@
-use std::cmp::Ordering;
 use std::collections::{BTreeMap, BTreeSet};
 use std::iter::{Iterator, Peekable};
-use std::sync::Arc;
 
 use base64::prelude::*;
-use hyper::{Body, Response};
+use hyper::{Request, Response};
 
 use garage_util::data::*;
 use garage_util::error::Error as GarageError;
 use garage_util::time::*;
 
-use garage_model::garage::Garage;
+use garage_model::s3::mpu_table::*;
 use garage_model::s3::object_table::*;
-use garage_model::s3::version_table::Version;
 
-use garage_table::{EmptyKey, EnumerationOrder};
+use garage_table::EnumerationOrder;
 
-use crate::encoding::*;
-use crate::helpers::key_after_prefix;
-use crate::s3::error::*;
-use crate::s3::put as s3_put;
-use crate::s3::xml as s3_xml;
+use garage_api_common::encoding::*;
+use garage_api_common::helpers::*;
+
+use crate::api_server::{ReqBody, ResBody};
+use crate::encryption::EncryptionParams;
+use crate::error::*;
+use crate::multipart as s3_multipart;
+use crate::xml as s3_xml;
 
 const DUMMY_NAME: &str = "Dummy Key";
 const DUMMY_KEY: &str = "GKDummyKey";
@@ -54,7 +54,6 @@ pub struct ListMultipartUploadsQuery {
 #[derive(Debug)]
 pub struct ListPartsQuery {
 	pub bucket_name: String,
-	pub bucket_id: Uuid,
 	pub key: String,
 	pub upload_id: String,
 	pub part_number_marker: Option<u64>,
@@ -62,9 +61,10 @@ pub struct ListPartsQuery {
 }
 
 pub async fn handle_list(
-	garage: Arc<Garage>,
+	ctx: ReqCtx,
 	query: &ListObjectsQuery,
-) -> Result<Response<Body>, Error> {
+) -> Result<Response<ResBody>, Error> {
+	let ReqCtx { garage, .. } = &ctx;
 	let io = |bucket, key, count| {
 		let t = &garage.object_table;
 		async move {
@@ -163,20 +163,24 @@ pub async fn handle_list(
 	let xml = s3_xml::to_xml_with_header(&result)?;
 	Ok(Response::builder()
 		.header("Content-Type", "application/xml")
-		.body(Body::from(xml.into_bytes()))?)
+		.body(string_body(xml))?)
 }
 
 pub async fn handle_list_multipart_upload(
-	garage: Arc<Garage>,
+	ctx: ReqCtx,
 	query: &ListMultipartUploadsQuery,
-) -> Result<Response<Body>, Error> {
+) -> Result<Response<ResBody>, Error> {
+	let ReqCtx { garage, .. } = &ctx;
+
 	let io = |bucket, key, count| {
 		let t = &garage.object_table;
 		async move {
 			t.get_range(
 				&bucket,
 				key,
-				Some(ObjectFilter::IsUploading),
+				Some(ObjectFilter::IsUploading {
+					check_multipart: Some(true),
+				}),
 				count,
 				EnumerationOrder::Forward,
 			)
@@ -263,42 +267,82 @@ pub async fn handle_list_multipart_upload(
 
 	Ok(Response::builder()
 		.header("Content-Type", "application/xml")
-		.body(Body::from(xml.into_bytes()))?)
+		.body(string_body(xml))?)
 }
 
 pub async fn handle_list_parts(
-	garage: Arc<Garage>,
+	ctx: ReqCtx,
+	req: Request<ReqBody>,
 	query: &ListPartsQuery,
-) -> Result<Response<Body>, Error> {
+) -> Result<Response<ResBody>, Error> {
 	debug!("ListParts {:?}", query);
 
-	let upload_id = s3_put::decode_upload_id(&query.upload_id)?;
+	let upload_id = s3_multipart::decode_upload_id(&query.upload_id)?;
 
-	let (object, version) = futures::try_join!(
-		garage.object_table.get(&query.bucket_id, &query.key),
-		garage.version_table.get(&upload_id, &EmptyKey),
-	)?;
+	let (_, object_version, mpu) = s3_multipart::get_upload(&ctx, &query.key, &upload_id).await?;
 
-	let (info, next) = fetch_part_info(query, object, version, upload_id)?;
+	let object_encryption = match object_version.state {
+		ObjectVersionState::Uploading { encryption, .. } => encryption,
+		_ => unreachable!(),
+	};
+	let encryption_res =
+		EncryptionParams::check_decrypt(&ctx.garage, req.headers(), &object_encryption);
+
+	let (info, next) = fetch_part_info(query, &mpu)?;
 
 	let result = s3_xml::ListPartsResult {
 		xmlns: (),
+
+		// Query parameters
 		bucket: s3_xml::Value(query.bucket_name.to_string()),
 		key: s3_xml::Value(query.key.to_string()),
 		upload_id: s3_xml::Value(query.upload_id.to_string()),
 		part_number_marker: query.part_number_marker.map(|e| s3_xml::IntValue(e as i64)),
-		next_part_number_marker: next.map(|e| s3_xml::IntValue(e as i64)),
 		max_parts: s3_xml::IntValue(query.max_parts as i64),
-		is_truncated: s3_xml::Value(next.map(|_| "true").unwrap_or("false").to_string()),
+
+		// Result values
+		next_part_number_marker: next.map(|e| s3_xml::IntValue(e as i64)),
+		is_truncated: s3_xml::Value(format!("{}", next.is_some())),
 		parts: info
 			.iter()
-			.map(|part| s3_xml::PartItem {
-				etag: s3_xml::Value(format!("\"{}\"", part.etag)),
-				last_modified: s3_xml::Value(msec_to_rfc3339(part.timestamp)),
-				part_number: s3_xml::IntValue(part.part_number as i64),
-				size: s3_xml::IntValue(part.size as i64),
+			.map(|part| {
+				// hide checksum if object is encrypted and the decryption
+				// keys are not provided
+				let checksum = part.checksum.filter(|_| encryption_res.is_ok());
+				s3_xml::PartItem {
+					etag: s3_xml::Value(format!("\"{}\"", part.etag)),
+					last_modified: s3_xml::Value(msec_to_rfc3339(part.timestamp)),
+					part_number: s3_xml::IntValue(part.part_number as i64),
+					size: s3_xml::IntValue(part.size as i64),
+					checksum_crc32: match &checksum {
+						Some(ChecksumValue::Crc32(x)) => {
+							Some(s3_xml::Value(BASE64_STANDARD.encode(&x)))
+						}
+						_ => None,
+					},
+					checksum_crc32c: match &checksum {
+						Some(ChecksumValue::Crc32c(x)) => {
+							Some(s3_xml::Value(BASE64_STANDARD.encode(&x)))
+						}
+						_ => None,
+					},
+					checksum_sha1: match &checksum {
+						Some(ChecksumValue::Sha1(x)) => {
+							Some(s3_xml::Value(BASE64_STANDARD.encode(&x)))
+						}
+						_ => None,
+					},
+					checksum_sha256: match &checksum {
+						Some(ChecksumValue::Sha256(x)) => {
+							Some(s3_xml::Value(BASE64_STANDARD.encode(&x)))
+						}
+						_ => None,
+					},
+				}
 			})
 			.collect(),
+
+		// Dummy result values (unsupported features)
 		initiator: s3_xml::Initiator {
 			display_name: s3_xml::Value(DUMMY_NAME.to_string()),
 			id: s3_xml::Value(DUMMY_KEY.to_string()),
@@ -314,7 +358,7 @@ pub async fn handle_list_parts(
 
 	Ok(Response::builder()
 		.header("Content-Type", "application/xml")
-		.body(Body::from(xml.into_bytes()))?)
+		.body(string_body(xml))?)
 }
 
 /*
@@ -335,11 +379,12 @@ struct UploadInfo {
 }
 
 #[derive(Debug, PartialEq)]
-struct PartInfo {
-	etag: String,
+struct PartInfo<'a> {
+	etag: &'a str,
 	timestamp: u64,
 	part_number: u64,
 	size: u64,
+	checksum: Option<ChecksumValue>,
 }
 
 enum ExtractionResult {
@@ -353,7 +398,7 @@ enum ExtractionResult {
 		key: String,
 	},
 	// Fallback key is used for legacy APIs that only support
-	// exlusive pagination (and not inclusive one).
+	// exclusive pagination (and not inclusive one).
 	SkipTo {
 		key: String,
 		fallback_key: Option<String>,
@@ -363,7 +408,7 @@ enum ExtractionResult {
 #[derive(PartialEq, Clone, Debug)]
 enum RangeBegin {
 	// Fallback key is used for legacy APIs that only support
-	// exlusive pagination (and not inclusive one).
+	// exclusive pagination (and not inclusive one).
 	IncludingKey {
 		key: String,
 		fallback_key: Option<String>,
@@ -421,8 +466,10 @@ where
 		// Drop the first key if needed
 		// Only AfterKey requires it according to the S3 spec and our implem.
 		match (&cursor, iter.peek()) {
-			(RangeBegin::AfterKey { key }, Some(object)) if &object.key == key => iter.next(),
-			(_, _) => None,
+			(RangeBegin::AfterKey { key }, Some(object)) if &object.key == key => {
+				iter.next();
+			}
+			_ => (),
 		};
 
 		while let Some(object) = iter.peek() {
@@ -431,16 +478,22 @@ where
 				return Ok(None);
 			}
 
-			cursor = match acc.extract(query, &cursor, &mut iter) {
-				ExtractionResult::Extracted { key } => RangeBegin::AfterKey { key },
+			match acc.extract(query, &cursor, &mut iter) {
+				ExtractionResult::Extracted { key } => {
+					cursor = RangeBegin::AfterKey { key };
+				}
 				ExtractionResult::SkipTo { key, fallback_key } => {
-					RangeBegin::IncludingKey { key, fallback_key }
+					cursor = RangeBegin::IncludingKey { key, fallback_key };
 				}
 				ExtractionResult::FilledAtUpload { key, upload } => {
-					return Ok(Some(RangeBegin::AfterUpload { key, upload }))
+					return Ok(Some(RangeBegin::AfterUpload { key, upload }));
 				}
-				ExtractionResult::Filled => return Ok(Some(cursor)),
-				ExtractionResult::NoMore => return Ok(None),
+				ExtractionResult::Filled => {
+					return Ok(Some(cursor));
+				}
+				ExtractionResult::NoMore => {
+					return Ok(None);
+				}
 			};
 		}
 
@@ -456,107 +509,52 @@ where
 	}
 }
 
-fn fetch_part_info(
+fn fetch_part_info<'a>(
 	query: &ListPartsQuery,
-	object: Option<Object>,
-	version: Option<Version>,
-	upload_id: Uuid,
-) -> Result<(Vec<PartInfo>, Option<u64>), Error> {
-	// Check results
-	let object = object.ok_or(Error::NoSuchKey)?;
+	mpu: &'a MultipartUpload,
+) -> Result<(Vec<PartInfo<'a>>, Option<u64>), Error> {
+	assert!((1..=1000).contains(&query.max_parts)); // see s3/api_server.rs
 
-	let obj_version = object
-		.versions()
-		.iter()
-		.find(|v| v.uuid == upload_id && v.is_uploading())
-		.ok_or(Error::NoSuchUpload)?;
-
-	let version = version.ok_or(Error::NoSuchKey)?;
-
-	// Cut the beginning of our 2 vectors if required
-	let (etags, blocks) = match &query.part_number_marker {
-		Some(marker) => {
-			let next = marker + 1;
-
-			let part_idx = into_ok_or_err(
-				version
-					.parts_etags
-					.items()
-					.binary_search_by(|(part_num, _)| part_num.cmp(&next)),
-			);
-			let parts = &version.parts_etags.items()[part_idx..];
-
-			let block_idx = into_ok_or_err(
-				version
-					.blocks
-					.items()
-					.binary_search_by(|(vkey, _)| vkey.part_number.cmp(&next)),
-			);
-			let blocks = &version.blocks.items()[block_idx..];
-
-			(parts, blocks)
-		}
-		None => (version.parts_etags.items(), version.blocks.items()),
-	};
-
-	// Use the block vector to compute a (part_number, size) vector
-	let mut size = Vec::<(u64, u64)>::new();
-	blocks.iter().for_each(|(key, val)| {
-		let mut new_size = val.size;
-		match size.pop() {
-			Some((part_number, size)) if part_number == key.part_number => new_size += size,
-			Some(v) => size.push(v),
-			None => (),
-		}
-		size.push((key.part_number, new_size))
-	});
-
-	// Merge the etag vector and size vector to build a PartInfo vector
-	let max_parts = query.max_parts as usize;
-	let (mut etag_iter, mut size_iter) = (etags.iter().peekable(), size.iter().peekable());
-
-	let mut info = Vec::<PartInfo>::with_capacity(max_parts);
-
-	while info.len() < max_parts {
-		match (etag_iter.peek(), size_iter.peek()) {
-			(Some((ep, etag)), Some((sp, size))) => match ep.cmp(sp) {
-				Ordering::Less => {
-					debug!("ETag information ignored due to missing corresponding block information. Query: {:?}", query);
-					etag_iter.next();
+	// Parse multipart upload part list, removing parts not yet finished
+	// and failed part uploads that were overwritten
+	let mut parts: Vec<PartInfo<'a>> = Vec::with_capacity(mpu.parts.items().len());
+	for (pk, p) in mpu.parts.items().iter() {
+		if let (Some(etag), Some(size)) = (&p.etag, p.size) {
+			let part_info = PartInfo {
+				part_number: pk.part_number,
+				timestamp: pk.timestamp,
+				etag,
+				size,
+				checksum: p.checksum,
+			};
+			match parts.last_mut() {
+				Some(lastpart) if lastpart.part_number == pk.part_number => {
+					*lastpart = part_info;
 				}
-				Ordering::Equal => {
-					info.push(PartInfo {
-						etag: etag.to_string(),
-						timestamp: obj_version.timestamp,
-						part_number: *ep,
-						size: *size,
-					});
-					etag_iter.next();
-					size_iter.next();
+				_ => {
+					parts.push(part_info);
 				}
-				Ordering::Greater => {
-					debug!("Block information ignored due to missing corresponding ETag information. Query: {:?}", query);
-					size_iter.next();
-				}
-			},
-			(None, None) => return Ok((info, None)),
-			_ => {
-				debug!(
-					"Additional block or ETag information ignored. Query: {:?}",
-					query
-				);
-				return Ok((info, None));
 			}
 		}
 	}
 
-	match info.last() {
-		Some(part_info) => {
-			let pagination = Some(part_info.part_number);
-			Ok((info, pagination))
-		}
-		None => Ok((info, None)),
+	// Cut the beginning if we have a marker
+	if let Some(marker) = &query.part_number_marker {
+		let next = marker + 1;
+		let part_idx = parts
+			.binary_search_by(|part| part.part_number.cmp(&next))
+			.unwrap_or_else(|x| x);
+		parts = parts.split_off(part_idx);
 	}
+
+	// Cut the end if we have too many parts
+	if parts.len() > query.max_parts as usize {
+		parts.truncate(query.max_parts as usize);
+		let pagination = Some(parts.last().unwrap().part_number);
+		return Ok((parts, pagination));
+	}
+
+	Ok((parts, None))
 }
 
 /*
@@ -570,8 +568,8 @@ fn fetch_part_info(
 /// This key can be the prefix in the base case, or intermediate
 /// points in the dataset if we are continuing a previous listing.
 impl ListObjectsQuery {
-	fn build_accumulator(&self) -> Accumulator<String, ObjectInfo> {
-		Accumulator::<String, ObjectInfo>::new(self.common.page_size)
+	fn build_accumulator(&self) -> ObjectAccumulator {
+		ObjectAccumulator::new(self.common.page_size)
 	}
 
 	fn begin(&self) -> Result<RangeBegin, Error> {
@@ -580,9 +578,10 @@ impl ListObjectsQuery {
 				// In V2 mode, the continuation token is defined as an opaque
 				// string in the spec, so we can do whatever we want with it.
 				// In our case, it is defined as either [ or ] (for include
+				// or exclude), followed by a base64-encoded string
 				// representing the key to start with.
-				(Some(token), _) => match &token[..1] {
-					"[" => Ok(RangeBegin::IncludingKey {
+				(Some(token), _) => match &token.get(..1) {
+					Some("[") => Ok(RangeBegin::IncludingKey {
 						key: String::from_utf8(
 							BASE64_STANDARD
 								.decode(token[1..].as_bytes())
@@ -590,7 +589,7 @@ impl ListObjectsQuery {
 						)?,
 						fallback_key: None,
 					}),
-					"]" => Ok(RangeBegin::AfterKey {
+					Some("]") => Ok(RangeBegin::AfterKey {
 						key: String::from_utf8(
 							BASE64_STANDARD
 								.decode(token[1..].as_bytes())
@@ -631,8 +630,8 @@ impl ListObjectsQuery {
 }
 
 impl ListMultipartUploadsQuery {
-	fn build_accumulator(&self) -> Accumulator<Uuid, UploadInfo> {
-		Accumulator::<Uuid, UploadInfo>::new(self.common.page_size)
+	fn build_accumulator(&self) -> UploadAccumulator {
+		UploadAccumulator::new(self.common.page_size)
 	}
 
 	fn begin(&self) -> Result<RangeBegin, Error> {
@@ -651,7 +650,7 @@ impl ListMultipartUploadsQuery {
 				}),
 				uuid => Ok(RangeBegin::AfterUpload {
 					key: key_marker.to_string(),
-					upload: s3_put::decode_upload_id(uuid)?,
+					upload: s3_multipart::decode_upload_id(uuid)?,
 				}),
 			},
 
@@ -716,6 +715,7 @@ impl<K: std::cmp::Ord, V> Accumulator<K, V> {
 			Some(p) => p,
 			None => return None,
 		};
+		assert!(pfx.starts_with(&query.prefix));
 
 		// Try to register this prefix
 		// If not possible, we can return early
@@ -726,8 +726,11 @@ impl<K: std::cmp::Ord, V> Accumulator<K, V> {
 		// We consume the whole common prefix from the iterator
 		let mut last_pfx_key = &object.key;
 		loop {
-			last_pfx_key = match objects.peek() {
-				Some(o) if o.key.starts_with(pfx) => &o.key,
+			match objects.peek() {
+				Some(o) if o.key.starts_with(pfx) => {
+					last_pfx_key = &o.key;
+					objects.next();
+				}
 				Some(_) => {
 					return Some(ExtractionResult::Extracted {
 						key: last_pfx_key.to_owned(),
@@ -743,8 +746,6 @@ impl<K: std::cmp::Ord, V> Accumulator<K, V> {
 					}
 				}
 			};
-
-			objects.next();
 		}
 	}
 
@@ -759,12 +760,11 @@ impl<K: std::cmp::Ord, V> Accumulator<K, V> {
 		}
 
 		// Otherwise, we need to check if we can add it
-		match self.is_full() {
-			true => false,
-			false => {
-				self.common_prefixes.insert(key);
-				true
-			}
+		if self.is_full() {
+			false
+		} else {
+			self.common_prefixes.insert(key);
+			true
 		}
 	}
 
@@ -772,12 +772,11 @@ impl<K: std::cmp::Ord, V> Accumulator<K, V> {
 		// It is impossible to add twice a key, this is an error
 		assert!(!self.keys.contains_key(&key));
 
-		match self.is_full() {
-			true => false,
-			false => {
-				self.keys.insert(key, value);
-				true
-			}
+		if self.is_full() {
+			false
+		} else {
+			self.keys.insert(key, value);
+			true
 		}
 	}
 }
@@ -794,6 +793,7 @@ impl ExtractAccumulator for ObjectAccumulator {
 		}
 
 		let object = objects.next().expect("This iterator can not be empty as it is checked earlier in the code. This is a logic bug, please report it.");
+		assert!(object.key.starts_with(&query.prefix));
 
 		let version = match object.versions().iter().find(|x| x.is_data()) {
 			Some(v) => v,
@@ -843,7 +843,7 @@ impl ExtractAccumulator for UploadAccumulator {
 		let mut uploads_for_key = object
 			.versions()
 			.iter()
-			.filter(|x| x.is_uploading())
+			.filter(|x| x.is_uploading(Some(true)))
 			.collect::<Vec<&ObjectVersion>>();
 
 		// S3 logic requires lexicographically sorted upload ids.
@@ -918,14 +918,6 @@ impl ExtractAccumulator for UploadAccumulator {
  * Utility functions
  */
 
-/// This is a stub for Result::into_ok_or_err that is not yet in Rust stable
-fn into_ok_or_err<T>(r: Result<T, T>) -> T {
-	match r {
-		Ok(r) => r,
-		Err(r) => r,
-	}
-}
-
 /// Returns the common prefix of the object given the query prefix and delimiter
 fn common_prefix<'a>(object: &'a Object, query: &ListQueryCommon) -> Option<&'a str> {
 	match &query.delimiter {
@@ -951,7 +943,6 @@ fn uriencode_maybe(s: &str, yes: bool) -> s3_xml::Value {
 #[cfg(test)]
 mod tests {
 	use super::*;
-	use garage_model::s3::version_table::*;
 	use garage_util::*;
 	use std::iter::FromIterator;
 
@@ -991,10 +982,16 @@ mod tests {
 		ObjectVersion {
 			uuid: Uuid::from(uuid),
 			timestamp: TS,
-			state: ObjectVersionState::Uploading(ObjectVersionHeaders {
-				content_type: "text/plain".to_string(),
-				other: BTreeMap::<String, String>::new(),
-			}),
+			state: ObjectVersionState::Uploading {
+				multipart: true,
+				encryption: ObjectVersionEncryption::Plaintext {
+					inner: ObjectVersionMetaInner {
+						headers: vec![],
+						checksum: None,
+					},
+				},
+				checksum_algorithm: None,
+			},
 		}
 	}
 
@@ -1169,172 +1166,180 @@ mod tests {
 		Ok(())
 	}
 
-	fn version() -> Version {
+	fn mpu() -> MultipartUpload {
 		let uuid = Uuid::from([0x08; 32]);
 
-		let blocks = vec![
+		let parts = vec![
 			(
-				VersionBlockKey {
+				MpuPartKey {
 					part_number: 1,
-					offset: 1,
+					timestamp: TS,
 				},
-				VersionBlock {
-					hash: uuid,
-					size: 3,
+				MpuPart {
+					version: uuid,
+					size: Some(3),
+					etag: Some("etag1".into()),
+					checksum: None,
 				},
 			),
 			(
-				VersionBlockKey {
-					part_number: 1,
-					offset: 2,
-				},
-				VersionBlock {
-					hash: uuid,
-					size: 2,
-				},
-			),
-			(
-				VersionBlockKey {
+				MpuPartKey {
 					part_number: 2,
-					offset: 1,
+					timestamp: TS,
 				},
-				VersionBlock {
-					hash: uuid,
-					size: 8,
+				MpuPart {
+					version: uuid,
+					size: None,
+					etag: None,
+					checksum: None,
 				},
 			),
 			(
-				VersionBlockKey {
+				MpuPartKey {
+					part_number: 3,
+					timestamp: TS,
+				},
+				MpuPart {
+					version: uuid,
+					size: Some(10),
+					etag: Some("etag2".into()),
+					checksum: None,
+				},
+			),
+			(
+				MpuPartKey {
 					part_number: 5,
-					offset: 1,
+					timestamp: TS,
 				},
-				VersionBlock {
-					hash: uuid,
-					size: 7,
+				MpuPart {
+					version: uuid,
+					size: Some(7),
+					etag: Some("etag3".into()),
+					checksum: None,
 				},
 			),
 			(
-				VersionBlockKey {
+				MpuPartKey {
 					part_number: 8,
-					offset: 1,
+					timestamp: TS,
 				},
-				VersionBlock {
-					hash: uuid,
-					size: 5,
+				MpuPart {
+					version: uuid,
+					size: Some(5),
+					etag: Some("etag4".into()),
+					checksum: None,
 				},
 			),
 		];
-		let etags = vec![
-			(1, "etag1".to_string()),
-			(3, "etag2".to_string()),
-			(5, "etag3".to_string()),
-			(8, "etag4".to_string()),
-			(9, "etag5".to_string()),
-		];
 
-		Version {
-			bucket_id: uuid,
-			key: "a".to_string(),
-			uuid,
+		MultipartUpload {
+			upload_id: uuid,
+			timestamp: TS,
 			deleted: false.into(),
-			blocks: crdt::Map::<VersionBlockKey, VersionBlock>::from_iter(blocks),
-			parts_etags: crdt::Map::<u64, String>::from_iter(etags),
+			parts: crdt::Map::<MpuPartKey, MpuPart>::from_iter(parts),
+			bucket_id: uuid,
+			key: "a".into(),
 		}
-	}
-
-	fn obj() -> Object {
-		Object::new(bucket(), "d".to_string(), vec![objup_version([0x08; 32])])
 	}
 
 	#[test]
 	fn test_fetch_part_info() -> Result<(), Error> {
-		let uuid = Uuid::from([0x08; 32]);
 		let mut query = ListPartsQuery {
 			bucket_name: "a".to_string(),
-			bucket_id: uuid,
 			key: "a".to_string(),
 			upload_id: "xx".to_string(),
 			part_number_marker: None,
 			max_parts: 2,
 		};
 
-		assert!(
-			fetch_part_info(&query, None, None, uuid).is_err(),
-			"No object and version should fail"
-		);
-		assert!(
-			fetch_part_info(&query, Some(obj()), None, uuid).is_err(),
-			"No version should faild"
-		);
-		assert!(
-			fetch_part_info(&query, None, Some(version()), uuid).is_err(),
-			"No object should fail"
-		);
+		let mpu = mpu();
 
 		// Start from the beginning but with limited size to trigger pagination
-		let (info, pagination) = fetch_part_info(&query, Some(obj()), Some(version()), uuid)?;
-		assert_eq!(pagination.unwrap(), 5);
+		let (info, pagination) = fetch_part_info(&query, &mpu)?;
+		assert_eq!(pagination.unwrap(), 3);
 		assert_eq!(
 			info,
 			vec![
 				PartInfo {
-					etag: "etag1".to_string(),
+					etag: "etag1",
 					timestamp: TS,
 					part_number: 1,
-					size: 5
+					size: 3,
+					checksum: None,
 				},
 				PartInfo {
-					etag: "etag3".to_string(),
+					etag: "etag2",
 					timestamp: TS,
-					part_number: 5,
-					size: 7
+					part_number: 3,
+					checksum: None,
+					size: 10
 				},
 			]
 		);
 
 		// Use previous pagination to make a new request
 		query.part_number_marker = Some(pagination.unwrap());
-		let (info, pagination) = fetch_part_info(&query, Some(obj()), Some(version()), uuid)?;
+		let (info, pagination) = fetch_part_info(&query, &mpu)?;
 		assert!(pagination.is_none());
 		assert_eq!(
 			info,
-			vec![PartInfo {
-				etag: "etag4".to_string(),
-				timestamp: TS,
-				part_number: 8,
-				size: 5
-			},]
+			vec![
+				PartInfo {
+					etag: "etag3",
+					timestamp: TS,
+					checksum: None,
+					part_number: 5,
+					size: 7
+				},
+				PartInfo {
+					etag: "etag4",
+					timestamp: TS,
+					checksum: None,
+					part_number: 8,
+					size: 5
+				},
+			]
 		);
 
 		// Trying to access a part that is way larger than registered ones
 		query.part_number_marker = Some(9999);
-		let (info, pagination) = fetch_part_info(&query, Some(obj()), Some(version()), uuid)?;
+		let (info, pagination) = fetch_part_info(&query, &mpu)?;
 		assert!(pagination.is_none());
 		assert_eq!(info, vec![]);
 
 		// Try without any limitation
 		query.max_parts = 1000;
 		query.part_number_marker = None;
-		let (info, pagination) = fetch_part_info(&query, Some(obj()), Some(version()), uuid)?;
+		let (info, pagination) = fetch_part_info(&query, &mpu)?;
 		assert!(pagination.is_none());
 		assert_eq!(
 			info,
 			vec![
 				PartInfo {
-					etag: "etag1".to_string(),
+					etag: "etag1",
 					timestamp: TS,
+					checksum: None,
 					part_number: 1,
-					size: 5
+					size: 3
 				},
 				PartInfo {
-					etag: "etag3".to_string(),
+					etag: "etag2",
 					timestamp: TS,
+					checksum: None,
+					part_number: 3,
+					size: 10
+				},
+				PartInfo {
+					etag: "etag3",
+					timestamp: TS,
+					checksum: None,
 					part_number: 5,
 					size: 7
 				},
 				PartInfo {
-					etag: "etag4".to_string(),
+					etag: "etag4",
 					timestamp: TS,
+					checksum: None,
 					part_number: 8,
 					size: 5
 				},

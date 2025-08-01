@@ -1,17 +1,15 @@
-use std::sync::Arc;
-
 use base64::prelude::*;
 use http::header;
 
-use hyper::{Body, Request, Response, StatusCode};
+use hyper::{Request, Response, StatusCode};
 
-use garage_util::data::*;
-
-use garage_model::garage::Garage;
 use garage_model::k2v::causality::*;
 use garage_model::k2v::item_table::*;
 
-use crate::k2v::error::*;
+use garage_api_common::helpers::*;
+
+use crate::api_server::{ReqBody, ResBody};
+use crate::error::*;
 
 pub const X_GARAGE_CAUSALITY_TOKEN: &str = "X-Garage-Causality-Token";
 
@@ -21,8 +19,12 @@ pub enum ReturnFormat {
 	Either,
 }
 
+pub(crate) fn parse_causality_token(s: &str) -> Result<CausalContext, Error> {
+	CausalContext::parse(s).ok_or(Error::InvalidCausalityToken)
+}
+
 impl ReturnFormat {
-	pub fn from(req: &Request<Body>) -> Result<Self, Error> {
+	pub fn from(req: &Request<ReqBody>) -> Result<Self, Error> {
 		let accept = match req.headers().get(header::ACCEPT) {
 			Some(a) => a.to_str()?,
 			None => return Ok(Self::Json),
@@ -40,7 +42,7 @@ impl ReturnFormat {
 		}
 	}
 
-	pub fn make_response(&self, item: &K2VItem) -> Result<Response<Body>, Error> {
+	pub fn make_response(&self, item: &K2VItem) -> Result<Response<ResBody>, Error> {
 		let vals = item.values();
 
 		if vals.is_empty() {
@@ -52,7 +54,7 @@ impl ReturnFormat {
 			Self::Binary if vals.len() > 1 => Ok(Response::builder()
 				.header(X_GARAGE_CAUSALITY_TOKEN, ct)
 				.status(StatusCode::CONFLICT)
-				.body(Body::empty())?),
+				.body(empty_body())?),
 			Self::Binary => {
 				assert!(vals.len() == 1);
 				Self::make_binary_response(ct, vals[0])
@@ -62,22 +64,22 @@ impl ReturnFormat {
 		}
 	}
 
-	fn make_binary_response(ct: String, v: &DvvsValue) -> Result<Response<Body>, Error> {
+	fn make_binary_response(ct: String, v: &DvvsValue) -> Result<Response<ResBody>, Error> {
 		match v {
 			DvvsValue::Deleted => Ok(Response::builder()
 				.header(X_GARAGE_CAUSALITY_TOKEN, ct)
 				.header(header::CONTENT_TYPE, "application/octet-stream")
 				.status(StatusCode::NO_CONTENT)
-				.body(Body::empty())?),
+				.body(empty_body())?),
 			DvvsValue::Value(v) => Ok(Response::builder()
 				.header(X_GARAGE_CAUSALITY_TOKEN, ct)
 				.header(header::CONTENT_TYPE, "application/octet-stream")
 				.status(StatusCode::OK)
-				.body(Body::from(v.to_vec()))?),
+				.body(bytes_body(v.to_vec().into()))?),
 		}
 	}
 
-	fn make_json_response(ct: String, v: &[&DvvsValue]) -> Result<Response<Body>, Error> {
+	fn make_json_response(ct: String, v: &[&DvvsValue]) -> Result<Response<ResBody>, Error> {
 		let items = v
 			.iter()
 			.map(|v| match v {
@@ -91,19 +93,22 @@ impl ReturnFormat {
 			.header(X_GARAGE_CAUSALITY_TOKEN, ct)
 			.header(header::CONTENT_TYPE, "application/json")
 			.status(StatusCode::OK)
-			.body(Body::from(json_body))?)
+			.body(string_body(json_body))?)
 	}
 }
 
 /// Handle ReadItem request
 #[allow(clippy::ptr_arg)]
 pub async fn handle_read_item(
-	garage: Arc<Garage>,
-	req: &Request<Body>,
-	bucket_id: Uuid,
+	ctx: ReqCtx,
+	req: &Request<ReqBody>,
 	partition_key: &str,
 	sort_key: &String,
-) -> Result<Response<Body>, Error> {
+) -> Result<Response<ResBody>, Error> {
+	let ReqCtx {
+		garage, bucket_id, ..
+	} = &ctx;
+
 	let format = ReturnFormat::from(req)?;
 
 	let item = garage
@@ -111,7 +116,7 @@ pub async fn handle_read_item(
 		.item_table
 		.get(
 			&K2VItemPartition {
-				bucket_id,
+				bucket_id: *bucket_id,
 				partition_key: partition_key.to_string(),
 			},
 			sort_key,
@@ -123,28 +128,31 @@ pub async fn handle_read_item(
 }
 
 pub async fn handle_insert_item(
-	garage: Arc<Garage>,
-	req: Request<Body>,
-	bucket_id: Uuid,
+	ctx: ReqCtx,
+	req: Request<ReqBody>,
 	partition_key: &str,
 	sort_key: &str,
-) -> Result<Response<Body>, Error> {
+) -> Result<Response<ResBody>, Error> {
+	let ReqCtx {
+		garage, bucket_id, ..
+	} = &ctx;
 	let causal_context = req
 		.headers()
 		.get(X_GARAGE_CAUSALITY_TOKEN)
 		.map(|s| s.to_str())
 		.transpose()?
-		.map(CausalContext::parse_helper)
+		.map(parse_causality_token)
 		.transpose()?;
 
-	let body = hyper::body::to_bytes(req.into_body()).await?;
+	let body = req.into_body().collect().await?;
+
 	let value = DvvsValue::Value(body.to_vec());
 
 	garage
 		.k2v
 		.rpc
 		.insert(
-			bucket_id,
+			*bucket_id,
 			partition_key.to_string(),
 			sort_key.to_string(),
 			causal_context,
@@ -154,22 +162,24 @@ pub async fn handle_insert_item(
 
 	Ok(Response::builder()
 		.status(StatusCode::NO_CONTENT)
-		.body(Body::empty())?)
+		.body(empty_body())?)
 }
 
 pub async fn handle_delete_item(
-	garage: Arc<Garage>,
-	req: Request<Body>,
-	bucket_id: Uuid,
+	ctx: ReqCtx,
+	req: Request<ReqBody>,
 	partition_key: &str,
 	sort_key: &str,
-) -> Result<Response<Body>, Error> {
+) -> Result<Response<ResBody>, Error> {
+	let ReqCtx {
+		garage, bucket_id, ..
+	} = &ctx;
 	let causal_context = req
 		.headers()
 		.get(X_GARAGE_CAUSALITY_TOKEN)
 		.map(|s| s.to_str())
 		.transpose()?
-		.map(CausalContext::parse_helper)
+		.map(parse_causality_token)
 		.transpose()?;
 
 	let value = DvvsValue::Deleted;
@@ -178,7 +188,7 @@ pub async fn handle_delete_item(
 		.k2v
 		.rpc
 		.insert(
-			bucket_id,
+			*bucket_id,
 			partition_key.to_string(),
 			sort_key.to_string(),
 			causal_context,
@@ -188,20 +198,22 @@ pub async fn handle_delete_item(
 
 	Ok(Response::builder()
 		.status(StatusCode::NO_CONTENT)
-		.body(Body::empty())?)
+		.body(empty_body())?)
 }
 
 /// Handle ReadItem request
 #[allow(clippy::ptr_arg)]
 pub async fn handle_poll_item(
-	garage: Arc<Garage>,
-	req: &Request<Body>,
-	bucket_id: Uuid,
+	ctx: ReqCtx,
+	req: &Request<ReqBody>,
 	partition_key: String,
 	sort_key: String,
 	causality_token: String,
 	timeout_secs: Option<u64>,
-) -> Result<Response<Body>, Error> {
+) -> Result<Response<ResBody>, Error> {
+	let ReqCtx {
+		garage, bucket_id, ..
+	} = &ctx;
 	let format = ReturnFormat::from(req)?;
 
 	let causal_context =
@@ -213,7 +225,7 @@ pub async fn handle_poll_item(
 		.k2v
 		.rpc
 		.poll_item(
-			bucket_id,
+			*bucket_id,
 			partition_key,
 			sort_key,
 			causal_context,
@@ -226,6 +238,6 @@ pub async fn handle_poll_item(
 	} else {
 		Ok(Response::builder()
 			.status(StatusCode::NOT_MODIFIED)
-			.body(Body::empty())?)
+			.body(empty_body())?)
 	}
 }

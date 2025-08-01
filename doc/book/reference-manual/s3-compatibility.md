@@ -23,7 +23,6 @@ Feel free to open a PR to suggest fixes this table. Minio is missing because the
 - 2022-05-25 - Many Ceph S3 endpoints are not documented but implemented. Following a notification from the Ceph community, we added them.
 
 
-
 ## High-level features
 
 | Feature                      | Garage                           | [Openstack Swift](https://docs.openstack.org/swift/latest/s3_compat.html) | [Ceph Object Gateway](https://docs.ceph.com/en/latest/radosgw/s3/) | [Riak CS](https://docs.riak.com/riak/cs/2.1.1/references/apis/storage/s3/index.html) | [OpenIO](https://docs.openio.io/latest/source/arch-design/s3_compliancy.html) |
@@ -33,6 +32,8 @@ Feel free to open a PR to suggest fixes this table. Minio is missing because the
 | [URL path-style](https://docs.aws.amazon.com/AmazonS3/latest/userguide/VirtualHosting.html#path-style-access) (eg. `host.tld/bucket/key`) |  ✅ Implemented | ✅ |  ✅ | ❓| ✅ |
 | [URL vhost-style](https://docs.aws.amazon.com/AmazonS3/latest/userguide/VirtualHosting.html#virtual-hosted-style-access) URL (eg. `bucket.host.tld/key`) |  ✅ Implemented | ❌| ✅| ✅ | ✅ |
 | [Presigned URLs](https://docs.aws.amazon.com/AmazonS3/latest/userguide/ShareObjectPreSignedURL.html) |  ✅ Implemented | ❌|  ✅ | ✅ |  ✅(❓) |
+| [SSE-C encryption](https://docs.aws.amazon.com/AmazonS3/latest/userguide/ServerSideEncryptionCustomerKeys.html) |  ✅ Implemented | ❓ |  ✅ | ❌ |  ✅ |
+| [Bucket versioning](https://docs.aws.amazon.com/AmazonS3/latest/userguide/Versioning.html) | ❌ Missing | ✅ |  ✅ | ❌ | ✅ |
 
 *Note:* OpenIO does not says if it supports presigned URLs. Because it is part
 of signature v4 and they claim they support it without additional precisions,
@@ -75,16 +76,13 @@ but these endpoints are documented in [Red Hat Ceph Storage - Chapter 2. Ceph Ob
 
 | Endpoint                     | Garage                           | [Openstack Swift](https://docs.openstack.org/swift/latest/s3_compat.html) | [Ceph Object Gateway](https://docs.ceph.com/en/latest/radosgw/s3/) | [Riak CS](https://docs.riak.com/riak/cs/2.1.1/references/apis/storage/s3/index.html) | [OpenIO](https://docs.openio.io/latest/source/arch-design/s3_compliancy.html) |
 |------------------------------|----------------------------------|-----------------|---------------|---------|-----|
-| [AbortMultipartUpload](https://docs.aws.amazon.com/AmazonS3/latest/API/API_AbortMultipartUpload.html)         | ✅ Implemented                      |  ✅ | ✅ | ✅ | ✅ |
-| [CompleteMultipartUpload](https://docs.aws.amazon.com/AmazonS3/latest/API/API_CompleteMultipartUpload.html)   | ✅ Implemented (see details below)                      | ✅ | ✅ | ✅ | ✅ |
-| [CreateMultipartUpload](https://docs.aws.amazon.com/AmazonS3/latest/API/API_CreateMultipartUpload.html)        | ✅ Implemented                      | ✅| ✅ | ✅ | ✅ |
-| [ListMultipartUpload](https://docs.aws.amazon.com/AmazonS3/latest/API/API_ListMultipartUpload.html)          | ✅ Implemented                      | ✅ | ✅ | ✅ | ✅ |
-| [ListParts](https://docs.aws.amazon.com/AmazonS3/latest/API/API_ListParts.html)                    | ✅ Implemented                      | ✅ | ✅ | ✅ | ✅ |
-| [UploadPart](https://docs.aws.amazon.com/AmazonS3/latest/API/API_UploadPart.html)                  | ✅ Implemented (see details below)                      | ✅ | ✅| ✅ | ✅ |
-| [UploadPartCopy](https://docs.aws.amazon.com/AmazonS3/latest/API/API_UploadPartCopy.html)               | ✅ Implemented                      | ✅ | ✅ | ✅ | ✅ |
-
-Our implementation of Multipart Upload is currently a bit more restrictive than Amazon's one in some edge cases.
-For more information, please refer to our [issue tracker](https://git.deuxfleurs.fr/Deuxfleurs/garage/issues/204).
+| [AbortMultipartUpload](https://docs.aws.amazon.com/AmazonS3/latest/API/API_AbortMultipartUpload.html)         | ✅ Implemented  |  ✅ | ✅ | ✅ | ✅ |
+| [CompleteMultipartUpload](https://docs.aws.amazon.com/AmazonS3/latest/API/API_CompleteMultipartUpload.html)   | ✅ Implemented  | ✅ | ✅ | ✅ | ✅ |
+| [CreateMultipartUpload](https://docs.aws.amazon.com/AmazonS3/latest/API/API_CreateMultipartUpload.html)        | ✅ Implemented | ✅| ✅ | ✅ | ✅ |
+| [ListMultipartUpload](https://docs.aws.amazon.com/AmazonS3/latest/API/API_ListMultipartUpload.html)          | ✅ Implemented   | ✅ | ✅ | ✅ | ✅ |
+| [ListParts](https://docs.aws.amazon.com/AmazonS3/latest/API/API_ListParts.html)                    | ✅ Implemented             | ✅ | ✅ | ✅ | ✅ |
+| [UploadPart](https://docs.aws.amazon.com/AmazonS3/latest/API/API_UploadPart.html)                  | ✅ Implemented             | ✅ | ✅| ✅ | ✅ |
+| [UploadPartCopy](https://docs.aws.amazon.com/AmazonS3/latest/API/API_UploadPartCopy.html)               | ✅ Implemented        | ✅ | ✅ | ✅ | ✅ |
 
 ### Website endpoints
 
@@ -127,15 +125,22 @@ If you need this feature, please [share your use case in our dedicated issue](ht
 
 | Endpoint                     | Garage                           | [Openstack Swift](https://docs.openstack.org/swift/latest/s3_compat.html) | [Ceph Object Gateway](https://docs.ceph.com/en/latest/radosgw/s3/) | [Riak CS](https://docs.riak.com/riak/cs/2.1.1/references/apis/storage/s3/index.html) | [OpenIO](https://docs.openio.io/latest/source/arch-design/s3_compliancy.html) |
 |------------------------------|----------------------------------|-----------------|---------------|---------|-----|
-| [DeleteBucketLifecycle](https://docs.aws.amazon.com/AmazonS3/latest/API/API_DeleteBucketLifecycle.html) | ❌ Missing | ❌| ✅| ❌| ✅|
-| [GetBucketLifecycleConfiguration](https://docs.aws.amazon.com/AmazonS3/latest/API/API_GetBucketLifecycleConfiguration.html) | ❌ Missing | ❌| ✅ | ❌| ✅|
-| [PutBucketLifecycleConfiguration](https://docs.aws.amazon.com/AmazonS3/latest/API/API_PutBucketLifecycleConfiguration.html) | ❌ Missing | ❌| ✅ | ❌| ✅|
+| [DeleteBucketLifecycle](https://docs.aws.amazon.com/AmazonS3/latest/API/API_DeleteBucketLifecycle.html) | ✅ Implemented | ❌| ✅| ❌| ✅|
+| [GetBucketLifecycleConfiguration](https://docs.aws.amazon.com/AmazonS3/latest/API/API_GetBucketLifecycleConfiguration.html) | ✅ Implemented | ❌| ✅ | ❌| ✅|
+| [PutBucketLifecycleConfiguration](https://docs.aws.amazon.com/AmazonS3/latest/API/API_PutBucketLifecycleConfiguration.html) | ⚠ Partially implemented (see below) | ❌| ✅ | ❌| ✅|
 | [GetBucketVersioning](https://docs.aws.amazon.com/AmazonS3/latest/API/API_GetBucketVersioning.html)          | ❌ Stub (see below)       | ✅| ✅ | ❌| ✅|
 | [ListObjectVersions](https://docs.aws.amazon.com/AmazonS3/latest/API/API_ListObjectVersions.html) | ❌ Missing | ❌| ✅ | ❌| ✅|
 | [PutBucketVersioning](https://docs.aws.amazon.com/AmazonS3/latest/API/API_PutBucketVersioning.html) | ❌ Missing | ❌| ✅| ❌| ✅|
 
+**PutBucketLifecycleConfiguration:** The only actions supported are
+`AbortIncompleteMultipartUpload` and `Expiration` (without the
+`ExpiredObjectDeleteMarker` field).  All other operations are dependent on
+either bucket versionning or storage classes which Garage currently does not
+implement. The deprecated `Prefix` member directly in the the `Rule`
+structure/XML tag is not supported, specified prefixes must be inside the
+`Filter` structure/XML tag.
 
-**GetBucketVersioning:** Stub implementation (Garage does not yet support versionning so this always returns "versionning not enabled").
+**GetBucketVersioning:** Stub implementation which always returns "versionning not enabled", since Garage does not yet support bucket versionning.
 
 ### Replication endpoints
 

@@ -10,7 +10,6 @@ use std::convert::TryInto;
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::{Duration, Instant};
 
-use async_trait::async_trait;
 use futures::stream::FuturesUnordered;
 use futures::StreamExt;
 use serde::{Deserialize, Serialize};
@@ -127,23 +126,21 @@ impl K2VRpcHandler {
 			.item_table
 			.data
 			.replication
-			.write_nodes(&partition.hash());
+			.storage_nodes(&partition.hash());
 		who.sort();
 
 		self.system
-			.rpc
+			.rpc_helper()
 			.try_call_many(
 				&self.endpoint,
-				&who[..],
+				&who,
 				K2VRpc::InsertItem(InsertedItem {
 					partition,
 					sort_key,
 					causal_context,
 					value,
 				}),
-				RequestStrategy::with_priority(PRIO_NORMAL)
-					.with_quorum(1)
-					.interrupt_after_quorum(true),
+				RequestStrategy::with_priority(PRIO_NORMAL).with_quorum(1),
 			)
 			.await?;
 
@@ -168,7 +165,7 @@ impl K2VRpcHandler {
 				.item_table
 				.data
 				.replication
-				.write_nodes(&partition.hash());
+				.storage_nodes(&partition.hash());
 			who.sort();
 
 			call_list.entry(who).or_default().push(InsertedItem {
@@ -187,14 +184,12 @@ impl K2VRpcHandler {
 		let call_futures = call_list.into_iter().map(|(nodes, items)| async move {
 			let resp = self
 				.system
-				.rpc
+				.rpc_helper()
 				.try_call_many(
 					&self.endpoint,
 					&nodes[..],
 					K2VRpc::InsertManyItems(items),
-					RequestStrategy::with_priority(PRIO_NORMAL)
-						.with_quorum(1)
-						.interrupt_after_quorum(true),
+					RequestStrategy::with_priority(PRIO_NORMAL).with_quorum(1),
 				)
 				.await?;
 			Ok::<_, Error>((nodes, resp))
@@ -227,11 +222,11 @@ impl K2VRpcHandler {
 			.item_table
 			.data
 			.replication
-			.write_nodes(&poll_key.partition.hash());
+			.storage_nodes(&poll_key.partition.hash());
 
-		let rpc = self.system.rpc.try_call_many(
+		let rpc = self.system.rpc_helper().try_call_many(
 			&self.endpoint,
-			&nodes[..],
+			&nodes,
 			K2VRpc::PollItem {
 				key: poll_key,
 				causal_context,
@@ -239,9 +234,10 @@ impl K2VRpcHandler {
 			},
 			RequestStrategy::with_priority(PRIO_NORMAL)
 				.with_quorum(self.item_table.data.replication.read_quorum())
+				.send_all_at_once(true)
 				.without_timeout(),
 		);
-		let timeout_duration = Duration::from_millis(timeout_msec) + self.system.rpc.rpc_timeout();
+		let timeout_duration = Duration::from_millis(timeout_msec);
 		let resps = select! {
 			r = rpc => r?,
 			_ = tokio::time::sleep(timeout_duration) => return Ok(None),
@@ -287,7 +283,7 @@ impl K2VRpcHandler {
 			.item_table
 			.data
 			.replication
-			.write_nodes(&range.partition.hash());
+			.storage_nodes(&range.partition.hash());
 		let quorum = self.item_table.data.replication.read_quorum();
 		let msg = K2VRpc::PollRange {
 			range,
@@ -296,11 +292,15 @@ impl K2VRpcHandler {
 		};
 
 		// Send the request to all nodes, use FuturesUnordered to get the responses in any order
-		let msg = msg.into_req().map_err(netapp::error::Error::from)?;
+		let msg = msg.into_req().map_err(garage_net::error::Error::from)?;
 		let rs = RequestStrategy::with_priority(PRIO_NORMAL).without_timeout();
 		let mut requests = nodes
 			.iter()
-			.map(|node| self.system.rpc.call(&self.endpoint, *node, msg.clone(), rs))
+			.map(|node| {
+				self.system
+					.rpc_helper()
+					.call(&self.endpoint, *node, msg.clone(), rs.clone())
+			})
 			.collect::<FuturesUnordered<_>>();
 
 		// Fetch responses. This procedure stops fetching responses when any of the following
@@ -309,15 +309,14 @@ impl K2VRpcHandler {
 		// - we have a response to a read quorum of requests (e.g. 2/3), and an extra delay
 		//   has passed since the quorum was achieved
 		// - a global RPC timeout expired
-		// The extra delay after a quorum was received is usefull if the third response was to
+		// The extra delay after a quorum was received is useful if the third response was to
 		// arrive during this short interval: this would allow us to consider all the data seen
 		// by that last node in the response we produce, and would likely help reduce the
 		// size of the seen marker that we will return (because we would have an info of the
 		// kind: all items produced by that node until time ts have been returned, so we can
 		// bump the entry in the global vector clock and possibly remove some item-specific
 		// vector clocks)
-		let mut deadline =
-			Instant::now() + Duration::from_millis(timeout_msec) + self.system.rpc.rpc_timeout();
+		let mut deadline = Instant::now() + Duration::from_millis(timeout_msec);
 		let mut resps = vec![];
 		let mut errors = vec![];
 		loop {
@@ -339,7 +338,7 @@ impl K2VRpcHandler {
 		}
 		if errors.len() > nodes.len() - quorum {
 			let errors = errors.iter().map(|e| format!("{}", e)).collect::<Vec<_>>();
-			return Err(Error::Quorum(quorum, resps.len(), nodes.len(), errors).into());
+			return Err(Error::Quorum(quorum, None, resps.len(), nodes.len(), errors).into());
 		}
 
 		// Take all returned items into account to produce the response.
@@ -500,7 +499,7 @@ impl K2VRpcHandler {
 		} else {
 			// If no seen marker was specified, we do not poll for anything.
 			// We return immediately with the set of known items (even if
-			// it is empty), which will give the client an inital view of
+			// it is empty), which will give the client an initial view of
 			// the dataset and an initial seen marker for further
 			// PollRange calls.
 			self.poll_range_read_range(range, &RangeSeenMarker::default())
@@ -537,7 +536,6 @@ impl K2VRpcHandler {
 	}
 }
 
-#[async_trait]
 impl EndpointHandler<K2VRpc> for K2VRpcHandler {
 	async fn handle(self: &Arc<Self>, message: &K2VRpc, _from: NodeID) -> Result<K2VRpc, Error> {
 		match message {

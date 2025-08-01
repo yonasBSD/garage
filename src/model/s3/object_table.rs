@@ -10,13 +10,14 @@ use garage_table::replication::TableShardedReplication;
 use garage_table::*;
 
 use crate::index_counter::*;
+use crate::s3::mpu_table::*;
 use crate::s3::version_table::*;
 
 pub const OBJECTS: &str = "objects";
 pub const UNFINISHED_UPLOADS: &str = "unfinished_uploads";
 pub const BYTES: &str = "bytes";
 
-mod v05 {
+mod v08 {
 	use garage_util::data::{Hash, Uuid};
 	use serde::{Deserialize, Serialize};
 	use std::collections::BTreeMap;
@@ -25,16 +26,16 @@ mod v05 {
 	#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
 	pub struct Object {
 		/// The bucket in which the object is stored, used as partition key
-		pub bucket: String,
+		pub bucket_id: Uuid,
 
 		/// The key at which the object is stored in its bucket, used as sorting key
 		pub key: String,
 
-		/// The list of currenty stored versions of the object
+		/// The list of currently stored versions of the object
 		pub(super) versions: Vec<ObjectVersion>,
 	}
 
-	/// Informations about a version of an object
+	/// Information about a version of an object
 	#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
 	pub struct ObjectVersion {
 		/// Id of the version
@@ -91,16 +92,13 @@ mod v05 {
 	impl garage_util::migrate::InitialFormat for Object {}
 }
 
-mod v08 {
+mod v09 {
 	use garage_util::data::Uuid;
 	use serde::{Deserialize, Serialize};
 
-	use super::v05;
+	use super::v08;
 
-	pub use v05::{
-		ObjectVersion, ObjectVersionData, ObjectVersionHeaders, ObjectVersionMeta,
-		ObjectVersionState,
-	};
+	pub use v08::{ObjectVersionData, ObjectVersionHeaders, ObjectVersionMeta};
 
 	/// An object
 	#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
@@ -111,26 +109,269 @@ mod v08 {
 		/// The key at which the object is stored in its bucket, used as sorting key
 		pub key: String,
 
-		/// The list of currenty stored versions of the object
+		/// The list of currently stored versions of the object
 		pub(super) versions: Vec<ObjectVersion>,
 	}
 
+	/// Information about a version of an object
+	#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+	pub struct ObjectVersion {
+		/// Id of the version
+		pub uuid: Uuid,
+		/// Timestamp of when the object was created
+		pub timestamp: u64,
+		/// State of the version
+		pub state: ObjectVersionState,
+	}
+
+	/// State of an object version
+	#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+	pub enum ObjectVersionState {
+		/// The version is being received
+		Uploading {
+			/// Indicates whether this is a multipart upload
+			multipart: bool,
+			/// Headers to be included in the final object
+			headers: ObjectVersionHeaders,
+		},
+		/// The version is fully received
+		Complete(ObjectVersionData),
+		/// The version uploaded containded errors or the upload was explicitly aborted
+		Aborted,
+	}
+
 	impl garage_util::migrate::Migrate for Object {
-		type Previous = v05::Object;
+		const VERSION_MARKER: &'static [u8] = b"G09s3o";
 
-		fn migrate(old: v05::Object) -> Object {
-			use garage_util::data::blake2sum;
+		type Previous = v08::Object;
 
+		fn migrate(old: v08::Object) -> Object {
+			let versions = old
+				.versions
+				.into_iter()
+				.map(|x| ObjectVersion {
+					uuid: x.uuid,
+					timestamp: x.timestamp,
+					state: match x.state {
+						v08::ObjectVersionState::Uploading(h) => ObjectVersionState::Uploading {
+							multipart: false,
+							headers: h,
+						},
+						v08::ObjectVersionState::Complete(d) => ObjectVersionState::Complete(d),
+						v08::ObjectVersionState::Aborted => ObjectVersionState::Aborted,
+					},
+				})
+				.collect();
 			Object {
-				bucket_id: blake2sum(old.bucket.as_bytes()),
+				bucket_id: old.bucket_id,
 				key: old.key,
-				versions: old.versions,
+				versions,
 			}
 		}
 	}
 }
 
-pub use v08::*;
+mod v010 {
+	use garage_util::data::{Hash, Uuid};
+	use serde::{Deserialize, Serialize};
+
+	use super::v09;
+
+	/// An object
+	#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+	pub struct Object {
+		/// The bucket in which the object is stored, used as partition key
+		pub bucket_id: Uuid,
+
+		/// The key at which the object is stored in its bucket, used as sorting key
+		pub key: String,
+
+		/// The list of currently stored versions of the object
+		pub(super) versions: Vec<ObjectVersion>,
+	}
+
+	/// Information about a version of an object
+	#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+	pub struct ObjectVersion {
+		/// Id of the version
+		pub uuid: Uuid,
+		/// Timestamp of when the object was created
+		pub timestamp: u64,
+		/// State of the version
+		pub state: ObjectVersionState,
+	}
+
+	/// State of an object version
+	#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+	pub enum ObjectVersionState {
+		/// The version is being received
+		Uploading {
+			/// Indicates whether this is a multipart upload
+			multipart: bool,
+			/// Checksum algorithm to use
+			checksum_algorithm: Option<ChecksumAlgorithm>,
+			/// Encryption params + headers to be included in the final object
+			encryption: ObjectVersionEncryption,
+		},
+		/// The version is fully received
+		Complete(ObjectVersionData),
+		/// The version uploaded containded errors or the upload was explicitly aborted
+		Aborted,
+	}
+
+	/// Data stored in object version
+	#[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug, Serialize, Deserialize)]
+	pub enum ObjectVersionData {
+		/// The object was deleted, this Version is a tombstone to mark it as such
+		DeleteMarker,
+		/// The object is short, it's stored inlined.
+		/// It is never compressed. For encrypted objects, it is encrypted using
+		/// AES256-GCM, like the encrypted headers.
+		Inline(ObjectVersionMeta, #[serde(with = "serde_bytes")] Vec<u8>),
+		/// The object is not short, Hash of first block is stored here, next segments hashes are
+		/// stored in the version table
+		FirstBlock(ObjectVersionMeta, Hash),
+	}
+
+	/// Metadata about the object version
+	#[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug, Serialize, Deserialize)]
+	pub struct ObjectVersionMeta {
+		/// Size of the object. If object is encrypted/compressed,
+		/// this is always the size of the unencrypted/uncompressed data
+		pub size: u64,
+		/// etag of the object
+		pub etag: String,
+		/// Encryption params + headers (encrypted or plaintext)
+		pub encryption: ObjectVersionEncryption,
+	}
+
+	/// Encryption information + metadata
+	#[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug, Serialize, Deserialize)]
+	pub enum ObjectVersionEncryption {
+		SseC {
+			/// Encrypted serialized ObjectVersionInner struct.
+			/// This is never compressed, just encrypted using AES256-GCM.
+			#[serde(with = "serde_bytes")]
+			inner: Vec<u8>,
+			/// Whether data blocks are compressed in addition to being encrypted
+			/// (compression happens before encryption, whereas for non-encrypted
+			/// objects, compression is handled at the level of the block manager)
+			compressed: bool,
+		},
+		Plaintext {
+			/// Plain-text headers
+			inner: ObjectVersionMetaInner,
+		},
+	}
+
+	/// Vector of headers, as tuples of the format (header name, header value)
+	#[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug, Serialize, Deserialize)]
+	pub struct ObjectVersionMetaInner {
+		pub headers: HeaderList,
+		pub checksum: Option<ChecksumValue>,
+	}
+
+	pub type HeaderList = Vec<(String, String)>;
+
+	#[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Copy, Debug, Serialize, Deserialize)]
+	pub enum ChecksumAlgorithm {
+		Crc32,
+		Crc32c,
+		Sha1,
+		Sha256,
+	}
+
+	/// Checksum value for x-amz-checksum-algorithm
+	#[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Copy, Debug, Serialize, Deserialize)]
+	pub enum ChecksumValue {
+		Crc32(#[serde(with = "serde_bytes")] [u8; 4]),
+		Crc32c(#[serde(with = "serde_bytes")] [u8; 4]),
+		Sha1(#[serde(with = "serde_bytes")] [u8; 20]),
+		Sha256(#[serde(with = "serde_bytes")] [u8; 32]),
+	}
+
+	impl garage_util::migrate::Migrate for Object {
+		const VERSION_MARKER: &'static [u8] = b"G010s3ob";
+
+		type Previous = v09::Object;
+
+		fn migrate(old: v09::Object) -> Object {
+			Object {
+				bucket_id: old.bucket_id,
+				key: old.key,
+				versions: old.versions.into_iter().map(migrate_version).collect(),
+			}
+		}
+	}
+
+	fn migrate_version(old: v09::ObjectVersion) -> ObjectVersion {
+		ObjectVersion {
+			uuid: old.uuid,
+			timestamp: old.timestamp,
+			state: match old.state {
+				v09::ObjectVersionState::Uploading { multipart, headers } => {
+					ObjectVersionState::Uploading {
+						multipart,
+						checksum_algorithm: None,
+						encryption: migrate_headers(headers),
+					}
+				}
+				v09::ObjectVersionState::Complete(d) => {
+					ObjectVersionState::Complete(migrate_data(d))
+				}
+				v09::ObjectVersionState::Aborted => ObjectVersionState::Aborted,
+			},
+		}
+	}
+
+	fn migrate_data(old: v09::ObjectVersionData) -> ObjectVersionData {
+		match old {
+			v09::ObjectVersionData::DeleteMarker => ObjectVersionData::DeleteMarker,
+			v09::ObjectVersionData::Inline(meta, data) => {
+				ObjectVersionData::Inline(migrate_meta(meta), data)
+			}
+			v09::ObjectVersionData::FirstBlock(meta, fb) => {
+				ObjectVersionData::FirstBlock(migrate_meta(meta), fb)
+			}
+		}
+	}
+
+	fn migrate_meta(old: v09::ObjectVersionMeta) -> ObjectVersionMeta {
+		ObjectVersionMeta {
+			size: old.size,
+			etag: old.etag,
+			encryption: migrate_headers(old.headers),
+		}
+	}
+
+	fn migrate_headers(old: v09::ObjectVersionHeaders) -> ObjectVersionEncryption {
+		use http::header::CONTENT_TYPE;
+
+		let mut new_headers = Vec::with_capacity(old.other.len() + 1);
+		if old.content_type != "blob" {
+			new_headers.push((CONTENT_TYPE.as_str().to_string(), old.content_type));
+		}
+		for (name, value) in old.other.into_iter() {
+			new_headers.push((name, value));
+		}
+
+		ObjectVersionEncryption::Plaintext {
+			inner: ObjectVersionMetaInner {
+				headers: new_headers,
+				checksum: None,
+			},
+		}
+	}
+
+	// Since ObjectVersionMetaInner can now be serialized independently, for the
+	// purpose of being encrypted, we need it to support migrations on its own
+	// as well.
+	impl garage_util::migrate::InitialFormat for ObjectVersionMetaInner {
+		const VERSION_MARKER: &'static [u8] = b"G010s3om";
+	}
+}
+
+pub use v010::*;
 
 impl Object {
 	/// Initialize an Object struct from parts
@@ -180,11 +421,11 @@ impl Crdt for ObjectVersionState {
 				Complete(a) => {
 					a.merge(b);
 				}
-				Uploading(_) => {
+				Uploading { .. } => {
 					*self = Complete(b.clone());
 				}
 			},
-			Uploading(_) => {}
+			Uploading { .. } => {}
 		}
 	}
 }
@@ -199,8 +440,17 @@ impl ObjectVersion {
 	}
 
 	/// Is the object version currently being uploaded
-	pub fn is_uploading(&self) -> bool {
-		matches!(self.state, ObjectVersionState::Uploading(_))
+	///
+	/// matches only multipart uploads if check_multipart is Some(true)
+	/// matches only non-multipart uploads if check_multipart is Some(false)
+	/// matches both if check_multipart is None
+	pub fn is_uploading(&self, check_multipart: Option<bool>) -> bool {
+		match &self.state {
+			ObjectVersionState::Uploading { multipart, .. } => {
+				check_multipart.map(|x| x == *multipart).unwrap_or(true)
+			}
+			_ => false,
+		}
 	}
 
 	/// Is the object version completely received
@@ -229,6 +479,17 @@ impl Entry<Uuid, String> for Object {
 		self.versions.len() == 1
 			&& self.versions[0].state
 				== ObjectVersionState::Complete(ObjectVersionData::DeleteMarker)
+	}
+}
+
+impl ChecksumValue {
+	pub fn algorithm(&self) -> ChecksumAlgorithm {
+		match self {
+			ChecksumValue::Crc32(_) => ChecksumAlgorithm::Crc32,
+			ChecksumValue::Crc32c(_) => ChecksumAlgorithm::Crc32c,
+			ChecksumValue::Sha1(_) => ChecksumAlgorithm::Sha1,
+			ChecksumValue::Sha256(_) => ChecksumAlgorithm::Sha256,
+		}
 	}
 }
 
@@ -267,13 +528,20 @@ impl Crdt for Object {
 
 pub struct ObjectTable {
 	pub version_table: Arc<Table<VersionTable, TableShardedReplication>>,
+	pub mpu_table: Arc<Table<MultipartUploadTable, TableShardedReplication>>,
 	pub object_counter_table: Arc<IndexCounter<Object>>,
 }
 
 #[derive(Clone, Copy, Debug, Serialize, Deserialize)]
 pub enum ObjectFilter {
+	/// Is the object version available (received and not a tombstone)
 	IsData,
-	IsUploading,
+	/// Is the object version currently being uploaded
+	///
+	/// matches only multipart uploads if check_multipart is Some(true)
+	/// matches only non-multipart uploads if check_multipart is Some(false)
+	/// matches both if check_multipart is None
+	IsUploading { check_multipart: Option<bool> },
 }
 
 impl TableSchema for ObjectTable {
@@ -301,27 +569,67 @@ impl TableSchema for ObjectTable {
 
 		// 2. Enqueue propagation deletions to version table
 		if let (Some(old_v), Some(new_v)) = (old, new) {
-			// Propagate deletion of old versions
 			for v in old_v.versions.iter() {
-				let newly_deleted = match new_v
+				let new_v_id = new_v
 					.versions
-					.binary_search_by(|nv| nv.cmp_key().cmp(&v.cmp_key()))
-				{
+					.binary_search_by(|nv| nv.cmp_key().cmp(&v.cmp_key()));
+
+				// Propagate deletion of old versions to the Version table
+				let delete_version = match new_v_id {
 					Err(_) => true,
 					Ok(i) => {
 						new_v.versions[i].state == ObjectVersionState::Aborted
 							&& v.state != ObjectVersionState::Aborted
 					}
 				};
-				if newly_deleted {
-					let deleted_version =
-						Version::new(v.uuid, old_v.bucket_id, old_v.key.clone(), true);
+				if delete_version {
+					let deleted_version = Version::new(
+						v.uuid,
+						VersionBacklink::Object {
+							bucket_id: old_v.bucket_id,
+							key: old_v.key.clone(),
+						},
+						true,
+					);
 					let res = self.version_table.queue_insert(tx, &deleted_version);
 					if let Err(e) = db::unabort(res)? {
 						error!(
 							"Unable to enqueue version deletion propagation: {}. A repair will be needed.",
 							e
 						);
+					}
+				}
+
+				// After abortion or completion of multipart uploads, delete MPU table entry
+				if matches!(
+					v.state,
+					ObjectVersionState::Uploading {
+						multipart: true,
+						..
+					}
+				) {
+					let delete_mpu = match new_v_id {
+						Err(_) => true,
+						Ok(i) => !matches!(
+							new_v.versions[i].state,
+							ObjectVersionState::Uploading { .. }
+						),
+					};
+					if delete_mpu {
+						let deleted_mpu = MultipartUpload::new(
+							v.uuid,
+							v.timestamp,
+							old_v.bucket_id,
+							old_v.key.clone(),
+							true,
+						);
+						let res = self.mpu_table.queue_insert(tx, &deleted_mpu);
+						if let Err(e) = db::unabort(res)? {
+							error!(
+								"Unable to enqueue multipart upload deletion propagation: {}. A repair will be needed.",
+								e
+							);
+						}
 					}
 				}
 			}
@@ -333,7 +641,10 @@ impl TableSchema for ObjectTable {
 	fn matches_filter(entry: &Self::E, filter: &Self::Filter) -> bool {
 		match filter {
 			ObjectFilter::IsData => entry.versions.iter().any(|v| v.is_data()),
-			ObjectFilter::IsUploading => entry.versions.iter().any(|v| v.is_uploading()),
+			ObjectFilter::IsUploading { check_multipart } => entry
+				.versions
+				.iter()
+				.any(|v| v.is_uploading(*check_multipart)),
 		}
 	}
 }
@@ -360,10 +671,7 @@ impl CountedItem for Object {
 		} else {
 			0
 		};
-		let n_unfinished_uploads = versions
-			.iter()
-			.filter(|v| matches!(v.state, ObjectVersionState::Uploading(_)))
-			.count();
+		let n_unfinished_uploads = versions.iter().filter(|v| v.is_uploading(None)).count();
 		let n_bytes = versions
 			.iter()
 			.map(|v| match &v.state {

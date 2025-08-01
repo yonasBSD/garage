@@ -3,9 +3,10 @@ use std::borrow::Cow;
 use hyper::header::HeaderValue;
 use hyper::{HeaderMap, Method, Request};
 
-use crate::helpers::Authorization;
-use crate::router_macros::{generateQueryParameters, router_match};
-use crate::s3::error::*;
+use garage_api_common::helpers::Authorization;
+use garage_api_common::router_macros::{generateQueryParameters, router_match};
+
+use crate::error::*;
 
 router_match! {@func
 
@@ -125,6 +126,12 @@ pub enum Endpoint {
 		key: String,
 		part_number: Option<u64>,
 		version_id: Option<String>,
+		response_cache_control: Option<String>,
+		response_content_disposition: Option<String>,
+		response_content_encoding: Option<String>,
+		response_content_language: Option<String>,
+		response_content_type: Option<String>,
+		response_expires: Option<String>,
 	},
 	GetObjectAcl {
 		key: String,
@@ -170,7 +177,7 @@ pub enum Endpoint {
 	},
 	ListBuckets,
 	ListMultipartUploads {
-		delimiter: Option<char>,
+		delimiter: Option<String>,
 		encoding_type: Option<String>,
 		key_marker: Option<String>,
 		max_uploads: Option<usize>,
@@ -178,7 +185,7 @@ pub enum Endpoint {
 		upload_id_marker: Option<String>,
 	},
 	ListObjects {
-		delimiter: Option<char>,
+		delimiter: Option<String>,
 		encoding_type: Option<String>,
 		marker: Option<String>,
 		max_keys: Option<usize>,
@@ -188,7 +195,7 @@ pub enum Endpoint {
 		// This value should always be 2. It is not checked when constructing the struct
 		list_type: String,
 		continuation_token: Option<String>,
-		delimiter: Option<char>,
+		delimiter: Option<String>,
 		encoding_type: Option<String>,
 		fetch_owner: Option<bool>,
 		max_keys: Option<usize>,
@@ -196,7 +203,7 @@ pub enum Endpoint {
 		start_after: Option<String>,
 	},
 	ListObjectVersions {
-		delimiter: Option<char>,
+		delimiter: Option<String>,
 		encoding_type: Option<String>,
 		key_marker: Option<String>,
 		max_keys: Option<u64>,
@@ -345,6 +352,18 @@ impl Endpoint {
 			_ => return Err(Error::bad_request("Unknown method")),
 		};
 
+		if let Some(x_id) = query.x_id.take() {
+			if x_id != res.name() {
+				// I think AWS ignores the x-id parameter.
+				// Let's make this at least be a warnin to help debugging.
+				warn!(
+					"x-id ({}) does not match parsed endpoint ({})",
+					x_id,
+					res.name()
+				);
+			}
+		}
+
 		if let Some(message) = query.nonempty_message() {
 			debug!("Unused query parameter: {}", message)
 		}
@@ -358,7 +377,14 @@ impl Endpoint {
 			(query.keyword.take().unwrap_or_default(), key, query, None),
 			key: [
 				EMPTY if upload_id => ListParts (query::upload_id, opt_parse::max_parts, opt_parse::part_number_marker),
-				EMPTY => GetObject (query_opt::version_id, opt_parse::part_number),
+				EMPTY => GetObject (query_opt::version_id,
+									opt_parse::part_number,
+									query_opt::response_cache_control,
+									query_opt::response_content_disposition,
+									query_opt::response_content_encoding,
+									query_opt::response_content_language,
+									query_opt::response_content_type,
+									query_opt::response_expires),
 				ACL => GetObjectAcl (query_opt::version_id),
 				LEGAL_HOLD => GetObjectLegalHold (query_opt::version_id),
 				RETENTION => GetObjectRetention (query_opt::version_id),
@@ -671,12 +697,19 @@ generateQueryParameters! {
 		"partNumber" => part_number,
 		"part-number-marker" => part_number_marker,
 		"prefix" => prefix,
+		"response-cache-control" => response_cache_control,
+		"response-content-disposition" => response_content_disposition,
+		"response-content-encoding" => response_content_encoding,
+		"response-content-language" => response_content_language,
+		"response-content-type" => response_content_type,
+		"response-expires" => response_expires,
 		"select-type" => select_type,
 		"start-after" => start_after,
 		"uploadId" => upload_id,
 		"upload-id-marker" => upload_id_marker,
 		"versionId" => version_id,
-		"version-id-marker" => version_id_marker
+		"version-id-marker" => version_id_marker,
+		"x-id" => x_id
 	]
 }
 

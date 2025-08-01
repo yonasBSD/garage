@@ -1,20 +1,24 @@
+use std::convert::TryFrom;
+
 use err_derive::Error;
 use hyper::header::HeaderValue;
-use hyper::{Body, HeaderMap, StatusCode};
+use hyper::{HeaderMap, StatusCode};
 
 pub use garage_model::helper::error::Error as HelperError;
 
-use crate::common_error::CommonError;
-pub use crate::common_error::{CommonErrorDerivative, OkOrBadRequest, OkOrInternalError};
-use crate::generic_server::ApiError;
-use crate::helpers::CustomApiErrorBody;
+use garage_api_common::common_error::{commonErrorDerivative, CommonError};
+pub use garage_api_common::common_error::{
+	CommonErrorDerivative, OkOrBadRequest, OkOrInternalError,
+};
+use garage_api_common::generic_server::ApiError;
+use garage_api_common::helpers::*;
 
 /// Errors of this crate
 #[derive(Debug, Error)]
 pub enum Error {
 	#[error(display = "{}", _0)]
 	/// Error from common error
-	Common(CommonError),
+	Common(#[error(source)] CommonError),
 
 	// Category: cannot process
 	/// The API access key does not exist
@@ -29,25 +33,17 @@ pub enum Error {
 	KeyAlreadyExists(String),
 }
 
-impl<T> From<T> for Error
-where
-	CommonError: From<T>,
-{
-	fn from(err: T) -> Self {
-		Error::Common(CommonError::from(err))
-	}
-}
+commonErrorDerivative!(Error);
 
-impl CommonErrorDerivative for Error {}
-
+/// FIXME: helper errors are transformed into their corresponding variants
+/// in the Error struct, but in many case a helper error should be considered
+/// an internal error.
 impl From<HelperError> for Error {
-	fn from(err: HelperError) -> Self {
-		match err {
-			HelperError::Internal(i) => Self::Common(CommonError::InternalError(i)),
-			HelperError::BadRequest(b) => Self::Common(CommonError::BadRequest(b)),
-			HelperError::InvalidBucketName(n) => Self::Common(CommonError::InvalidBucketName(n)),
-			HelperError::NoSuchBucket(n) => Self::Common(CommonError::NoSuchBucket(n)),
-			HelperError::NoSuchAccessKey(n) => Self::NoSuchAccessKey(n),
+	fn from(err: HelperError) -> Error {
+		match CommonError::try_from(err) {
+			Ok(ce) => Self::Common(ce),
+			Err(HelperError::NoSuchAccessKey(k)) => Self::NoSuchAccessKey(k),
+			Err(_) => unreachable!(),
 		}
 	}
 }
@@ -77,14 +73,14 @@ impl ApiError for Error {
 		header_map.append(header::CONTENT_TYPE, "application/json".parse().unwrap());
 	}
 
-	fn http_body(&self, garage_region: &str, path: &str) -> Body {
+	fn http_body(&self, garage_region: &str, path: &str) -> ErrorBody {
 		let error = CustomApiErrorBody {
 			code: self.code().to_string(),
 			message: format!("{}", self),
 			path: path.to_string(),
 			region: garage_region.to_string(),
 		};
-		Body::from(serde_json::to_string_pretty(&error).unwrap_or_else(|_| {
+		let error_str = serde_json::to_string_pretty(&error).unwrap_or_else(|_| {
 			r#"
 {
 	"code": "InternalError",
@@ -92,6 +88,7 @@ impl ApiError for Error {
 }
 			"#
 			.into()
-		}))
+		});
+		error_body(error_str)
 	}
 }

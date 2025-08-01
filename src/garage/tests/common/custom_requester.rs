@@ -1,15 +1,23 @@
 #![allow(dead_code)]
 
 use std::collections::HashMap;
-use std::convert::TryFrom;
+use std::convert::{TryFrom, TryInto};
 
 use chrono::{offset::Utc, DateTime};
 use hmac::{Hmac, Mac};
-use hyper::client::HttpConnector;
-use hyper::{Body, Client, Method, Request, Response, Uri};
+use http_body_util::BodyExt;
+use http_body_util::Full as FullBody;
+use hyper::header::{
+	HeaderMap, HeaderName, HeaderValue, AUTHORIZATION, CONTENT_ENCODING, CONTENT_LENGTH, HOST,
+};
+use hyper::{Method, Request, Response, Uri};
+use hyper_util::client::legacy::{connect::HttpConnector, Client};
+use hyper_util::rt::TokioExecutor;
 
 use super::garage::{Instance, Key};
-use garage_api::signature;
+use garage_api_common::signature;
+
+pub type Body = FullBody<hyper::body::Bytes>;
 
 /// You should ever only use this to send requests AWS sdk won't send,
 /// like to reproduce behavior of unusual implementations found to be
@@ -19,7 +27,7 @@ pub struct CustomRequester {
 	key: Key,
 	uri: Uri,
 	service: &'static str,
-	client: Client<HttpConnector>,
+	client: Client<HttpConnector, Body>,
 }
 
 impl CustomRequester {
@@ -28,7 +36,7 @@ impl CustomRequester {
 			key: key.clone(),
 			uri: instance.s3_uri(),
 			service: "s3",
-			client: Client::new(),
+			client: Client::builder(TokioExecutor::new()).build_http(),
 		}
 	}
 
@@ -37,7 +45,7 @@ impl CustomRequester {
 			key: key.clone(),
 			uri: instance.k2v_uri(),
 			service: "k2v",
-			client: Client::new(),
+			client: Client::builder(TokioExecutor::new()).build_http(),
 		}
 	}
 
@@ -55,6 +63,10 @@ impl CustomRequester {
 			body_signature: BodySignature::Classic,
 			vhost_style: false,
 		}
+	}
+
+	pub fn client(&self) -> &Client<HttpConnector, Body> {
+		&self.client
 	}
 }
 
@@ -139,9 +151,9 @@ impl<'a> RequestBuilder<'a> {
 		self
 	}
 
-	pub async fn send(&mut self) -> hyper::Result<Response<Body>> {
+	pub async fn send(&mut self) -> Result<Response<Body>, String> {
 		// TODO this is a bit incorrect in that path and query params should be url-encoded and
-		// aren't, but this is good enought for now.
+		// aren't, but this is good enough for now.
 
 		let query = query_param_to_string(&self.query_params);
 		let (host, path) = if self.vhost_style {
@@ -168,54 +180,123 @@ impl<'a> RequestBuilder<'a> {
 		.unwrap();
 		let streaming_signer = signer.clone();
 
-		let mut all_headers = self.signed_headers.clone();
+		let mut all_headers = self
+			.signed_headers
+			.iter()
+			.map(|(k, v)| {
+				(
+					HeaderName::try_from(k).expect("invalid header name"),
+					HeaderValue::try_from(v).expect("invalid header value"),
+				)
+			})
+			.collect::<HeaderMap>();
 
 		let date = now.format(signature::LONG_DATETIME).to_string();
-		all_headers.insert("x-amz-date".to_owned(), date);
-		all_headers.insert("host".to_owned(), host);
+		all_headers.insert(signature::X_AMZ_DATE, HeaderValue::from_str(&date).unwrap());
+		all_headers.insert(HOST, HeaderValue::from_str(&host).unwrap());
 
-		let body_sha = match self.body_signature {
+		let body_sha = match &self.body_signature {
 			BodySignature::Unsigned => "UNSIGNED-PAYLOAD".to_owned(),
 			BodySignature::Classic => hex::encode(garage_util::data::sha256sum(&self.body)),
-			BodySignature::Streaming(size) => {
-				all_headers.insert("content-encoding".to_owned(), "aws-chunked".to_owned());
+			BodySignature::Streaming { chunk_size } => {
 				all_headers.insert(
-					"x-amz-decoded-content-length".to_owned(),
-					self.body.len().to_string(),
+					CONTENT_ENCODING,
+					HeaderValue::from_str("aws-chunked").unwrap(),
 				);
-				// Get lenght of body by doing the conversion to a streaming body with an
+				all_headers.insert(
+					HeaderName::from_static("x-amz-decoded-content-length"),
+					HeaderValue::from_str(&self.body.len().to_string()).unwrap(),
+				);
+				// Get length of body by doing the conversion to a streaming body with an
 				// invalid signature (we don't know the seed) just to get its length. This
-				// is a pretty lazy and inefficient way to do it, but it's enought for test
+				// is a pretty lazy and inefficient way to do it, but it's enough for test
 				// code.
 				all_headers.insert(
-					"content-length".to_owned(),
-					to_streaming_body(&self.body, size, String::new(), signer.clone(), now, "")
-						.len()
-						.to_string(),
+					CONTENT_LENGTH,
+					to_streaming_body(
+						&self.body,
+						*chunk_size,
+						String::new(),
+						signer.clone(),
+						now,
+						"",
+					)
+					.len()
+					.to_string()
+					.try_into()
+					.unwrap(),
 				);
 
 				"STREAMING-AWS4-HMAC-SHA256-PAYLOAD".to_owned()
 			}
+			BodySignature::StreamingUnsignedTrailer {
+				chunk_size,
+				trailer_algorithm,
+				trailer_value,
+			} => {
+				all_headers.insert(
+					CONTENT_ENCODING,
+					HeaderValue::from_str("aws-chunked").unwrap(),
+				);
+				all_headers.insert(
+					HeaderName::from_static("x-amz-decoded-content-length"),
+					HeaderValue::from_str(&self.body.len().to_string()).unwrap(),
+				);
+				all_headers.insert(
+					HeaderName::from_static("x-amz-trailer"),
+					HeaderValue::from_str(&trailer_algorithm).unwrap(),
+				);
+
+				all_headers.insert(
+					CONTENT_LENGTH,
+					to_streaming_unsigned_trailer_body(
+						&self.body,
+						*chunk_size,
+						&trailer_algorithm,
+						&trailer_value,
+					)
+					.len()
+					.to_string()
+					.try_into()
+					.unwrap(),
+				);
+
+				"STREAMING-UNSIGNED-PAYLOAD-TRAILER".to_owned()
+			}
 		};
-		all_headers.insert("x-amz-content-sha256".to_owned(), body_sha.clone());
+		all_headers.insert(
+			signature::X_AMZ_CONTENT_SHA256,
+			HeaderValue::from_str(&body_sha).unwrap(),
+		);
 
-		let mut signed_headers = all_headers
+		let mut signed_headers = all_headers.keys().cloned().collect::<Vec<_>>();
+		signed_headers.sort_by(|h1, h2| h1.as_str().cmp(h2.as_str()));
+		let signed_headers_str = signed_headers
 			.iter()
-			.map(|(k, _)| k.as_ref())
-			.collect::<Vec<&str>>();
-		signed_headers.sort();
-		let signed_headers = signed_headers.join(";");
+			.map(ToString::to_string)
+			.collect::<Vec<_>>()
+			.join(";");
 
-		all_headers.extend(self.unsigned_headers.clone());
+		all_headers.extend(self.unsigned_headers.iter().map(|(k, v)| {
+			(
+				HeaderName::try_from(k).expect("invalid header name"),
+				HeaderValue::try_from(v).expect("invalid header value"),
+			)
+		}));
+
+		let uri = Uri::try_from(&uri).unwrap();
+		let query = signature::payload::parse_query_map(&uri).unwrap();
 
 		let canonical_request = signature::payload::canonical_request(
 			self.service,
 			&self.method,
-			&Uri::try_from(&uri).unwrap(),
+			uri.path(),
+			&query,
 			&all_headers,
 			&signed_headers,
 			&body_sha,
-		);
+		)
+		.unwrap();
 
 		let string_to_sign = signature::payload::string_to_sign(&now, &scope, &canonical_request);
 
@@ -223,33 +304,72 @@ impl<'a> RequestBuilder<'a> {
 		let signature = hex::encode(signer.finalize().into_bytes());
 		let authorization = format!(
 			"AWS4-HMAC-SHA256 Credential={}/{},SignedHeaders={},Signature={}",
-			self.requester.key.id, scope, signed_headers, signature
+			self.requester.key.id, scope, signed_headers_str, signature
 		);
-		all_headers.insert("authorization".to_owned(), authorization);
+		all_headers.insert(
+			AUTHORIZATION,
+			HeaderValue::from_str(&authorization).unwrap(),
+		);
 
 		let mut request = Request::builder();
-		for (k, v) in all_headers {
-			request = request.header(k, v);
-		}
+		*request.headers_mut().unwrap() = all_headers;
 
-		let body = if let BodySignature::Streaming(size) = self.body_signature {
-			to_streaming_body(&self.body, size, signature, streaming_signer, now, &scope)
-		} else {
-			self.body.clone()
+		let body = match &self.body_signature {
+			BodySignature::Streaming { chunk_size } => to_streaming_body(
+				&self.body,
+				*chunk_size,
+				signature,
+				streaming_signer,
+				now,
+				&scope,
+			),
+			BodySignature::StreamingUnsignedTrailer {
+				chunk_size,
+				trailer_algorithm,
+				trailer_value,
+			} => to_streaming_unsigned_trailer_body(
+				&self.body,
+				*chunk_size,
+				&trailer_algorithm,
+				&trailer_value,
+			),
+			_ => self.body.clone(),
 		};
 		let request = request
 			.uri(uri)
 			.method(self.method.clone())
 			.body(Body::from(body))
 			.unwrap();
-		self.requester.client.request(request).await
+
+		let result = self
+			.requester
+			.client
+			.request(request)
+			.await
+			.map_err(|err| format!("hyper client error: {}", err))?;
+
+		let (head, body) = result.into_parts();
+		let body = Body::new(
+			body.collect()
+				.await
+				.map_err(|err| format!("hyper client error in body.collect: {}", err))?
+				.to_bytes(),
+		);
+		Ok(Response::from_parts(head, body))
 	}
 }
 
 pub enum BodySignature {
 	Unsigned,
 	Classic,
-	Streaming(usize),
+	Streaming {
+		chunk_size: usize,
+	},
+	StreamingUnsignedTrailer {
+		chunk_size: usize,
+		trailer_algorithm: String,
+		trailer_value: String,
+	},
 }
 
 fn query_param_to_string(params: &HashMap<String, Option<String>>) -> String {
@@ -301,6 +421,29 @@ fn to_streaming_body(
 		res.extend_from_slice(chunk);
 		res.extend_from_slice(b"\r\n");
 	}
+
+	res
+}
+
+fn to_streaming_unsigned_trailer_body(
+	body: &[u8],
+	chunk_size: usize,
+	trailer_algorithm: &str,
+	trailer_value: &str,
+) -> Vec<u8> {
+	let mut res = Vec::with_capacity(body.len());
+	for chunk in body.chunks(chunk_size) {
+		let header = format!("{:x}\r\n", chunk.len());
+		res.extend_from_slice(header.as_bytes());
+		res.extend_from_slice(chunk);
+		res.extend_from_slice(b"\r\n");
+	}
+
+	res.extend_from_slice(b"0\r\n");
+	res.extend_from_slice(trailer_algorithm.as_bytes());
+	res.extend_from_slice(b":");
+	res.extend_from_slice(trailer_value.as_bytes());
+	res.extend_from_slice(b"\n\r\n\r\n");
 
 	res
 }

@@ -1,6 +1,6 @@
 [package]
 name = "garage_web"
-version = "0.8.2"
+version = "1.2.0"
 authors = ["Alex Auvolat <alex@adnab.me>", "Quentin Dufour <quentin@dufour.io>"]
 edition = "2018"
 license = "AGPL-3.0"
@@ -14,18 +14,20 @@ path = "lib.rs"
 # See more keys and their definitions at https://doc.rust-lang.org/cargo/reference/manifest.html
 
 [dependencies]
-garage_api.workspace = true
+garage_api_common.workspace = true
+garage_api_s3.workspace = true
 garage_model.workspace = true
 garage_util.workspace = true
 garage_table.workspace = true
 
-err-derive = "0.3"
-tracing = "0.1"
-percent-encoding = "2.1.0"
+err-derive.workspace = true
+tracing.workspace = true
+percent-encoding.workspace = true
 
-futures = "0.3"
+http.workspace = true
+http-body-util.workspace = true
+hyper.workspace = true
 
-http = "0.2"
-hyper = { version = "0.14", features = ["server", "http1", "runtime", "tcp", "stream"] }
+tokio.workspace = true
 
-opentelemetry = "0.17"
+opentelemetry.workspace = true

@@ -1,32 +1,35 @@
-use std::sync::Arc;
-
-use hyper::{Body, Response};
+use hyper::Response;
 use serde::Serialize;
 
-use garage_util::data::*;
-
-use garage_rpc::ring::Ring;
 use garage_table::util::*;
 
-use garage_model::garage::Garage;
 use garage_model::k2v::item_table::{BYTES, CONFLICTS, ENTRIES, VALUES};
 
-use crate::helpers::*;
-use crate::k2v::error::*;
-use crate::k2v::range::read_range;
+use garage_api_common::helpers::*;
+
+use crate::api_server::ResBody;
+use crate::error::*;
+use crate::range::read_range;
 
 pub async fn handle_read_index(
-	garage: Arc<Garage>,
-	bucket_id: Uuid,
+	ctx: ReqCtx,
 	prefix: Option<String>,
 	start: Option<String>,
 	end: Option<String>,
 	limit: Option<u64>,
 	reverse: Option<bool>,
-) -> Result<Response<Body>, Error> {
+) -> Result<Response<ResBody>, Error> {
+	let ReqCtx {
+		garage, bucket_id, ..
+	} = &ctx;
+
 	let reverse = reverse.unwrap_or(false);
 
-	let ring: Arc<Ring> = garage.system.ring.borrow().clone();
+	let node_id_vec = garage
+		.system
+		.cluster_layout()
+		.all_nongateway_nodes()
+		.to_vec();
 
 	let (partition_keys, more, next_start) = read_range(
 		&garage.k2v.counter_table.table,
@@ -35,7 +38,7 @@ pub async fn handle_read_index(
 		&start,
 		&end,
 		limit,
-		Some((DeletedFilter::NotDeleted, ring.layout.node_id_vec.clone())),
+		Some((DeletedFilter::NotDeleted, node_id_vec)),
 		EnumerationOrder::from_reverse(reverse),
 	)
 	.await?;
@@ -54,7 +57,7 @@ pub async fn handle_read_index(
 		partition_keys: partition_keys
 			.into_iter()
 			.map(|part| {
-				let vals = part.filtered_values(&ring);
+				let vals = part.filtered_values(&garage.system.cluster_layout());
 				ReadIndexResponseEntry {
 					pk: part.sk,
 					entries: *vals.get(&s_entries).unwrap_or(&0),
@@ -68,7 +71,7 @@ pub async fn handle_read_index(
 		next_start,
 	};
 
-	Ok(json_ok_response(&resp)?)
+	json_ok_response::<Error, _>(&resp)
 }
 
 #[derive(Serialize)]

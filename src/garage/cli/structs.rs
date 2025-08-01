@@ -3,6 +3,8 @@ use structopt::StructOpt;
 
 use garage_util::version::garage_version;
 
+use crate::cli::convert_db;
+
 #[derive(StructOpt, Debug)]
 pub enum Command {
 	/// Run Garage server
@@ -17,7 +19,7 @@ pub enum Command {
 	#[structopt(name = "node", version = garage_version())]
 	Node(NodeOperation),
 
-	/// Operations on the assignation of node roles in the cluster layout
+	/// Operations on the assignment of node roles in the cluster layout
 	#[structopt(name = "layout", version = garage_version())]
 	Layout(LayoutOperation),
 
@@ -28,11 +30,6 @@ pub enum Command {
 	/// Operations on S3 access keys
 	#[structopt(name = "key", version = garage_version())]
 	Key(KeyOperation),
-
-	/// Run migrations from previous Garage version
-	/// (DO NOT USE WITHOUT READING FULL DOCUMENTATION)
-	#[structopt(name = "migrate", version = garage_version())]
-	Migrate(MigrateOpt),
 
 	/// Start repair of node data on remote node
 	#[structopt(name = "repair", version = garage_version())]
@@ -51,14 +48,23 @@ pub enum Command {
 	#[structopt(name = "worker", version = garage_version())]
 	Worker(WorkerOperation),
 
-	/// Low-level debug operations on data blocks
+	/// Low-level node-local debug operations on data blocks
 	#[structopt(name = "block", version = garage_version())]
 	Block(BlockOperation),
+
+	/// Operations on the metadata db
+	#[structopt(name = "meta", version = garage_version())]
+	Meta(MetaOperation),
+
+	/// Convert metadata db between database engine formats
+	#[structopt(name = "convert-db", version = garage_version())]
+	ConvertDb(convert_db::ConvertDbOpt),
 }
 
 #[derive(StructOpt, Debug)]
 pub enum NodeOperation {
-	/// Print identifier (public key) of this Garage node
+	/// Print the full node ID (public key) of this Garage node, and its publicly reachable IP
+	/// address and port if they are specified in config file under `rpc_public_addr`
 	#[structopt(name = "id", version = garage_version())]
 	NodeId(NodeIdOpt),
 
@@ -76,8 +82,9 @@ pub struct NodeIdOpt {
 
 #[derive(StructOpt, Debug)]
 pub struct ConnectNodeOpt {
-	/// Node public key and address, in the format:
-	/// `<public key hexadecimal>@<ip or hostname>:<port>`
+	/// Full node ID (public key) and IP address and port, in the format:
+	/// `<full node ID>@<ip or hostname>:<port>`.
+	/// You can retrieve this information on the target node using `garage node id`.
 	pub(crate) node: String,
 }
 
@@ -91,6 +98,10 @@ pub enum LayoutOperation {
 	#[structopt(name = "remove", version = garage_version())]
 	Remove(RemoveRoleOpt),
 
+	/// Configure parameters value for the layout computation
+	#[structopt(name = "config", version = garage_version())]
+	Config(ConfigLayoutOpt),
+
 	/// Show roles currently assigned to nodes and changes staged for commit
 	#[structopt(name = "show", version = garage_version())]
 	Show,
@@ -102,6 +113,14 @@ pub enum LayoutOperation {
 	/// Revert staged changes to cluster layout
 	#[structopt(name = "revert", version = garage_version())]
 	Revert(RevertLayoutOpt),
+
+	/// View the history of layouts in the cluster
+	#[structopt(name = "history", version = garage_version())]
+	History,
+
+	/// Skip dead nodes when awaiting for a new layout version to be synchronized
+	#[structopt(name = "skip-dead-nodes", version = garage_version())]
+	SkipDeadNodes(SkipDeadNodesOpt),
 }
 
 #[derive(StructOpt, Debug)]
@@ -114,9 +133,9 @@ pub struct AssignRoleOpt {
 	#[structopt(short = "z", long = "zone")]
 	pub(crate) zone: Option<String>,
 
-	/// Capacity (in relative terms, use 1 to represent your smallest server)
+	/// Storage capacity, in bytes (supported suffixes: B, KB, MB, GB, TB, PB)
 	#[structopt(short = "c", long = "capacity")]
-	pub(crate) capacity: Option<u32>,
+	pub(crate) capacity: Option<bytesize::ByteSize>,
 
 	/// Gateway-only node
 	#[structopt(short = "g", long = "gateway")]
@@ -138,6 +157,13 @@ pub struct RemoveRoleOpt {
 }
 
 #[derive(StructOpt, Debug)]
+pub struct ConfigLayoutOpt {
+	/// Zone redundancy parameter ('none'/'max' or integer)
+	#[structopt(short = "r", long = "redundancy")]
+	pub(crate) redundancy: Option<String>,
+}
+
+#[derive(StructOpt, Debug)]
 pub struct ApplyLayoutOpt {
 	/// Version number of new configuration: this command will fail if
 	/// it is not exactly 1 + the previous configuration's version
@@ -147,9 +173,21 @@ pub struct ApplyLayoutOpt {
 
 #[derive(StructOpt, Debug)]
 pub struct RevertLayoutOpt {
-	/// Version number of old configuration to which to revert
+	/// The revert operation will not be ran unless this flag is added
+	#[structopt(long = "yes")]
+	pub(crate) yes: bool,
+}
+
+#[derive(StructOpt, Debug)]
+pub struct SkipDeadNodesOpt {
+	/// Version number of the layout to assume is currently up-to-date.
+	/// This will generally be the current layout version.
 	#[structopt(long = "version")]
-	pub(crate) version: Option<u64>,
+	pub(crate) version: u64,
+	/// Allow the skip even if a quorum of nodes could not be found for
+	/// the data among the remaining nodes
+	#[structopt(long = "allow-missing-data")]
+	pub(crate) allow_missing_data: bool,
 }
 
 #[derive(Serialize, Deserialize, StructOpt, Debug)]
@@ -317,11 +355,11 @@ pub enum KeyOperation {
 
 	/// Get key info
 	#[structopt(name = "info", version = garage_version())]
-	Info(KeyOpt),
+	Info(KeyInfoOpt),
 
 	/// Create new key
-	#[structopt(name = "new", version = garage_version())]
-	New(KeyNewOpt),
+	#[structopt(name = "create", version = garage_version())]
+	Create(KeyNewOpt),
 
 	/// Rename key
 	#[structopt(name = "rename", version = garage_version())]
@@ -345,15 +383,18 @@ pub enum KeyOperation {
 }
 
 #[derive(Serialize, Deserialize, StructOpt, Debug)]
-pub struct KeyOpt {
+pub struct KeyInfoOpt {
 	/// ID or name of the key
 	pub key_pattern: String,
+	/// Whether to display the secret key
+	#[structopt(long = "show-secret")]
+	pub show_secret: bool,
 }
 
 #[derive(Serialize, Deserialize, StructOpt, Debug)]
 pub struct KeyNewOpt {
 	/// Name of the key
-	#[structopt(long = "name", default_value = "Unnamed key")]
+	#[structopt(default_value = "Unnamed key")]
 	pub name: String,
 }
 
@@ -397,23 +438,10 @@ pub struct KeyImportOpt {
 	/// Key name
 	#[structopt(short = "n", default_value = "Imported key")]
 	pub name: String,
-}
 
-#[derive(Serialize, Deserialize, StructOpt, Debug, Clone)]
-pub struct MigrateOpt {
-	/// Confirm the launch of the migrate operation
+	/// Confirm key import
 	#[structopt(long = "yes")]
 	pub yes: bool,
-
-	#[structopt(subcommand)]
-	pub what: MigrateWhat,
-}
-
-#[derive(Serialize, Deserialize, StructOpt, Debug, Eq, PartialEq, Clone)]
-pub enum MigrateWhat {
-	/// Migrate buckets and permissions from v0.5.0
-	#[structopt(name = "buckets050", version = garage_version())]
-	Buckets050,
 }
 
 #[derive(Serialize, Deserialize, StructOpt, Debug, Clone)]
@@ -432,24 +460,36 @@ pub struct RepairOpt {
 
 #[derive(Serialize, Deserialize, StructOpt, Debug, Eq, PartialEq, Clone)]
 pub enum RepairWhat {
-	/// Only do a full sync of metadata tables
+	/// Do a full sync of metadata tables
 	#[structopt(name = "tables", version = garage_version())]
 	Tables,
-	/// Only repair (resync/rebalance) the set of stored blocks
+	/// Repair (resync/rebalance) the set of stored blocks in the cluster
 	#[structopt(name = "blocks", version = garage_version())]
 	Blocks,
-	/// Only redo the propagation of object deletions to the version table (slow)
+	/// Repropagate object deletions to the version table
 	#[structopt(name = "versions", version = garage_version())]
 	Versions,
-	/// Only redo the propagation of version deletions to the block ref table (extremely slow)
-	#[structopt(name = "block_refs", version = garage_version())]
+	/// Repropagate object deletions to the multipart upload table
+	#[structopt(name = "mpu", version = garage_version())]
+	MultipartUploads,
+	/// Repropagate version deletions to the block ref table
+	#[structopt(name = "block-refs", version = garage_version())]
 	BlockRefs,
-	/// Verify integrity of all blocks on disc (extremely slow, i/o intensive)
+	/// Recalculate block reference counters
+	#[structopt(name = "block-rc", version = garage_version())]
+	BlockRc,
+	/// Fix inconsistency in bucket aliases (WARNING: EXPERIMENTAL)
+	#[structopt(name = "aliases", version = garage_version())]
+	Aliases,
+	/// Verify integrity of all blocks on disc
 	#[structopt(name = "scrub", version = garage_version())]
 	Scrub {
 		#[structopt(subcommand)]
 		cmd: ScrubCmd,
 	},
+	/// Rebalance data blocks among HDDs on individual nodes
+	#[structopt(name = "rebalance", version = garage_version())]
+	Rebalance,
 }
 
 #[derive(Serialize, Deserialize, StructOpt, Debug, Eq, PartialEq, Clone)]
@@ -500,10 +540,6 @@ pub struct StatsOpt {
 	/// Gather statistics from all nodes
 	#[structopt(short = "a", long = "all-nodes")]
 	pub all_nodes: bool,
-
-	/// Gather detailed statistics (this can be long)
-	#[structopt(short = "d", long = "detailed")]
-	pub detailed: bool,
 
 	/// Don't show global cluster stats (internal use in RPC)
 	#[structopt(skip)]
@@ -583,5 +619,16 @@ pub enum BlockOperation {
 		/// Hashes of the block to purge
 		#[structopt(required = true)]
 		blocks: Vec<String>,
+	},
+}
+
+#[derive(Serialize, Deserialize, StructOpt, Debug, Eq, PartialEq, Clone, Copy)]
+pub enum MetaOperation {
+	/// Save a snapshot of the metadata db file
+	#[structopt(name = "snapshot", version = garage_version())]
+	Snapshot {
+		/// Run on all nodes instead of only local node
+		#[structopt(long = "all")]
+		all: bool,
 	},
 }

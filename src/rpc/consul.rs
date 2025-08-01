@@ -6,7 +6,7 @@ use std::net::{IpAddr, SocketAddr};
 use err_derive::Error;
 use serde::{Deserialize, Serialize};
 
-use netapp::NodeID;
+use garage_net::NodeID;
 
 use garage_util::config::ConsulDiscoveryAPI;
 use garage_util::config::ConsulDiscoveryConfig;
@@ -148,7 +148,7 @@ impl ConsulDiscovery {
 				ret.push((pubkey, SocketAddr::new(ip, ent.service_port)));
 			} else {
 				warn!(
-					"Could not process node spec from Consul: {:?} (invalid IP or public key)",
+					"Could not process node spec from Consul: {:?} (invalid IP address or node ID/pubkey)",
 					ent
 				);
 			}

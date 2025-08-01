@@ -13,7 +13,6 @@ mod kubernetes;
 
 pub mod layout;
 pub mod replication_mode;
-pub mod ring;
 pub mod system;
 
 pub mod rpc_helper;

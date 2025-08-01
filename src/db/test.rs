@@ -10,32 +10,39 @@ fn test_suite(db: Db) {
 	let vb: &[u8] = &b"plip"[..];
 	let vc: &[u8] = &b"plup"[..];
 
-	assert!(tree.insert(ka, va).unwrap().is_none());
-	assert_eq!(tree.get(ka).unwrap().unwrap(), va);
+	// ---- test simple insert/delete ----
 
-	let res = db.transaction::<_, (), _>(|mut tx| {
+	assert!(tree.insert(ka, va).is_ok());
+	assert_eq!(tree.get(ka).unwrap().unwrap(), va);
+	assert_eq!(tree.len().unwrap(), 1);
+
+	// ---- test transaction logic ----
+
+	let res = db.transaction::<_, (), _>(|tx| {
 		assert_eq!(tx.get(&tree, ka).unwrap().unwrap(), va);
 
-		assert_eq!(tx.insert(&tree, ka, vb).unwrap().unwrap(), va);
+		assert_eq!(tx.insert(&tree, ka, vb).unwrap(), ());
 
 		assert_eq!(tx.get(&tree, ka).unwrap().unwrap(), vb);
 
-		tx.commit(12)
+		Ok(12)
 	});
 	assert!(matches!(res, Ok(12)));
 	assert_eq!(tree.get(ka).unwrap().unwrap(), vb);
 
-	let res = db.transaction::<(), _, _>(|mut tx| {
+	let res = db.transaction::<(), _, _>(|tx| {
 		assert_eq!(tx.get(&tree, ka).unwrap().unwrap(), vb);
 
-		assert_eq!(tx.insert(&tree, ka, vc).unwrap().unwrap(), vb);
+		assert_eq!(tx.insert(&tree, ka, vc).unwrap(), ());
 
 		assert_eq!(tx.get(&tree, ka).unwrap().unwrap(), vc);
 
-		tx.abort(42)
+		Err(TxError::Abort(42))
 	});
 	assert!(matches!(res, Err(TxError::Abort(42))));
 	assert_eq!(tree.get(ka).unwrap().unwrap(), vb);
+
+	// ---- test iteration outside of transactions ----
 
 	let mut iter = tree.iter().unwrap();
 	let next = iter.next().unwrap().unwrap();
@@ -43,7 +50,7 @@ fn test_suite(db: Db) {
 	assert!(iter.next().is_none());
 	drop(iter);
 
-	assert!(tree.insert(kb, vc).unwrap().is_none());
+	assert!(tree.insert(kb, vc).is_ok());
 	assert_eq!(tree.get(kb).unwrap().unwrap(), vc);
 
 	let mut iter = tree.iter().unwrap();
@@ -73,6 +80,48 @@ fn test_suite(db: Db) {
 	assert_eq!((next.0.as_ref(), next.1.as_ref()), (ka, vb));
 	assert!(iter.next().is_none());
 	drop(iter);
+
+	// ---- test iteration within transactions ----
+
+	db.transaction::<_, (), _>(|tx| {
+		let mut iter = tx.iter(&tree).unwrap();
+		let next = iter.next().unwrap().unwrap();
+		assert_eq!((next.0.as_ref(), next.1.as_ref()), (ka, vb));
+		let next = iter.next().unwrap().unwrap();
+		assert_eq!((next.0.as_ref(), next.1.as_ref()), (kb, vc));
+		assert!(iter.next().is_none());
+		Ok(())
+	})
+	.unwrap();
+
+	db.transaction::<_, (), _>(|tx| {
+		let mut iter = tx.range(&tree, kint..).unwrap();
+		let next = iter.next().unwrap().unwrap();
+		assert_eq!((next.0.as_ref(), next.1.as_ref()), (kb, vc));
+		assert!(iter.next().is_none());
+		Ok(())
+	})
+	.unwrap();
+
+	db.transaction::<_, (), _>(|tx| {
+		let mut iter = tx.range_rev(&tree, ..kint).unwrap();
+		let next = iter.next().unwrap().unwrap();
+		assert_eq!((next.0.as_ref(), next.1.as_ref()), (ka, vb));
+		assert!(iter.next().is_none());
+		Ok(())
+	})
+	.unwrap();
+
+	db.transaction::<_, (), _>(|tx| {
+		let mut iter = tx.iter_rev(&tree).unwrap();
+		let next = iter.next().unwrap().unwrap();
+		assert_eq!((next.0.as_ref(), next.1.as_ref()), (kb, vc));
+		let next = iter.next().unwrap().unwrap();
+		assert_eq!((next.0.as_ref(), next.1.as_ref()), (ka, vb));
+		assert!(iter.next().is_none());
+		Ok(())
+	})
+	.unwrap();
 }
 
 #[test]
@@ -91,21 +140,11 @@ fn test_lmdb_db() {
 }
 
 #[test]
-#[cfg(feature = "sled")]
-fn test_sled_db() {
-	use crate::sled_adapter::SledDb;
-
-	let path = mktemp::Temp::new_dir().unwrap();
-	let db = SledDb::init(sled::open(path.to_path_buf()).unwrap());
-	test_suite(db);
-	drop(path);
-}
-
-#[test]
 #[cfg(feature = "sqlite")]
 fn test_sqlite_db() {
 	use crate::sqlite_adapter::SqliteDb;
 
-	let db = SqliteDb::init(rusqlite::Connection::open_in_memory().unwrap());
+	let manager = r2d2_sqlite::SqliteConnectionManager::memory();
+	let db = SqliteDb::new(manager, false).unwrap();
 	test_suite(db);
 }

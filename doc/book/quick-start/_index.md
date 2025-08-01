@@ -35,9 +35,19 @@ Place this binary somewhere in your `$PATH` so that you can invoke the `garage`
 command directly (for instance you can copy the binary in `/usr/local/bin`
 or in `~/.local/bin`).
 
+You may also check whether your distribution already includes a
+[binary package for Garage](@/documentation/cookbook/binary-packages.md).
+
 If a binary of the last version is not available for your architecture,
 or if you want a build customized for your system,
 you can [build Garage from source](@/documentation/cookbook/from-source.md).
+
+If none of these option work for you, you can also run Garage in a Docker
+container.  When using Docker, the commands used in this guide will not work
+anymore.  We recommend reading the tutorial on [configuring a
+multi-node cluster](@/documentation/cookbook/real-world.md) to learn about
+using Garage as a Docker container. For simplicity, a minimal command to launch
+Garage using Docker is provided in this quick start guide as well.
 
 
 ## Configuring and starting Garage
@@ -54,9 +64,9 @@ to generate unique and private secrets for security reasons:
 cat > garage.toml <<EOF
 metadata_dir = "/tmp/meta"
 data_dir = "/tmp/data"
-db_engine = "lmdb"
+db_engine = "sqlite"
 
-replication_mode = "none"
+replication_factor = 1
 
 rpc_bind_addr = "[::]:3901"
 rpc_public_addr = "127.0.0.1:3901"
@@ -76,14 +86,17 @@ index = "index.html"
 api_bind_addr = "[::]:3904"
 
 [admin]
-api_bind_addr = "0.0.0.0:3903"
+api_bind_addr = "[::]:3903"
 admin_token = "$(openssl rand -base64 32)"
+metrics_token = "$(openssl rand -base64 32)"
 EOF
 ```
 
-Now that your configuration file has been created, you can put
-it in the right place. By default, garage looks at **`/etc/garage.toml`.**
+See the [Configuration file format](https://garagehq.deuxfleurs.fr/documentation/reference-manual/configuration/)
+for complete options and values.
 
+Now that your configuration file has been created, you may save it to the directory of your choice.
+By default, Garage looks for **`/etc/garage.toml`.**
 You can also store it somewhere else, but you will have to specify `-c path/to/garage.toml`
 at each invocation of the `garage` binary (for example: `garage -c ./garage.toml server`, `garage -c ./garage.toml status`).
 
@@ -100,16 +113,39 @@ your data to be persisted properly.
 
 ### Launching the Garage server
 
-Use the following command to launch the Garage server with our configuration file:
+Use the following command to launch the Garage server:
 
 ```
-garage server
+garage -c path/to/garage.toml server
 ```
 
-You can tune Garage's verbosity as follows (from less verbose to more verbose):
+If you have placed the `garage.toml` file in `/etc` (its default location), you can simply run `garage server`.
 
+Alternatively, if you cannot or do not wish to run the Garage binary directly,
+you may use Docker to run Garage in a container using the following command:
+
+```bash
+docker run \
+  -d \
+  --name garaged \
+  -p 3900:3900 -p 3901:3901 -p 3902:3902 -p 3903:3903 \
+  -v /path/to/garage.toml:/etc/garage.toml \
+  -v /path/to/garage/meta:/var/lib/garage/meta \
+  -v /path/to/garage/data:/var/lib/garage/data \
+  dxflrs/garage:v1.2.0
 ```
-RUST_LOG=garage=info garage server
+
+Under Linux, you can substitute `--network host` for `-p 3900:3900 -p 3901:3901 -p 3902:3902 -p 3903:3903`
+
+#### Troubleshooting
+
+Ensure your configuration file, `metadata_dir` and `data_dir`  are readable by the user running the `garage` server or Docker.
+
+You can tune Garage's verbosity by setting the `RUST_LOG=` environment variable. \
+Available log levels are (from less verbose to more verbose): `error`, `warn`, `info` *(default)*, `debug` and `trace`.
+
+```bash
+RUST_LOG=garage=info garage server # default
 RUST_LOG=garage=debug garage server
 RUST_LOG=garage=trace garage server
 ```
@@ -123,7 +159,10 @@ Log level `debug` can help you check why your S3 API calls are not working.
 The `garage` utility is also used as a CLI tool to configure your Garage deployment.
 It uses values from the TOML configuration file to find the Garage daemon running on the
 local node, therefore if your configuration file is not at `/etc/garage.toml` you will
-again have to specify `-c path/to/garage.toml`.
+again have to specify `-c path/to/garage.toml` at each invocation.
+
+If you are running Garage in a Docker container, you can set `alias garage="docker exec -ti <container name> /garage"`
+to use the Garage binary inside your container.
 
 If the `garage` CLI is able to correctly detect the parameters of your local Garage node,
 the following command should be enough to show the status of your cluster:
@@ -137,30 +176,31 @@ This should show something like this:
 ```
 ==== HEALTHY NODES ====
 ID                 Hostname  Address         Tag                   Zone  Capacity
-563e1ac825ee3323…  linuxbox  127.0.0.1:3901  NO ROLE ASSIGNED
+563e1ac825ee3323   linuxbox  127.0.0.1:3901  NO ROLE ASSIGNED
 ```
 
 ## Creating a cluster layout
 
 Creating a cluster layout for a Garage deployment means informing Garage
-of the disk space available on each node of the cluster
-as well as the zone (e.g. datacenter) each machine is located in.
+of the disk space available on each node of the cluster, `-c`,
+as well as the name of the zone (e.g. datacenter), `-z`, each machine is located in.
 
-For our test deployment, we are using only one node. The way in which we configure
-it does not matter, you can simply write:
+For our test deployment, we are have only one node with zone named `dc1` and a
+capacity of `1G`, though the capacity is ignored for a single node deployment
+and can be changed later when adding new nodes.
 
 ```bash
-garage layout assign -z dc1 -c 1 <node_id>
+garage layout assign -z dc1 -c 1G <node_id>
 ```
 
 where `<node_id>` corresponds to the identifier of the node shown by `garage status` (first column).
 You can enter simply a prefix of that identifier.
-For instance here you could write just `garage layout assign -z dc1 -c 1 563e`.
+For instance here you could write just `garage layout assign -z dc1 -c 1G 563e`.
 
 The layout then has to be applied to the cluster, using:
 
 ```bash
-garage layout apply
+garage layout apply --version 1
 ```
 
 
@@ -206,7 +246,7 @@ one key can access multiple buckets, multiple keys can access one bucket.
 Create an API key using the following command:
 
 ```
-garage key new --name nextcloud-app-key
+garage key create nextcloud-app-key
 ```
 
 The output should look as follows:
@@ -245,7 +285,7 @@ garage bucket info nextcloud-bucket
 ```
 
 
-## Uploading and downlading from Garage
+## Uploading and downloading from Garage
 
 To download and upload files on garage, we can use a third-party tool named `awscli`.
 
@@ -266,11 +306,13 @@ named `~/.awsrc` with this content:
 export AWS_ACCESS_KEY_ID=xxxx      # put your Key ID here
 export AWS_SECRET_ACCESS_KEY=xxxx  # put your Secret key here
 export AWS_DEFAULT_REGION='garage'
-export AWS_ENDPOINT='http://localhost:3900'
+export AWS_ENDPOINT_URL='http://localhost:3900'
 
-function aws { command aws --endpoint-url $AWS_ENDPOINT $@ ; }
 aws --version
 ```
+
+Note you need to have at least `awscli` `>=1.29.0` or `>=2.13.0`, otherwise you
+need to specify `--endpoint-url` explicitly on each `awscli` invocation.
 
 Now, each time you want to use `awscli` on this target, run:
 
@@ -308,7 +350,7 @@ Check [our s3 compatibility list](@/documentation/reference-manual/s3-compatibil
 
 ### Other tools for interacting with Garage
 
-The following tools can also be used to send and recieve files from/to Garage:
+The following tools can also be used to send and receive files from/to Garage:
 
 - [minio-client](@/documentation/connect/cli.md#minio-client) 
 - [s3cmd](@/documentation/connect/cli.md#s3cmd) 

@@ -1,12 +1,11 @@
 use std::collections::HashMap;
-use std::net::SocketAddr;
 use std::sync::Arc;
 
-use async_trait::async_trait;
+use argon2::password_hash::PasswordHash;
 
-use futures::future::Future;
 use http::header::{ACCESS_CONTROL_ALLOW_METHODS, ACCESS_CONTROL_ALLOW_ORIGIN, ALLOW};
-use hyper::{Body, Request, Response, StatusCode};
+use hyper::{body::Incoming as IncomingBody, Request, Response, StatusCode};
+use tokio::sync::watch;
 
 use opentelemetry::trace::SpanRef;
 
@@ -18,14 +17,19 @@ use prometheus::{Encoder, TextEncoder};
 use garage_model::garage::Garage;
 use garage_rpc::system::ClusterHealthStatus;
 use garage_util::error::Error as GarageError;
+use garage_util::socket_address::UnixOrTCPSocketAddress;
 
-use crate::generic_server::*;
+use garage_api_common::generic_server::*;
+use garage_api_common::helpers::*;
 
-use crate::admin::bucket::*;
-use crate::admin::cluster::*;
-use crate::admin::error::*;
-use crate::admin::key::*;
-use crate::admin::router::{Authorization, Endpoint};
+use crate::bucket::*;
+use crate::cluster::*;
+use crate::error::*;
+use crate::key::*;
+use crate::router_v0;
+use crate::router_v1::{Authorization, Endpoint};
+
+pub type ResBody = BoxBody<Error>;
 
 pub struct AdminApiServer {
 	garage: Arc<Garage>,
@@ -41,14 +45,8 @@ impl AdminApiServer {
 		#[cfg(feature = "metrics")] exporter: PrometheusExporter,
 	) -> Self {
 		let cfg = &garage.config.admin;
-		let metrics_token = cfg
-			.metrics_token
-			.as_ref()
-			.map(|tok| format!("Bearer {}", tok));
-		let admin_token = cfg
-			.admin_token
-			.as_ref()
-			.map(|tok| format!("Bearer {}", tok));
+		let metrics_token = cfg.metrics_token.as_deref().map(hash_bearer_token);
+		let admin_token = cfg.admin_token.as_deref().map(hash_bearer_token);
 		Self {
 			garage,
 			#[cfg(feature = "metrics")]
@@ -60,28 +58,28 @@ impl AdminApiServer {
 
 	pub async fn run(
 		self,
-		bind_addr: SocketAddr,
-		shutdown_signal: impl Future<Output = ()>,
+		bind_addr: UnixOrTCPSocketAddress,
+		must_exit: watch::Receiver<bool>,
 	) -> Result<(), GarageError> {
 		let region = self.garage.config.s3_api.s3_region.clone();
 		ApiServer::new(region, self)
-			.run_server(bind_addr, shutdown_signal)
+			.run_server(bind_addr, Some(0o220), must_exit)
 			.await
 	}
 
-	fn handle_options(&self, _req: &Request<Body>) -> Result<Response<Body>, Error> {
+	fn handle_options(&self, _req: &Request<IncomingBody>) -> Result<Response<ResBody>, Error> {
 		Ok(Response::builder()
 			.status(StatusCode::NO_CONTENT)
 			.header(ALLOW, "OPTIONS, GET, POST")
 			.header(ACCESS_CONTROL_ALLOW_METHODS, "OPTIONS, GET, POST")
 			.header(ACCESS_CONTROL_ALLOW_ORIGIN, "*")
-			.body(Body::empty())?)
+			.body(empty_body())?)
 	}
 
-	async fn handle_check_website_enabled(
+	async fn handle_check_domain(
 		&self,
-		req: Request<Body>,
-	) -> Result<Response<Body>, Error> {
+		req: Request<IncomingBody>,
+	) -> Result<Response<ResBody>, Error> {
 		let query_params: HashMap<String, String> = req
 			.uri()
 			.query()
@@ -102,12 +100,56 @@ impl AdminApiServer {
 			.get("domain")
 			.ok_or_internal_error("Could not parse domain query string")?;
 
-		let bucket_id = self
+		if self.check_domain(domain).await? {
+			Ok(Response::builder()
+				.status(StatusCode::OK)
+				.body(string_body(format!(
+					"Domain '{domain}' is managed by Garage"
+				)))?)
+		} else {
+			Err(Error::bad_request(format!(
+				"Domain '{domain}' is not managed by Garage"
+			)))
+		}
+	}
+
+	async fn check_domain(&self, domain: &str) -> Result<bool, Error> {
+		// Resolve bucket from domain name, inferring if the website must be activated for the
+		// domain to be valid.
+		let (bucket_name, must_check_website) = if let Some(bname) = self
+			.garage
+			.config
+			.s3_api
+			.root_domain
+			.as_ref()
+			.and_then(|rd| host_to_bucket(domain, rd))
+		{
+			(bname.to_string(), false)
+		} else if let Some(bname) = self
+			.garage
+			.config
+			.s3_web
+			.as_ref()
+			.and_then(|sw| host_to_bucket(domain, sw.root_domain.as_str()))
+		{
+			(bname.to_string(), true)
+		} else {
+			(domain.to_string(), true)
+		};
+
+		let bucket_id = match self
 			.garage
 			.bucket_helper()
-			.resolve_global_bucket_name(domain)
+			.resolve_global_bucket_name(&bucket_name)
 			.await?
-			.ok_or(HelperError::NoSuchBucket(domain.to_string()))?;
+		{
+			Some(bucket_id) => bucket_id,
+			None => return Ok(false),
+		};
+
+		if !must_check_website {
+			return Ok(true);
+		}
 
 		let bucket = self
 			.garage
@@ -119,20 +161,12 @@ impl AdminApiServer {
 		let bucket_website_config = bucket_state.website_config.get();
 
 		match bucket_website_config {
-			Some(_v) => {
-				Ok(Response::builder()
-					.status(StatusCode::OK)
-					.body(Body::from(format!(
-						"Bucket '{domain}' is authorized for website hosting"
-					)))?)
-			}
-			None => Err(Error::bad_request(format!(
-				"Bucket '{domain}' is not authorized for website hosting"
-			))),
+			Some(_v) => Ok(true),
+			None => Ok(false),
 		}
 	}
 
-	fn handle_health(&self) -> Result<Response<Body>, Error> {
+	fn handle_health(&self) -> Result<Response<ResBody>, Error> {
 		let health = self.garage.system.health();
 
 		let (status, status_str) = match health.status {
@@ -147,17 +181,17 @@ impl AdminApiServer {
 			),
 		};
 		let status_str = format!(
-			"{}\nConsult the full health check API endpoint at /v0/health for more details\n",
+			"{}\nConsult the full health check API endpoint at /v1/health for more details\n",
 			status_str
 		);
 
 		Ok(Response::builder()
 			.status(status)
 			.header(http::header::CONTENT_TYPE, "text/plain")
-			.body(Body::from(status_str))?)
+			.body(string_body(status_str))?)
 	}
 
-	fn handle_metrics(&self) -> Result<Response<Body>, Error> {
+	fn handle_metrics(&self) -> Result<Response<ResBody>, Error> {
 		#[cfg(feature = "metrics")]
 		{
 			use opentelemetry::trace::Tracer;
@@ -177,7 +211,7 @@ impl AdminApiServer {
 			Ok(Response::builder()
 				.status(StatusCode::OK)
 				.header(http::header::CONTENT_TYPE, encoder.format_type())
-				.body(Body::from(buffer))?)
+				.body(bytes_body(buffer.into()))?)
 		}
 		#[cfg(not(feature = "metrics"))]
 		Err(Error::bad_request(
@@ -186,7 +220,6 @@ impl AdminApiServer {
 	}
 }
 
-#[async_trait]
 impl ApiHandler for AdminApiServer {
 	const API_NAME: &'static str = "admin";
 	const API_NAME_DISPLAY: &'static str = "Admin";
@@ -194,20 +227,25 @@ impl ApiHandler for AdminApiServer {
 	type Endpoint = Endpoint;
 	type Error = Error;
 
-	fn parse_endpoint(&self, req: &Request<Body>) -> Result<Endpoint, Error> {
-		Endpoint::from_request(req)
+	fn parse_endpoint(&self, req: &Request<IncomingBody>) -> Result<Endpoint, Error> {
+		if req.uri().path().starts_with("/v0/") {
+			let endpoint_v0 = router_v0::Endpoint::from_request(req)?;
+			Endpoint::from_v0(endpoint_v0)
+		} else {
+			Endpoint::from_request(req)
+		}
 	}
 
 	async fn handle(
 		&self,
-		req: Request<Body>,
+		req: Request<IncomingBody>,
 		endpoint: Endpoint,
-	) -> Result<Response<Body>, Error> {
-		let expected_auth_header =
+	) -> Result<Response<ResBody>, Error> {
+		let required_auth_hash =
 			match endpoint.authorization_type() {
 				Authorization::None => None,
-				Authorization::MetricsToken => self.metrics_token.as_ref(),
-				Authorization::AdminToken => match &self.admin_token {
+				Authorization::MetricsToken => self.metrics_token.as_deref(),
+				Authorization::AdminToken => match self.admin_token.as_deref() {
 					None => return Err(Error::forbidden(
 						"Admin token isn't configured, admin API access is disabled for security.",
 					)),
@@ -215,21 +253,18 @@ impl ApiHandler for AdminApiServer {
 				},
 			};
 
-		if let Some(h) = expected_auth_header {
+		if let Some(password_hash) = required_auth_hash {
 			match req.headers().get("Authorization") {
 				None => return Err(Error::forbidden("Authorization token must be provided")),
-				Some(v) => {
-					let authorized = v.to_str().map(|hv| hv.trim() == h).unwrap_or(false);
-					if !authorized {
-						return Err(Error::forbidden("Invalid authorization token provided"));
-					}
+				Some(authorization) => {
+					verify_bearer_token(&authorization, password_hash)?;
 				}
 			}
 		}
 
 		match endpoint {
 			Endpoint::Options => self.handle_options(&req),
-			Endpoint::CheckWebsiteEnabled => self.handle_check_website_enabled(req).await,
+			Endpoint::CheckDomain => self.handle_check_domain(req).await,
 			Endpoint::Health => self.handle_health(),
 			Endpoint::Metrics => self.handle_metrics(),
 			Endpoint::GetClusterStatus => handle_get_cluster_status(&self.garage).await,
@@ -239,11 +274,16 @@ impl ApiHandler for AdminApiServer {
 			Endpoint::GetClusterLayout => handle_get_cluster_layout(&self.garage).await,
 			Endpoint::UpdateClusterLayout => handle_update_cluster_layout(&self.garage, req).await,
 			Endpoint::ApplyClusterLayout => handle_apply_cluster_layout(&self.garage, req).await,
-			Endpoint::RevertClusterLayout => handle_revert_cluster_layout(&self.garage, req).await,
+			Endpoint::RevertClusterLayout => handle_revert_cluster_layout(&self.garage).await,
 			// Keys
 			Endpoint::ListKeys => handle_list_keys(&self.garage).await,
-			Endpoint::GetKeyInfo { id, search } => {
-				handle_get_key_info(&self.garage, id, search).await
+			Endpoint::GetKeyInfo {
+				id,
+				search,
+				show_secret_key,
+			} => {
+				let show_secret_key = show_secret_key.map(|x| x == "true").unwrap_or(false);
+				handle_get_key_info(&self.garage, id, search, show_secret_key).await
 			}
 			Endpoint::CreateKey => handle_create_key(&self.garage, req).await,
 			Endpoint::ImportKey => handle_import_key(&self.garage, req).await,
@@ -291,4 +331,36 @@ impl ApiEndpoint for Endpoint {
 	}
 
 	fn add_span_attributes(&self, _span: SpanRef<'_>) {}
+}
+
+fn hash_bearer_token(token: &str) -> String {
+	use argon2::{
+		password_hash::{rand_core::OsRng, PasswordHasher, SaltString},
+		Argon2,
+	};
+
+	let salt = SaltString::generate(&mut OsRng);
+	let argon2 = Argon2::default();
+	argon2
+		.hash_password(token.trim().as_bytes(), &salt)
+		.expect("could not hash API token")
+		.to_string()
+}
+
+fn verify_bearer_token(token: &hyper::http::HeaderValue, password_hash: &str) -> Result<(), Error> {
+	use argon2::{password_hash::PasswordVerifier, Argon2};
+
+	let parsed_hash = PasswordHash::new(&password_hash).unwrap();
+
+	token
+		.to_str()?
+		.strip_prefix("Bearer ")
+		.and_then(|token| {
+			Argon2::default()
+				.verify_password(token.trim().as_bytes(), &parsed_hash)
+				.ok()
+		})
+		.ok_or_else(|| Error::forbidden("Invalid authorization token"))?;
+
+	Ok(())
 }

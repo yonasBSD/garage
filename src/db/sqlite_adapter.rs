@@ -1,24 +1,34 @@
 use core::ops::Bound;
 
-use std::borrow::BorrowMut;
 use std::marker::PhantomPinned;
+use std::path::PathBuf;
 use std::pin::Pin;
 use std::ptr::NonNull;
-use std::sync::{Arc, Mutex, MutexGuard};
+use std::sync::{Arc, Mutex, RwLock};
 
-use rusqlite::{params, Connection, Rows, Statement, Transaction};
+use r2d2::Pool;
+use r2d2_sqlite::SqliteConnectionManager;
+use rusqlite::{params, Rows, Statement, Transaction};
 
 use crate::{
-	Db, Error, IDb, ITx, ITxFn, Result, TxError, TxFnResult, TxOpError, TxOpResult, TxResult,
-	TxValueIter, Value, ValueIter,
+	Db, Error, IDb, ITx, ITxFn, OnCommit, Result, TxError, TxFnResult, TxOpError, TxOpResult,
+	TxResult, TxValueIter, Value, ValueIter,
 };
 
 pub use rusqlite;
+
+type Connection = r2d2::PooledConnection<SqliteConnectionManager>;
 
 // --- err
 
 impl From<rusqlite::Error> for Error {
 	fn from(e: rusqlite::Error) -> Error {
+		Error(format!("Sqlite: {}", e).into())
+	}
+}
+
+impl From<r2d2::Error> for Error {
+	fn from(e: r2d2::Error) -> Error {
 		Error(format!("Sqlite: {}", e).into())
 	}
 }
@@ -31,35 +41,47 @@ impl From<rusqlite::Error> for TxOpError {
 
 // -- db
 
-pub struct SqliteDb(Mutex<SqliteDbInner>);
-
-struct SqliteDbInner {
-	db: Connection,
-	trees: Vec<String>,
+pub struct SqliteDb {
+	db: Pool<SqliteConnectionManager>,
+	trees: RwLock<Vec<Arc<str>>>,
+	// All operations that might write on the DB must take this lock first.
+	// This emulates LMDB's approach where a single writer can be
+	// active at once.
+	write_lock: Mutex<()>,
 }
 
 impl SqliteDb {
-	pub fn init(db: rusqlite::Connection) -> Db {
-		let s = Self(Mutex::new(SqliteDbInner {
-			db,
-			trees: Vec::new(),
-		}));
-		Db(Arc::new(s))
+	pub fn new(manager: SqliteConnectionManager, sync_mode: bool) -> Result<Db> {
+		let manager = manager.with_init(move |db| {
+			db.pragma_update(None, "journal_mode", "WAL")?;
+			if sync_mode {
+				db.pragma_update(None, "synchronous", "NORMAL")?;
+			} else {
+				db.pragma_update(None, "synchronous", "OFF")?;
+			}
+			Ok(())
+		});
+		let s = Self {
+			db: Pool::builder().build(manager)?,
+			trees: RwLock::new(vec![]),
+			write_lock: Mutex::new(()),
+		};
+		Ok(Db(Arc::new(s)))
 	}
 }
 
-impl SqliteDbInner {
-	fn get_tree(&self, i: usize) -> Result<&'_ str> {
+impl SqliteDb {
+	fn get_tree(&self, i: usize) -> Result<Arc<str>> {
 		self.trees
+			.read()
+			.unwrap()
 			.get(i)
-			.map(String::as_str)
+			.cloned()
 			.ok_or_else(|| Error("invalid tree id".into()))
 	}
 
-	fn internal_get(&self, tree: &str, key: &[u8]) -> Result<Option<Value>> {
-		let mut stmt = self
-			.db
-			.prepare(&format!("SELECT v FROM {} WHERE k = ?1", tree))?;
+	fn internal_get(&self, db: &Connection, tree: &str, key: &[u8]) -> Result<Option<Value>> {
+		let mut stmt = db.prepare(&format!("SELECT v FROM {} WHERE k = ?1", tree))?;
 		let mut res_iter = stmt.query([key])?;
 		match res_iter.next()? {
 			None => Ok(None),
@@ -75,13 +97,14 @@ impl IDb for SqliteDb {
 
 	fn open_tree(&self, name: &str) -> Result<usize> {
 		let name = format!("tree_{}", name.replace(':', "_COLON_"));
-		let mut this = self.0.lock().unwrap();
+		let mut trees = self.trees.write().unwrap();
 
-		if let Some(i) = this.trees.iter().position(|x| x == &name) {
+		if let Some(i) = trees.iter().position(|x| x.as_ref() == &name) {
 			Ok(i)
 		} else {
+			let db = self.db.get()?;
 			trace!("create table {}", name);
-			this.db.execute(
+			db.execute(
 				&format!(
 					"CREATE TABLE IF NOT EXISTS {} (
 						k BLOB PRIMARY KEY,
@@ -93,8 +116,8 @@ impl IDb for SqliteDb {
 			)?;
 			trace!("table created: {}, unlocking", name);
 
-			let i = this.trees.len();
-			this.trees.push(name.to_string());
+			let i = trees.len();
+			trees.push(name.to_string().into_boxed_str().into());
 			Ok(i)
 		}
 	}
@@ -102,11 +125,8 @@ impl IDb for SqliteDb {
 	fn list_trees(&self) -> Result<Vec<String>> {
 		let mut trees = vec![];
 
-		trace!("list_trees: lock db");
-		let this = self.0.lock().unwrap();
-		trace!("list_trees: lock acquired");
-
-		let mut stmt = this.db.prepare(
+		let db = self.db.get()?;
+		let mut stmt = db.prepare(
 			"SELECT name FROM sqlite_schema WHERE type = 'table' AND name LIKE 'tree_%'",
 		)?;
 		let mut rows = stmt.query([])?;
@@ -119,24 +139,32 @@ impl IDb for SqliteDb {
 		Ok(trees)
 	}
 
+	fn snapshot(&self, to: &PathBuf) -> Result<()> {
+		fn progress(p: rusqlite::backup::Progress) {
+			let percent = (p.pagecount - p.remaining) * 100 / p.pagecount;
+			info!("Sqlite snapshot progress: {}%", percent);
+		}
+		std::fs::create_dir_all(to)?;
+		let mut path = to.clone();
+		path.push("db.sqlite");
+		self.db
+			.get()?
+			.backup(rusqlite::DatabaseName::Main, path, Some(progress))?;
+		Ok(())
+	}
+
 	// ----
 
 	fn get(&self, tree: usize, key: &[u8]) -> Result<Option<Value>> {
-		trace!("get {}: lock db", tree);
-		let this = self.0.lock().unwrap();
-		trace!("get {}: lock acquired", tree);
-
-		let tree = this.get_tree(tree)?;
-		this.internal_get(tree, key)
+		let tree = self.get_tree(tree)?;
+		self.internal_get(&self.db.get()?, &tree, key)
 	}
 
 	fn len(&self, tree: usize) -> Result<usize> {
-		trace!("len {}: lock db", tree);
-		let this = self.0.lock().unwrap();
-		trace!("len {}: lock acquired", tree);
+		let tree = self.get_tree(tree)?;
+		let db = self.db.get()?;
 
-		let tree = this.get_tree(tree)?;
-		let mut stmt = this.db.prepare(&format!("SELECT COUNT(*) FROM {}", tree))?;
+		let mut stmt = db.prepare(&format!("SELECT COUNT(*) FROM {}", tree))?;
 		let mut res_iter = stmt.query([])?;
 		match res_iter.next()? {
 			None => Ok(0),
@@ -144,74 +172,56 @@ impl IDb for SqliteDb {
 		}
 	}
 
-	fn fast_len(&self, tree: usize) -> Result<Option<usize>> {
-		Ok(Some(self.len(tree)?))
-	}
+	fn insert(&self, tree: usize, key: &[u8], value: &[u8]) -> Result<()> {
+		let tree = self.get_tree(tree)?;
+		let db = self.db.get()?;
+		let lock = self.write_lock.lock();
 
-	fn insert(&self, tree: usize, key: &[u8], value: &[u8]) -> Result<Option<Value>> {
-		trace!("insert {}: lock db", tree);
-		let this = self.0.lock().unwrap();
-		trace!("insert {}: lock acquired", tree);
-
-		let tree = this.get_tree(tree)?;
-		let old_val = this.internal_get(tree, key)?;
+		let old_val = self.internal_get(&db, &tree, key)?;
 
 		let sql = match &old_val {
 			Some(_) => format!("UPDATE {} SET v = ?2 WHERE k = ?1", tree),
 			None => format!("INSERT INTO {} (k, v) VALUES (?1, ?2)", tree),
 		};
-		let n = this.db.execute(&sql, params![key, value])?;
+		let n = db.execute(&sql, params![key, value])?;
 		assert_eq!(n, 1);
 
-		Ok(old_val)
+		drop(lock);
+		Ok(())
 	}
 
-	fn remove(&self, tree: usize, key: &[u8]) -> Result<Option<Value>> {
-		trace!("remove {}: lock db", tree);
-		let this = self.0.lock().unwrap();
-		trace!("remove {}: lock acquired", tree);
+	fn remove(&self, tree: usize, key: &[u8]) -> Result<()> {
+		let tree = self.get_tree(tree)?;
+		let db = self.db.get()?;
+		let lock = self.write_lock.lock();
 
-		let tree = this.get_tree(tree)?;
-		let old_val = this.internal_get(tree, key)?;
+		db.execute(&format!("DELETE FROM {} WHERE k = ?1", tree), params![key])?;
 
-		if old_val.is_some() {
-			let n = this
-				.db
-				.execute(&format!("DELETE FROM {} WHERE k = ?1", tree), params![key])?;
-			assert_eq!(n, 1);
-		}
-
-		Ok(old_val)
+		drop(lock);
+		Ok(())
 	}
 
 	fn clear(&self, tree: usize) -> Result<()> {
-		trace!("clear {}: lock db", tree);
-		let this = self.0.lock().unwrap();
-		trace!("clear {}: lock acquired", tree);
+		let tree = self.get_tree(tree)?;
+		let db = self.db.get()?;
+		let lock = self.write_lock.lock();
 
-		let tree = this.get_tree(tree)?;
-		this.db.execute(&format!("DELETE FROM {}", tree), [])?;
+		db.execute(&format!("DELETE FROM {}", tree), [])?;
+
+		drop(lock);
 		Ok(())
 	}
 
 	fn iter(&self, tree: usize) -> Result<ValueIter<'_>> {
-		trace!("iter {}: lock db", tree);
-		let this = self.0.lock().unwrap();
-		trace!("iter {}: lock acquired", tree);
-
-		let tree = this.get_tree(tree)?;
+		let tree = self.get_tree(tree)?;
 		let sql = format!("SELECT k, v FROM {} ORDER BY k ASC", tree);
-		DbValueIterator::make(this, &sql, [])
+		DbValueIterator::make(self.db.get()?, &sql, [])
 	}
 
 	fn iter_rev(&self, tree: usize) -> Result<ValueIter<'_>> {
-		trace!("iter_rev {}: lock db", tree);
-		let this = self.0.lock().unwrap();
-		trace!("iter_rev {}: lock acquired", tree);
-
-		let tree = this.get_tree(tree)?;
+		let tree = self.get_tree(tree)?;
 		let sql = format!("SELECT k, v FROM {} ORDER BY k DESC", tree);
-		DbValueIterator::make(this, &sql, [])
+		DbValueIterator::make(self.db.get()?, &sql, [])
 	}
 
 	fn range<'r>(
@@ -220,11 +230,7 @@ impl IDb for SqliteDb {
 		low: Bound<&'r [u8]>,
 		high: Bound<&'r [u8]>,
 	) -> Result<ValueIter<'_>> {
-		trace!("range {}: lock db", tree);
-		let this = self.0.lock().unwrap();
-		trace!("range {}: lock acquired", tree);
-
-		let tree = this.get_tree(tree)?;
+		let tree = self.get_tree(tree)?;
 
 		let (bounds_sql, params) = bounds_sql(low, high);
 		let sql = format!("SELECT k, v FROM {} {} ORDER BY k ASC", tree, bounds_sql);
@@ -234,7 +240,7 @@ impl IDb for SqliteDb {
 			.map(|x| x as &dyn rusqlite::ToSql)
 			.collect::<Vec<_>>();
 
-		DbValueIterator::make::<&[&dyn rusqlite::ToSql]>(this, &sql, params.as_ref())
+		DbValueIterator::make::<&[&dyn rusqlite::ToSql]>(self.db.get()?, &sql, params.as_ref())
 	}
 	fn range_rev<'r>(
 		&self,
@@ -242,11 +248,7 @@ impl IDb for SqliteDb {
 		low: Bound<&'r [u8]>,
 		high: Bound<&'r [u8]>,
 	) -> Result<ValueIter<'_>> {
-		trace!("range_rev {}: lock db", tree);
-		let this = self.0.lock().unwrap();
-		trace!("range_rev {}: lock acquired", tree);
-
-		let tree = this.get_tree(tree)?;
+		let tree = self.get_tree(tree)?;
 
 		let (bounds_sql, params) = bounds_sql(low, high);
 		let sql = format!("SELECT k, v FROM {} {} ORDER BY k DESC", tree, bounds_sql);
@@ -256,30 +258,25 @@ impl IDb for SqliteDb {
 			.map(|x| x as &dyn rusqlite::ToSql)
 			.collect::<Vec<_>>();
 
-		DbValueIterator::make::<&[&dyn rusqlite::ToSql]>(this, &sql, params.as_ref())
+		DbValueIterator::make::<&[&dyn rusqlite::ToSql]>(self.db.get()?, &sql, params.as_ref())
 	}
 
 	// ----
 
-	fn transaction(&self, f: &dyn ITxFn) -> TxResult<(), ()> {
-		trace!("transaction: lock db");
-		let mut this = self.0.lock().unwrap();
-		trace!("transaction: lock acquired");
+	fn transaction(&self, f: &dyn ITxFn) -> TxResult<OnCommit, ()> {
+		let mut db = self.db.get().map_err(Error::from).map_err(TxError::Db)?;
+		let trees = self.trees.read().unwrap();
+		let lock = self.write_lock.lock();
 
-		let this_mut_ref: &mut SqliteDbInner = this.borrow_mut();
-
+		trace!("trying transaction");
 		let mut tx = SqliteTx {
-			tx: this_mut_ref
-				.db
-				.transaction()
-				.map_err(Error::from)
-				.map_err(TxError::Db)?,
-			trees: &this_mut_ref.trees,
+			tx: db.transaction().map_err(Error::from).map_err(TxError::Db)?,
+			trees: &trees,
 		};
 		let res = match f.try_on(&mut tx) {
-			TxFnResult::Ok => {
+			TxFnResult::Ok(on_commit) => {
 				tx.tx.commit().map_err(Error::from).map_err(TxError::Db)?;
-				Ok(())
+				Ok(on_commit)
 			}
 			TxFnResult::Abort => {
 				tx.tx.rollback().map_err(Error::from).map_err(TxError::Db)?;
@@ -294,7 +291,8 @@ impl IDb for SqliteDb {
 		};
 
 		trace!("transaction done");
-		res
+		drop(lock);
+		return res;
 	}
 }
 
@@ -302,14 +300,14 @@ impl IDb for SqliteDb {
 
 struct SqliteTx<'a> {
 	tx: Transaction<'a>,
-	trees: &'a [String],
+	trees: &'a [Arc<str>],
 }
 
 impl<'a> SqliteTx<'a> {
 	fn get_tree(&self, i: usize) -> TxOpResult<&'_ str> {
-		self.trees.get(i).map(String::as_ref).ok_or_else(|| {
+		self.trees.get(i).map(Arc::as_ref).ok_or_else(|| {
 			TxOpError(Error(
-				"invalid tree id (it might have been openned after the transaction started)".into(),
+				"invalid tree id (it might have been opened after the transaction started)".into(),
 			))
 		})
 	}
@@ -341,73 +339,86 @@ impl<'a> ITx for SqliteTx<'a> {
 		}
 	}
 
-	fn insert(&mut self, tree: usize, key: &[u8], value: &[u8]) -> TxOpResult<Option<Value>> {
+	fn insert(&mut self, tree: usize, key: &[u8], value: &[u8]) -> TxOpResult<()> {
 		let tree = self.get_tree(tree)?;
-		let old_val = self.internal_get(tree, key)?;
-
-		let sql = match &old_val {
-			Some(_) => format!("UPDATE {} SET v = ?2 WHERE k = ?1", tree),
-			None => format!("INSERT INTO {} (k, v) VALUES (?1, ?2)", tree),
-		};
-		let n = self.tx.execute(&sql, params![key, value])?;
-		assert_eq!(n, 1);
-
-		Ok(old_val)
+		let sql = format!("INSERT OR REPLACE INTO {} (k, v) VALUES (?1, ?2)", tree);
+		self.tx.execute(&sql, params![key, value])?;
+		Ok(())
 	}
-	fn remove(&mut self, tree: usize, key: &[u8]) -> TxOpResult<Option<Value>> {
+	fn remove(&mut self, tree: usize, key: &[u8]) -> TxOpResult<()> {
 		let tree = self.get_tree(tree)?;
-		let old_val = self.internal_get(tree, key)?;
-
-		if old_val.is_some() {
-			let n = self
-				.tx
-				.execute(&format!("DELETE FROM {} WHERE k = ?1", tree), params![key])?;
-			assert_eq!(n, 1);
-		}
-
-		Ok(old_val)
+		self.tx
+			.execute(&format!("DELETE FROM {} WHERE k = ?1", tree), params![key])?;
+		Ok(())
+	}
+	fn clear(&mut self, tree: usize) -> TxOpResult<()> {
+		let tree = self.get_tree(tree)?;
+		self.tx.execute(&format!("DELETE FROM {}", tree), [])?;
+		Ok(())
 	}
 
-	fn iter(&self, _tree: usize) -> TxOpResult<TxValueIter<'_>> {
-		unimplemented!();
+	fn iter(&self, tree: usize) -> TxOpResult<TxValueIter<'_>> {
+		let tree = self.get_tree(tree)?;
+		let sql = format!("SELECT k, v FROM {} ORDER BY k ASC", tree);
+		TxValueIterator::make(self, &sql, [])
 	}
-	fn iter_rev(&self, _tree: usize) -> TxOpResult<TxValueIter<'_>> {
-		unimplemented!();
+	fn iter_rev(&self, tree: usize) -> TxOpResult<TxValueIter<'_>> {
+		let tree = self.get_tree(tree)?;
+		let sql = format!("SELECT k, v FROM {} ORDER BY k DESC", tree);
+		TxValueIterator::make(self, &sql, [])
 	}
 
 	fn range<'r>(
 		&self,
-		_tree: usize,
-		_low: Bound<&'r [u8]>,
-		_high: Bound<&'r [u8]>,
+		tree: usize,
+		low: Bound<&'r [u8]>,
+		high: Bound<&'r [u8]>,
 	) -> TxOpResult<TxValueIter<'_>> {
-		unimplemented!();
+		let tree = self.get_tree(tree)?;
+
+		let (bounds_sql, params) = bounds_sql(low, high);
+		let sql = format!("SELECT k, v FROM {} {} ORDER BY k ASC", tree, bounds_sql);
+
+		let params = params
+			.iter()
+			.map(|x| x as &dyn rusqlite::ToSql)
+			.collect::<Vec<_>>();
+
+		TxValueIterator::make::<&[&dyn rusqlite::ToSql]>(self, &sql, params.as_ref())
 	}
 	fn range_rev<'r>(
 		&self,
-		_tree: usize,
-		_low: Bound<&'r [u8]>,
-		_high: Bound<&'r [u8]>,
+		tree: usize,
+		low: Bound<&'r [u8]>,
+		high: Bound<&'r [u8]>,
 	) -> TxOpResult<TxValueIter<'_>> {
-		unimplemented!();
+		let tree = self.get_tree(tree)?;
+
+		let (bounds_sql, params) = bounds_sql(low, high);
+		let sql = format!("SELECT k, v FROM {} {} ORDER BY k DESC", tree, bounds_sql);
+
+		let params = params
+			.iter()
+			.map(|x| x as &dyn rusqlite::ToSql)
+			.collect::<Vec<_>>();
+
+		TxValueIterator::make::<&[&dyn rusqlite::ToSql]>(self, &sql, params.as_ref())
 	}
 }
 
-// ----
+// ---- iterators outside transactions ----
+// complicated, they must hold the Statement and Row objects
+// therefore quite some unsafe code (it is a self-referential struct)
 
 struct DbValueIterator<'a> {
-	db: MutexGuard<'a, SqliteDbInner>,
+	db: Connection,
 	stmt: Option<Statement<'a>>,
 	iter: Option<Rows<'a>>,
 	_pin: PhantomPinned,
 }
 
 impl<'a> DbValueIterator<'a> {
-	fn make<P: rusqlite::Params>(
-		db: MutexGuard<'a, SqliteDbInner>,
-		sql: &str,
-		args: P,
-	) -> Result<ValueIter<'a>> {
+	fn make<P: rusqlite::Params>(db: Connection, sql: &str, args: P) -> Result<ValueIter<'a>> {
 		let res = DbValueIterator {
 			db,
 			stmt: None,
@@ -417,17 +428,23 @@ impl<'a> DbValueIterator<'a> {
 		let mut boxed = Box::pin(res);
 		trace!("make iterator with sql: {}", sql);
 
+		// This unsafe allows us to bypass lifetime checks
+		let db = unsafe { NonNull::from(&boxed.db).as_ref() };
+		let stmt = db.prepare(sql)?;
+
+		let mut_ref = Pin::as_mut(&mut boxed);
+		// This unsafe allows us to write in a field of the pinned struct
 		unsafe {
-			let db = NonNull::from(&boxed.db);
-			let stmt = db.as_ref().db.prepare(sql)?;
-
-			let mut_ref: Pin<&mut DbValueIterator<'a>> = Pin::as_mut(&mut boxed);
 			Pin::get_unchecked_mut(mut_ref).stmt = Some(stmt);
+		}
 
-			let mut stmt = NonNull::from(&boxed.stmt);
-			let iter = stmt.as_mut().as_mut().unwrap().query(args)?;
+		// This unsafe allows us to bypass lifetime checks
+		let stmt = unsafe { NonNull::from(&boxed.stmt).as_mut() };
+		let iter = stmt.as_mut().unwrap().query(args)?;
 
-			let mut_ref: Pin<&mut DbValueIterator<'a>> = Pin::as_mut(&mut boxed);
+		let mut_ref = Pin::as_mut(&mut boxed);
+		// This unsafe allows us to write in a field of the pinned struct
+		unsafe {
 			Pin::get_unchecked_mut(mut_ref).iter = Some(iter);
 		}
 
@@ -449,28 +466,73 @@ impl<'a> Iterator for DbValueIteratorPin<'a> {
 	type Item = Result<(Value, Value)>;
 
 	fn next(&mut self) -> Option<Self::Item> {
-		let next = unsafe {
-			let mut_ref: Pin<&mut DbValueIterator<'a>> = Pin::as_mut(&mut self.0);
-			Pin::get_unchecked_mut(mut_ref).iter.as_mut()?.next()
-		};
-		let row = match next {
-			Err(e) => return Some(Err(e.into())),
-			Ok(None) => return None,
-			Ok(Some(r)) => r,
-		};
-		let k = match row.get::<_, Vec<u8>>(0) {
-			Err(e) => return Some(Err(e.into())),
-			Ok(x) => x,
-		};
-		let v = match row.get::<_, Vec<u8>>(1) {
-			Err(e) => return Some(Err(e.into())),
-			Ok(y) => y,
-		};
-		Some(Ok((k, v)))
+		let mut_ref = Pin::as_mut(&mut self.0);
+		// This unsafe allows us to mutably access the iterator field
+		let next = unsafe { Pin::get_unchecked_mut(mut_ref).iter.as_mut()?.next() };
+		iter_next_row(next)
 	}
 }
 
-// ----
+// ---- iterators within transactions ----
+// it's the same except we don't hold a mutex guard,
+// only a Statement and a Rows object
+
+struct TxValueIterator<'a> {
+	stmt: Statement<'a>,
+	iter: Option<Rows<'a>>,
+	_pin: PhantomPinned,
+}
+
+impl<'a> TxValueIterator<'a> {
+	fn make<P: rusqlite::Params>(
+		tx: &'a SqliteTx<'a>,
+		sql: &str,
+		args: P,
+	) -> TxOpResult<TxValueIter<'a>> {
+		let stmt = tx.tx.prepare(sql)?;
+		let res = TxValueIterator {
+			stmt,
+			iter: None,
+			_pin: PhantomPinned,
+		};
+		let mut boxed = Box::pin(res);
+		trace!("make iterator with sql: {}", sql);
+
+		// This unsafe allows us to bypass lifetime checks
+		let stmt = unsafe { NonNull::from(&boxed.stmt).as_mut() };
+		let iter = stmt.query(args)?;
+
+		let mut_ref = Pin::as_mut(&mut boxed);
+		// This unsafe allows us to write in a field of the pinned struct
+		unsafe {
+			Pin::get_unchecked_mut(mut_ref).iter = Some(iter);
+		}
+
+		Ok(Box::new(TxValueIteratorPin(boxed)))
+	}
+}
+
+impl<'a> Drop for TxValueIterator<'a> {
+	fn drop(&mut self) {
+		trace!("drop iter");
+		drop(self.iter.take());
+	}
+}
+
+struct TxValueIteratorPin<'a>(Pin<Box<TxValueIterator<'a>>>);
+
+impl<'a> Iterator for TxValueIteratorPin<'a> {
+	type Item = TxOpResult<(Value, Value)>;
+
+	fn next(&mut self) -> Option<Self::Item> {
+		let mut_ref = Pin::as_mut(&mut self.0);
+		// This unsafe allows us to mutably access the iterator field
+		let next = unsafe { Pin::get_unchecked_mut(mut_ref).iter.as_mut()?.next() };
+		iter_next_row(next)
+	}
+}
+
+// ---- utility ----
 
 fn bounds_sql<'r>(low: Bound<&'r [u8]>, high: Bound<&'r [u8]>) -> (String, Vec<Vec<u8>>) {
 	let mut sql = String::new();
@@ -509,4 +571,26 @@ fn bounds_sql<'r>(low: Bound<&'r [u8]>, high: Bound<&'r [u8]>) -> (String, Vec<V
 	}
 
 	(sql, params)
+}
+
+fn iter_next_row<E>(
+	next_row: rusqlite::Result<Option<&rusqlite::Row>>,
+) -> Option<std::result::Result<(Value, Value), E>>
+where
+	E: From<rusqlite::Error>,
+{
+	let row = match next_row {
+		Err(e) => return Some(Err(e.into())),
+		Ok(None) => return None,
+		Ok(Some(r)) => r,
+	};
+	let k = match row.get::<_, Vec<u8>>(0) {
+		Err(e) => return Some(Err(e.into())),
+		Ok(x) => x,
+	};
+	let v = match row.get::<_, Vec<u8>>(1) {
+		Err(e) => return Some(Err(e.into())),
+		Ok(y) => y,
+	};
+	Some(Ok((k, v)))
 }

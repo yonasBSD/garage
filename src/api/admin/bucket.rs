@@ -1,7 +1,7 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use hyper::{Body, Request, Response, StatusCode};
+use hyper::{body::Incoming as IncomingBody, Request, Response, StatusCode};
 use serde::{Deserialize, Serialize};
 
 use garage_util::crdt::*;
@@ -14,14 +14,17 @@ use garage_model::bucket_alias_table::*;
 use garage_model::bucket_table::*;
 use garage_model::garage::Garage;
 use garage_model::permission::*;
+use garage_model::s3::mpu_table;
 use garage_model::s3::object_table::*;
 
-use crate::admin::error::*;
-use crate::admin::key::ApiBucketKeyPerm;
-use crate::common_error::CommonError;
-use crate::helpers::{json_ok_response, parse_json_body};
+use garage_api_common::common_error::CommonError;
+use garage_api_common::helpers::*;
 
-pub async fn handle_list_buckets(garage: &Arc<Garage>) -> Result<Response<Body>, Error> {
+use crate::api_server::ResBody;
+use crate::error::*;
+use crate::key::ApiBucketKeyPerm;
+
+pub async fn handle_list_buckets(garage: &Arc<Garage>) -> Result<Response<ResBody>, Error> {
 	let buckets = garage
 		.bucket_table
 		.get_range(
@@ -89,7 +92,7 @@ pub async fn handle_get_bucket_info(
 	garage: &Arc<Garage>,
 	id: Option<String>,
 	global_alias: Option<String>,
-) -> Result<Response<Body>, Error> {
+) -> Result<Response<ResBody>, Error> {
 	let bucket_id = match (id, global_alias) {
 		(Some(id), None) => parse_bucket_id(&id)?,
 		(None, Some(ga)) => garage
@@ -110,7 +113,7 @@ pub async fn handle_get_bucket_info(
 async fn bucket_info_results(
 	garage: &Arc<Garage>,
 	bucket_id: Uuid,
-) -> Result<Response<Body>, Error> {
+) -> Result<Response<ResBody>, Error> {
 	let bucket = garage
 		.bucket_helper()
 		.get_existing_bucket(bucket_id)
@@ -121,7 +124,15 @@ async fn bucket_info_results(
 		.table
 		.get(&bucket_id, &EmptyKey)
 		.await?
-		.map(|x| x.filtered_values(&garage.system.ring.borrow()))
+		.map(|x| x.filtered_values(&garage.system.cluster_layout()))
+		.unwrap_or_default();
+
+	let mpu_counters = garage
+		.mpu_counter_table
+		.table
+		.get(&bucket_id, &EmptyKey)
+		.await?
+		.map(|x| x.filtered_values(&garage.system.cluster_layout()))
 		.unwrap_or_default();
 
 	let mut relevant_keys = HashMap::new();
@@ -208,12 +219,12 @@ async fn bucket_info_results(
 					}
 				})
 				.collect::<Vec<_>>(),
-			objects: counters.get(OBJECTS).cloned().unwrap_or_default(),
-			bytes: counters.get(BYTES).cloned().unwrap_or_default(),
-			unfinished_uploads: counters
-				.get(UNFINISHED_UPLOADS)
-				.cloned()
-				.unwrap_or_default(),
+			objects: *counters.get(OBJECTS).unwrap_or(&0),
+			bytes: *counters.get(BYTES).unwrap_or(&0),
+			unfinished_uploads: *counters.get(UNFINISHED_UPLOADS).unwrap_or(&0),
+			unfinished_multipart_uploads: *mpu_counters.get(mpu_table::UPLOADS).unwrap_or(&0),
+			unfinished_multipart_upload_parts: *mpu_counters.get(mpu_table::PARTS).unwrap_or(&0),
+			unfinished_multipart_upload_bytes: *mpu_counters.get(mpu_table::BYTES).unwrap_or(&0),
 			quotas: ApiBucketQuotas {
 				max_size: quotas.max_size,
 				max_objects: quotas.max_objects,
@@ -235,6 +246,9 @@ struct GetBucketInfoResult {
 	objects: i64,
 	bytes: i64,
 	unfinished_uploads: i64,
+	unfinished_multipart_uploads: i64,
+	unfinished_multipart_upload_parts: i64,
+	unfinished_multipart_upload_bytes: i64,
 	quotas: ApiBucketQuotas,
 }
 
@@ -256,12 +270,14 @@ struct GetBucketInfoKey {
 
 pub async fn handle_create_bucket(
 	garage: &Arc<Garage>,
-	req: Request<Body>,
-) -> Result<Response<Body>, Error> {
-	let req = parse_json_body::<CreateBucketRequest>(req).await?;
+	req: Request<IncomingBody>,
+) -> Result<Response<ResBody>, Error> {
+	let req = parse_json_body::<CreateBucketRequest, _, Error>(req).await?;
+
+	let helper = garage.locked_helper().await;
 
 	if let Some(ga) = &req.global_alias {
-		if !is_valid_bucket_name(ga) {
+		if !is_valid_bucket_name(ga, garage.config.allow_punycode) {
 			return Err(Error::bad_request(format!(
 				"{}: {}",
 				ga, INVALID_BUCKET_NAME_MESSAGE
@@ -276,17 +292,14 @@ pub async fn handle_create_bucket(
 	}
 
 	if let Some(la) = &req.local_alias {
-		if !is_valid_bucket_name(&la.alias) {
+		if !is_valid_bucket_name(&la.alias, garage.config.allow_punycode) {
 			return Err(Error::bad_request(format!(
 				"{}: {}",
 				la.alias, INVALID_BUCKET_NAME_MESSAGE
 			)));
 		}
 
-		let key = garage
-			.key_helper()
-			.get_existing_key(&la.access_key_id)
-			.await?;
+		let key = helper.key().get_existing_key(&la.access_key_id).await?;
 		let state = key.state.as_option().unwrap();
 		if matches!(state.local_aliases.get(&la.alias), Some(_)) {
 			return Err(Error::bad_request("Local alias already exists"));
@@ -297,21 +310,16 @@ pub async fn handle_create_bucket(
 	garage.bucket_table.insert(&bucket).await?;
 
 	if let Some(ga) = &req.global_alias {
-		garage
-			.bucket_helper()
-			.set_global_bucket_alias(bucket.id, ga)
-			.await?;
+		helper.set_global_bucket_alias(bucket.id, ga).await?;
 	}
 
 	if let Some(la) = &req.local_alias {
-		garage
-			.bucket_helper()
+		helper
 			.set_local_bucket_alias(bucket.id, &la.access_key_id, &la.alias)
 			.await?;
 
 		if la.allow.read || la.allow.write || la.allow.owner {
-			garage
-				.bucket_helper()
+			helper
 				.set_bucket_key_permissions(
 					bucket.id,
 					&la.access_key_id,
@@ -348,16 +356,16 @@ struct CreateBucketLocalAlias {
 pub async fn handle_delete_bucket(
 	garage: &Arc<Garage>,
 	id: String,
-) -> Result<Response<Body>, Error> {
-	let helper = garage.bucket_helper();
+) -> Result<Response<ResBody>, Error> {
+	let helper = garage.locked_helper().await;
 
 	let bucket_id = parse_bucket_id(&id)?;
 
-	let mut bucket = helper.get_existing_bucket(bucket_id).await?;
+	let mut bucket = helper.bucket().get_existing_bucket(bucket_id).await?;
 	let state = bucket.state.as_option().unwrap();
 
 	// Check bucket is empty
-	if !helper.is_bucket_empty(bucket_id).await? {
+	if !helper.bucket().is_bucket_empty(bucket_id).await? {
 		return Err(CommonError::BucketNotEmpty.into());
 	}
 
@@ -374,7 +382,7 @@ pub async fn handle_delete_bucket(
 	for ((key_id, alias), _, active) in state.local_aliases.items().iter() {
 		if *active {
 			helper
-				.unset_local_bucket_alias(bucket.id, key_id, alias)
+				.purge_local_bucket_alias(bucket.id, key_id, alias)
 				.await?;
 		}
 	}
@@ -391,15 +399,15 @@ pub async fn handle_delete_bucket(
 
 	Ok(Response::builder()
 		.status(StatusCode::NO_CONTENT)
-		.body(Body::empty())?)
+		.body(empty_body())?)
 }
 
 pub async fn handle_update_bucket(
 	garage: &Arc<Garage>,
 	id: String,
-	req: Request<Body>,
-) -> Result<Response<Body>, Error> {
-	let req = parse_json_body::<UpdateBucketRequest>(req).await?;
+	req: Request<IncomingBody>,
+) -> Result<Response<ResBody>, Error> {
+	let req = parse_json_body::<UpdateBucketRequest, _, Error>(req).await?;
 	let bucket_id = parse_bucket_id(&id)?;
 
 	let mut bucket = garage
@@ -458,23 +466,19 @@ struct UpdateBucketWebsiteAccess {
 
 pub async fn handle_bucket_change_key_perm(
 	garage: &Arc<Garage>,
-	req: Request<Body>,
+	req: Request<IncomingBody>,
 	new_perm_flag: bool,
-) -> Result<Response<Body>, Error> {
-	let req = parse_json_body::<BucketKeyPermChangeRequest>(req).await?;
+) -> Result<Response<ResBody>, Error> {
+	let req = parse_json_body::<BucketKeyPermChangeRequest, _, Error>(req).await?;
+
+	let helper = garage.locked_helper().await;
 
 	let bucket_id = parse_bucket_id(&req.bucket_id)?;
 
-	let bucket = garage
-		.bucket_helper()
-		.get_existing_bucket(bucket_id)
-		.await?;
+	let bucket = helper.bucket().get_existing_bucket(bucket_id).await?;
 	let state = bucket.state.as_option().unwrap();
 
-	let key = garage
-		.key_helper()
-		.get_existing_key(&req.access_key_id)
-		.await?;
+	let key = helper.key().get_existing_key(&req.access_key_id).await?;
 
 	let mut perm = state
 		.authorized_keys
@@ -492,8 +496,7 @@ pub async fn handle_bucket_change_key_perm(
 		perm.allow_owner = new_perm_flag;
 	}
 
-	garage
-		.bucket_helper()
+	helper
 		.set_bucket_key_permissions(bucket.id, &key.key_id, perm)
 		.await?;
 
@@ -514,13 +517,12 @@ pub async fn handle_global_alias_bucket(
 	garage: &Arc<Garage>,
 	bucket_id: String,
 	alias: String,
-) -> Result<Response<Body>, Error> {
+) -> Result<Response<ResBody>, Error> {
 	let bucket_id = parse_bucket_id(&bucket_id)?;
 
-	garage
-		.bucket_helper()
-		.set_global_bucket_alias(bucket_id, &alias)
-		.await?;
+	let helper = garage.locked_helper().await;
+
+	helper.set_global_bucket_alias(bucket_id, &alias).await?;
 
 	bucket_info_results(garage, bucket_id).await
 }
@@ -529,13 +531,12 @@ pub async fn handle_global_unalias_bucket(
 	garage: &Arc<Garage>,
 	bucket_id: String,
 	alias: String,
-) -> Result<Response<Body>, Error> {
+) -> Result<Response<ResBody>, Error> {
 	let bucket_id = parse_bucket_id(&bucket_id)?;
 
-	garage
-		.bucket_helper()
-		.unset_global_bucket_alias(bucket_id, &alias)
-		.await?;
+	let helper = garage.locked_helper().await;
+
+	helper.unset_global_bucket_alias(bucket_id, &alias).await?;
 
 	bucket_info_results(garage, bucket_id).await
 }
@@ -545,11 +546,12 @@ pub async fn handle_local_alias_bucket(
 	bucket_id: String,
 	access_key_id: String,
 	alias: String,
-) -> Result<Response<Body>, Error> {
+) -> Result<Response<ResBody>, Error> {
 	let bucket_id = parse_bucket_id(&bucket_id)?;
 
-	garage
-		.bucket_helper()
+	let helper = garage.locked_helper().await;
+
+	helper
 		.set_local_bucket_alias(bucket_id, &access_key_id, &alias)
 		.await?;
 
@@ -561,11 +563,12 @@ pub async fn handle_local_unalias_bucket(
 	bucket_id: String,
 	access_key_id: String,
 	alias: String,
-) -> Result<Response<Body>, Error> {
+) -> Result<Response<ResBody>, Error> {
 	let bucket_id = parse_bucket_id(&bucket_id)?;
 
-	garage
-		.bucket_helper()
+	let helper = garage.locked_helper().await;
+
+	helper
 		.unset_local_bucket_alias(bucket_id, &access_key_id, &alias)
 		.await?;
 

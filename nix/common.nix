@@ -10,8 +10,9 @@ let
 
   flake = (import flake-compat { system = builtins.currentSystem; src = ../.; });
 in
-rec {
-  pkgsSrc = flake.defaultNix.inputs.nixpkgs;
-  cargo2nix = flake.defaultNix.inputs.cargo2nix;
-  cargo2nixOverlay = cargo2nix.overlays.default;
+
+{
+  flake = flake.defaultNix;
+  nixpkgs = flake.defaultNix.inputs.nixpkgs;
+  devShells = flake.defaultNix.devShells.${builtins.currentSystem};
 }

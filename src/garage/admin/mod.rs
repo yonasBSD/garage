@@ -4,9 +4,11 @@ mod key;
 
 use std::collections::HashMap;
 use std::fmt::Write;
+use std::future::Future;
 use std::sync::Arc;
 
-use async_trait::async_trait;
+use futures::future::FutureExt;
+
 use serde::{Deserialize, Serialize};
 
 use format_table::format_table_to_string;
@@ -18,7 +20,7 @@ use garage_util::error::Error as GarageError;
 use garage_table::replication::*;
 use garage_table::*;
 
-use garage_rpc::ring::PARTITION_BITS;
+use garage_rpc::layout::PARTITION_BITS;
 use garage_rpc::*;
 
 use garage_block::manager::BlockResyncErrorInfo;
@@ -27,7 +29,7 @@ use garage_model::bucket_table::*;
 use garage_model::garage::Garage;
 use garage_model::helper::error::{Error, OkOrBadRequest};
 use garage_model::key_table::*;
-use garage_model::migrate::Migrate;
+use garage_model::s3::mpu_table::MultipartUpload;
 use garage_model::s3::version_table::Version;
 
 use crate::cli::*;
@@ -41,10 +43,10 @@ pub enum AdminRpc {
 	BucketOperation(BucketOperation),
 	KeyOperation(KeyOperation),
 	LaunchRepair(RepairOpt),
-	Migrate(MigrateOpt),
 	Stats(StatsOpt),
 	Worker(WorkerOperation),
 	BlockOperation(BlockOperation),
+	MetaOperation(MetaOperation),
 
 	// Replies
 	Ok(String),
@@ -53,6 +55,7 @@ pub enum AdminRpc {
 		bucket: Bucket,
 		relevant_keys: HashMap<String, Key>,
 		counters: HashMap<String, i64>,
+		mpu_counters: HashMap<String, i64>,
 	},
 	KeyList(Vec<(String, String)>),
 	KeyInfo(Key, HashMap<Uuid, Bucket>),
@@ -67,6 +70,7 @@ pub enum AdminRpc {
 		hash: Hash,
 		refcount: u64,
 		versions: Vec<Result<Version, Uuid>>,
+		uploads: Vec<MultipartUpload>,
 	},
 }
 
@@ -92,24 +96,6 @@ impl AdminRpcHandler {
 		admin
 	}
 
-	// ================ MIGRATION COMMANDS ====================
-
-	async fn handle_migrate(self: &Arc<Self>, opt: MigrateOpt) -> Result<AdminRpc, Error> {
-		if !opt.yes {
-			return Err(Error::BadRequest(
-				"Please provide the --yes flag to initiate migration operation.".to_string(),
-			));
-		}
-
-		let m = Migrate {
-			garage: self.garage.clone(),
-		};
-		match opt.what {
-			MigrateWhat::Buckets050 => m.migrate_buckets050().await,
-		}?;
-		Ok(AdminRpc::Ok("Migration successfull.".into()))
-	}
-
 	// ================ REPAIR COMMANDS ====================
 
 	async fn handle_launch_repair(self: &Arc<Self>, opt: RepairOpt) -> Result<AdminRpc, Error> {
@@ -123,8 +109,8 @@ impl AdminRpcHandler {
 			opt_to_send.all_nodes = false;
 
 			let mut failures = vec![];
-			let ring = self.garage.system.ring.borrow().clone();
-			for node in ring.layout.node_ids().iter() {
+			let all_nodes = self.garage.system.cluster_layout().all_nodes().to_vec();
+			for node in all_nodes.iter() {
 				let node = (*node).into();
 				let resp = self
 					.endpoint
@@ -160,9 +146,14 @@ impl AdminRpcHandler {
 	async fn handle_stats(&self, opt: StatsOpt) -> Result<AdminRpc, Error> {
 		if opt.all_nodes {
 			let mut ret = String::new();
-			let ring = self.garage.system.ring.borrow().clone();
+			let mut all_nodes = self.garage.system.cluster_layout().all_nodes().to_vec();
+			for node in self.garage.system.get_known_nodes().iter() {
+				if node.is_up && !all_nodes.contains(&node.id) {
+					all_nodes.push(node.id);
+				}
+			}
 
-			for node in ring.layout.node_ids().iter() {
+			for node in all_nodes.iter() {
 				let mut opt = opt.clone();
 				opt.all_nodes = false;
 				opt.skip_global = true;
@@ -214,11 +205,11 @@ impl AdminRpcHandler {
 
 		// Gather table statistics
 		let mut table = vec!["  Table\tItems\tMklItems\tMklTodo\tGcTodo".into()];
-		table.push(self.gather_table_stats(&self.garage.bucket_table, opt.detailed)?);
-		table.push(self.gather_table_stats(&self.garage.key_table, opt.detailed)?);
-		table.push(self.gather_table_stats(&self.garage.object_table, opt.detailed)?);
-		table.push(self.gather_table_stats(&self.garage.version_table, opt.detailed)?);
-		table.push(self.gather_table_stats(&self.garage.block_ref_table, opt.detailed)?);
+		table.push(self.gather_table_stats(&self.garage.bucket_table)?);
+		table.push(self.gather_table_stats(&self.garage.key_table)?);
+		table.push(self.gather_table_stats(&self.garage.object_table)?);
+		table.push(self.gather_table_stats(&self.garage.version_table)?);
+		table.push(self.gather_table_stats(&self.garage.block_ref_table)?);
 		write!(
 			&mut ret,
 			"\nTable stats:\n{}",
@@ -228,15 +219,7 @@ impl AdminRpcHandler {
 
 		// Gather block manager statistics
 		writeln!(&mut ret, "\nBlock manager stats:").unwrap();
-		let rc_len = if opt.detailed {
-			self.garage.block_manager.rc_len()?.to_string()
-		} else {
-			self.garage
-				.block_manager
-				.rc_fast_len()?
-				.map(|x| x.to_string())
-				.unwrap_or_else(|| "NC".into())
-		};
+		let rc_len = self.garage.block_manager.rc_len()?.to_string();
 
 		writeln!(
 			&mut ret,
@@ -257,10 +240,6 @@ impl AdminRpcHandler {
 		)
 		.unwrap();
 
-		if !opt.detailed {
-			writeln!(&mut ret, "\nIf values are missing above (marked as NC), consider adding the --detailed flag (this will be slow).").unwrap();
-		}
-
 		if !opt.skip_global {
 			write!(&mut ret, "\n{}", self.gather_cluster_stats()).unwrap();
 		}
@@ -271,11 +250,11 @@ impl AdminRpcHandler {
 	fn gather_cluster_stats(&self) -> String {
 		let mut ret = String::new();
 
-		// Gather storage node and free space statistics
-		let layout = &self.garage.system.ring.borrow().layout;
+		// Gather storage node and free space statistics for current nodes
+		let layout = &self.garage.system.cluster_layout();
 		let mut node_partition_count = HashMap::<Uuid, u64>::new();
-		for short_id in layout.ring_assignation_data.iter() {
-			let id = layout.node_id_vec[*short_id as usize];
+		for short_id in layout.current().ring_assignment_data.iter() {
+			let id = layout.current().node_id_vec[*short_id as usize];
 			*node_partition_count.entry(id).or_default() += 1;
 		}
 		let node_info = self
@@ -290,8 +269,8 @@ impl AdminRpcHandler {
 		for (id, parts) in node_partition_count.iter() {
 			let info = node_info.get(id);
 			let status = info.map(|x| &x.status);
-			let role = layout.roles.get(id).and_then(|x| x.0.as_ref());
-			let hostname = status.map(|x| x.hostname.as_str()).unwrap_or("?");
+			let role = layout.current().roles.get(id).and_then(|x| x.0.as_ref());
+			let hostname = status.and_then(|x| x.hostname.as_deref()).unwrap_or("?");
 			let zone = role.map(|x| x.zone.as_str()).unwrap_or("?");
 			let capacity = role
 				.map(|x| x.capacity_string())
@@ -362,34 +341,13 @@ impl AdminRpcHandler {
 		ret
 	}
 
-	fn gather_table_stats<F, R>(
-		&self,
-		t: &Arc<Table<F, R>>,
-		detailed: bool,
-	) -> Result<String, Error>
+	fn gather_table_stats<F, R>(&self, t: &Arc<Table<F, R>>) -> Result<String, Error>
 	where
 		F: TableSchema + 'static,
 		R: TableReplication + 'static,
 	{
-		let (data_len, mkl_len) = if detailed {
-			(
-				t.data.store.len().map_err(GarageError::from)?.to_string(),
-				t.merkle_updater.merkle_tree_len()?.to_string(),
-			)
-		} else {
-			(
-				t.data
-					.store
-					.fast_len()
-					.map_err(GarageError::from)?
-					.map(|x| x.to_string())
-					.unwrap_or_else(|| "NC".into()),
-				t.merkle_updater
-					.merkle_tree_fast_len()?
-					.map(|x| x.to_string())
-					.unwrap_or_else(|| "NC".into()),
-			)
-		};
+		let data_len = t.data.store.len().map_err(GarageError::from)?.to_string();
+		let mkl_len = t.merkle_updater.merkle_tree_len()?.to_string();
 
 		Ok(format!(
 			"  {}\t{}\t{}\t{}\t{}",
@@ -437,8 +395,8 @@ impl AdminRpcHandler {
 	) -> Result<AdminRpc, Error> {
 		if all_nodes {
 			let mut ret = vec![];
-			let ring = self.garage.system.ring.borrow().clone();
-			for node in ring.layout.node_ids().iter() {
+			let all_nodes = self.garage.system.cluster_layout().all_nodes().to_vec();
+			for node in all_nodes.iter() {
 				let node = (*node).into();
 				match self
 					.endpoint
@@ -485,8 +443,8 @@ impl AdminRpcHandler {
 	) -> Result<AdminRpc, Error> {
 		if all_nodes {
 			let mut ret = vec![];
-			let ring = self.garage.system.ring.borrow().clone();
-			for node in ring.layout.node_ids().iter() {
+			let all_nodes = self.garage.system.cluster_layout().all_nodes().to_vec();
+			for node in all_nodes.iter() {
 				let node = (*node).into();
 				match self
 					.endpoint
@@ -515,24 +473,68 @@ impl AdminRpcHandler {
 			)]))
 		}
 	}
+
+	// ================ META DB COMMANDS ====================
+
+	async fn handle_meta_cmd(self: &Arc<Self>, mo: &MetaOperation) -> Result<AdminRpc, Error> {
+		match mo {
+			MetaOperation::Snapshot { all: true } => {
+				let to = self.garage.system.cluster_layout().all_nodes().to_vec();
+
+				let resps = futures::future::join_all(to.iter().map(|to| async move {
+					let to = (*to).into();
+					self.endpoint
+						.call(
+							&to,
+							AdminRpc::MetaOperation(MetaOperation::Snapshot { all: false }),
+							PRIO_NORMAL,
+						)
+						.await?
+				}))
+				.await;
+
+				let mut ret = vec![];
+				for (to, resp) in to.iter().zip(resps.iter()) {
+					let res_str = match resp {
+						Ok(_) => "ok".to_string(),
+						Err(e) => format!("error: {}", e),
+					};
+					ret.push(format!("{:?}\t{}", to, res_str));
+				}
+
+				if resps.iter().any(Result::is_err) {
+					Err(GarageError::Message(format_table_to_string(ret)).into())
+				} else {
+					Ok(AdminRpc::Ok(format_table_to_string(ret)))
+				}
+			}
+			MetaOperation::Snapshot { all: false } => {
+				garage_model::snapshot::async_snapshot_metadata(&self.garage).await?;
+				Ok(AdminRpc::Ok("Snapshot has been saved.".into()))
+			}
+		}
+	}
 }
 
-#[async_trait]
 impl EndpointHandler<AdminRpc> for AdminRpcHandler {
-	async fn handle(
+	fn handle(
 		self: &Arc<Self>,
 		message: &AdminRpc,
 		_from: NodeID,
-	) -> Result<AdminRpc, Error> {
-		match message {
-			AdminRpc::BucketOperation(bo) => self.handle_bucket_cmd(bo).await,
-			AdminRpc::KeyOperation(ko) => self.handle_key_cmd(ko).await,
-			AdminRpc::Migrate(opt) => self.handle_migrate(opt.clone()).await,
-			AdminRpc::LaunchRepair(opt) => self.handle_launch_repair(opt.clone()).await,
-			AdminRpc::Stats(opt) => self.handle_stats(opt.clone()).await,
-			AdminRpc::Worker(wo) => self.handle_worker_cmd(wo).await,
-			AdminRpc::BlockOperation(bo) => self.handle_block_cmd(bo).await,
-			m => Err(GarageError::unexpected_rpc_message(m).into()),
+	) -> impl Future<Output = Result<AdminRpc, Error>> + Send {
+		let self2 = self.clone();
+		async move {
+			match message {
+				AdminRpc::BucketOperation(bo) => self2.handle_bucket_cmd(bo).await,
+				AdminRpc::KeyOperation(ko) => self2.handle_key_cmd(ko).await,
+				AdminRpc::LaunchRepair(opt) => self2.handle_launch_repair(opt.clone()).await,
+				AdminRpc::Stats(opt) => self2.handle_stats(opt.clone()).await,
+				AdminRpc::Worker(wo) => self2.handle_worker_cmd(wo).await,
+				AdminRpc::BlockOperation(bo) => self2.handle_block_cmd(bo).await,
+				AdminRpc::MetaOperation(mo) => self2.handle_meta_cmd(mo).await,
+				m => Err(GarageError::unexpected_rpc_message(m).into()),
+			}
 		}
+		.boxed()
 	}
 }

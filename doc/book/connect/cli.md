@@ -70,16 +70,17 @@ Then a file named `~/.aws/config` and put:
 ```toml
 [default]
 region=garage
+endpoint_url=http://127.0.0.1:3900
 ```
 
 Now, supposing Garage is listening on `http://127.0.0.1:3900`, you can list your buckets with:
 
 ```bash
-aws --endpoint-url http://127.0.0.1:3900 s3 ls
+aws s3 ls
 ```
 
-Passing the `--endpoint-url` parameter to each command is annoying but AWS developers do not provide a corresponding configuration entry.
-As a workaround, you can redefine the aws command by editing the file `~/.bashrc`:
+If you're using awscli `<1.29.0` or `<2.13.0`, you need to pass `--endpoint-url` to each CLI invocation explicitly.
+As a workaround, you can redefine the aws command by editing the file `~/.bashrc` in this case:
 
 ```
 function aws { command aws --endpoint-url http://127.0.0.1:3900 $@ ; }
@@ -258,7 +259,7 @@ duck --delete garage:/my-files/an-object.txt
 
 ## WinSCP (libs3) {#winscp}
 
-*You can find instructions on how to use the GUI in french [in our wiki](https://wiki.deuxfleurs.fr/fr/Guide/Garage/WinSCP).*
+*You can find instructions on how to use the GUI in french [in our wiki](https://guide.deuxfleurs.fr/prise_en_main/winscp/).*
 
 How to use `winscp.com`, the CLI interface of WinSCP:
 
