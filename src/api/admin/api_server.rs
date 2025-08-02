@@ -23,7 +23,6 @@ use garage_util::time::now_msec;
 use garage_api_common::generic_server::*;
 use garage_api_common::helpers::*;
 
-use crate::api::AdminApiRequest::GetCurrentAdminTokenInfo;
 use crate::api::*;
 use crate::error::*;
 use crate::router_v0;
