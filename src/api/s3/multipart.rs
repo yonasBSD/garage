@@ -303,8 +303,11 @@ pub async fn handle_complete_multipart_upload(
 	let body = req_body.collect().await?;
 
 	let body_xml = roxmltree::Document::parse(std::str::from_utf8(&body)?)?;
-	let body_list_of_parts = parse_complete_multipart_upload_body(&body_xml)
-		.ok_or_bad_request("Invalid CompleteMultipartUpload XML")?;
+	let body_list_of_parts =
+		parse_complete_multipart_upload_body(&body_xml).ok_or_bad_request(format!(
+			"Invalid CompleteMultipartUpload XML:\n{}",
+			String::from_utf8_lossy(&body)
+		))?;
 	debug!(
 		"CompleteMultipartUpload list of parts: {:?}",
 		body_list_of_parts
@@ -603,6 +606,32 @@ struct CompleteMultipartUploadPart {
 	checksum: Option<ChecksumValue>,
 }
 
+macro_rules! extract_checksum_from {
+	($node:ident { $($name:expr => $variant:ident),* $(,)? }) => {
+		if false { None }
+		$(
+			else if let Some(node) = $node.children().find(|e| e.has_tag_name($name)) {
+				match node.last_child().map(|x| x.text()) {
+					// Child is text but empty post-trim, ignore it.
+					Some(Some(text)) if text.trim().is_empty() => None,
+
+					// Child is non-empty text, parse it.
+					Some(Some(text)) => Some(ChecksumValue::$variant(
+						BASE64_STANDARD.decode(text).ok()?[..].try_into().ok()?
+					)),
+
+					// Child is not text, reject it.
+					Some(None) => return None,
+
+					// No child, ignore it.
+					None => None,
+				}
+			}
+		)*
+		else { None }
+	}
+}
+
 fn parse_complete_multipart_upload_body(
 	xml: &roxmltree::Document,
 ) -> Option<Vec<CompleteMultipartUploadPart>> {
@@ -626,46 +655,15 @@ fn parse_complete_multipart_upload_body(
 				.children()
 				.find(|e| e.has_tag_name("PartNumber"))?
 				.text()?;
-			let checksum = if let Some(crc32) =
-				item.children().find(|e| e.has_tag_name("ChecksumCRC32"))
-			{
-				Some(ChecksumValue::Crc32(
-					BASE64_STANDARD.decode(crc32.text()?).ok()?[..]
-						.try_into()
-						.ok()?,
-				))
-			} else if let Some(crc32c) = item.children().find(|e| e.has_tag_name("ChecksumCRC32C"))
-			{
-				Some(ChecksumValue::Crc32c(
-					BASE64_STANDARD.decode(crc32c.text()?).ok()?[..]
-						.try_into()
-						.ok()?,
-				))
-			} else if let Some(crc64nvme) = item
-				.children()
-				.find(|e| e.has_tag_name("ChecksumCRC64NVME"))
-			{
-				Some(ChecksumValue::Crc64Nvme(
-					BASE64_STANDARD.decode(crc64nvme.text()?).ok()?[..]
-						.try_into()
-						.ok()?,
-				))
-			} else if let Some(sha1) = item.children().find(|e| e.has_tag_name("ChecksumSHA1")) {
-				Some(ChecksumValue::Sha1(
-					BASE64_STANDARD.decode(sha1.text()?).ok()?[..]
-						.try_into()
-						.ok()?,
-				))
-			} else if let Some(sha256) = item.children().find(|e| e.has_tag_name("ChecksumSHA256"))
-			{
-				Some(ChecksumValue::Sha256(
-					BASE64_STANDARD.decode(sha256.text()?).ok()?[..]
-						.try_into()
-						.ok()?,
-				))
-			} else {
-				None
-			};
+
+			let checksum = extract_checksum_from!(item {
+				"ChecksumCRC32" => Crc32,
+				"ChecksumCRC32C" => Crc32c,
+				"ChecksumCRC64NVME" => Crc64Nvme,
+				"ChecksumSHA1" => Sha1,
+				"ChecksumSHA256" => Sha256,
+			});
+
 			parts.push(CompleteMultipartUploadPart {
 				etag: etag.trim_matches('"').to_string(),
 				part_number: part_number.parse().ok()?,
