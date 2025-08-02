@@ -12,7 +12,7 @@ In this section, we cover the following web applications:
 | [Mastodon](#mastodon)     | ✅       | Natively supported    |
 | [Matrix](#matrix)     | ✅       |  Tested with `synapse-s3-storage-provider`    |
 | [ejabberd](#ejabberd)     | ✅       |  `mod_s3_upload`    |
-| [Pixelfed](#pixelfed)     | ❓       |  Not yet tested    |
+| [Pixelfed](#pixelfed)     | ✅       |  Natively supported    |
 | [Pleroma](#pleroma)     | ❓       |  Not yet tested    |
 | [Lemmy](#lemmy)     | ✅        |  Supported with pict-rs    |
 | [Funkwhale](#funkwhale)     | ❓       | Not yet tested     |
