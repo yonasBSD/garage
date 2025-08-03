@@ -697,20 +697,21 @@ async fn bucket_info_results(
 		}),
 		keys: relevant_keys
 			.into_values()
-			.map(|key| {
+			.filter_map(|key| {
 				let p = key.state.as_option().unwrap();
-				GetBucketInfoKey {
+				let permissions = p
+					.authorized_buckets
+					.get(&bucket.id)
+					.filter(|p| p.is_any())
+					.map(|p| ApiBucketKeyPerm {
+						read: p.allow_read,
+						write: p.allow_write,
+						owner: p.allow_owner,
+					})?;
+				Some(GetBucketInfoKey {
 					access_key_id: key.key_id,
 					name: p.name.get().to_string(),
-					permissions: p
-						.authorized_buckets
-						.get(&bucket.id)
-						.map(|p| ApiBucketKeyPerm {
-							read: p.allow_read,
-							write: p.allow_write,
-							owner: p.allow_owner,
-						})
-						.unwrap_or_default(),
+					permissions,
 					bucket_local_aliases: p
 						.local_aliases
 						.items()
@@ -718,7 +719,7 @@ async fn bucket_info_results(
 						.filter(|(_, _, b)| *b == Some(bucket.id))
 						.map(|(n, _, _)| n.to_string())
 						.collect::<Vec<_>>(),
-				}
+				})
 			})
 			.collect::<Vec<_>>(),
 		objects: *counters.get(OBJECTS).unwrap_or(&0),
