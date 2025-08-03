@@ -217,6 +217,13 @@ impl ApiHandler for ArcAdminApiServer {
 	) -> Result<Response<ResBody>, Error> {
 		self.0.handle_http_api(req, endpoint).await
 	}
+
+	fn key_id_from_request(&self, req: &Request<IncomingBody>) -> Option<String> {
+		let auth_header = req.headers().get(AUTHORIZATION)?;
+		let token = parse_authorization(auth_header).ok()?;
+		let key_id = token.split_once('.')?.0;
+		Some(key_id.to_string())
+	}
 }
 
 impl ApiEndpoint for HttpEndpoint {
@@ -244,6 +251,15 @@ fn hash_bearer_token(token: &str) -> String {
 		.to_string()
 }
 
+fn parse_authorization(auth_header: &hyper::http::HeaderValue) -> Result<&str, Error> {
+	let token = auth_header
+		.to_str()?
+		.strip_prefix("Bearer ")
+		.ok_or_else(|| Error::forbidden("Invalid Authorization header"))?
+		.trim();
+	Ok(token)
+}
+
 fn verify_authorization(
 	garage: &Garage,
 	global_token_hash: Option<&str>,
@@ -260,11 +276,7 @@ fn verify_authorization(
 				"Bearer token must be provided in Authorization header",
 			))
 		}
-		Some(authorization) => authorization
-			.to_str()?
-			.strip_prefix("Bearer ")
-			.ok_or_else(|| Error::forbidden("Invalid Authorization header"))?
-			.trim(),
+		Some(authorization) => parse_authorization(authorization)?,
 	};
 
 	let token_hash_string = if let Some((prefix, _)) = token.split_once('.') {
