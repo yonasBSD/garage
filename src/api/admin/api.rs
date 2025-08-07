@@ -258,7 +258,7 @@ pub struct GetClusterHealthResponse {
 	/// the number of storage nodes currently registered in the cluster layout
 	pub storage_nodes: usize,
 	/// the number of storage nodes to which a connection is currently open
-	pub storage_nodes_ok: usize,
+	pub storage_nodes_up: usize,
 	/// the total number of partitions of the data (currently always 256)
 	pub partitions: usize,
 	/// the number of partitions for which a quorum of write nodes is available
