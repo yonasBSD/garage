@@ -15,6 +15,7 @@ S3-compatible object store for small self-hosted geo-distributed deployments
 | Key | Type | Default | Description |
 |-----|------|---------|-------------|
 | affinity | object | `{}` |  |
+| commonLabels  | object | `{}` | Extra labels for all resources |
 | deployment.kind | string | `"StatefulSet"` | Switchable to DaemonSet |
 | deployment.podManagementPolicy | string | `"OrderedReady"` | If using statefulset, allow Parallel or OrderedReady (default) |
 | deployment.replicaCount | int | `3` | Number of StatefulSet replicas/garage nodes to start |
