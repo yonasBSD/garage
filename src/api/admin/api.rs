@@ -891,9 +891,11 @@ pub struct CreateBucketLocalAlias {
 
 // ---- UpdateBucket ----
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, IntoParams)]
+#[into_params(parameter_in = Query)]
 pub struct UpdateBucketRequest {
 	pub id: String,
+	#[param(ignore = true)]
 	pub body: UpdateBucketRequestBody,
 }
 
@@ -917,7 +919,8 @@ pub struct UpdateBucketWebsiteAccess {
 
 // ---- DeleteBucket ----
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, IntoParams)]
+#[into_params(parameter_in = Query)]
 pub struct DeleteBucketRequest {
 	pub id: String,
 }
