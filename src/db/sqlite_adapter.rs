@@ -152,8 +152,21 @@ impl IDb for SqliteDb {
 
 	fn snapshot(&self, base_path: &PathBuf) -> Result<()> {
 		fn progress(p: rusqlite::backup::Progress) {
-			let percent = (p.pagecount - p.remaining) * 100 / p.pagecount;
-			info!("Sqlite snapshot progress: {}%", percent);
+			use std::sync::atomic::{AtomicU64, Ordering};
+			use std::time::{SystemTime, UNIX_EPOCH};
+
+			static LAST_LOG_TIME: AtomicU64 = AtomicU64::new(0);
+
+			let now = SystemTime::now()
+				.duration_since(UNIX_EPOCH)
+				.expect("Fix your clock :o")
+				.as_millis() as u64;
+			if now >= LAST_LOG_TIME.load(Ordering::Relaxed) + 10 * 1000 {
+				let percent = (p.pagecount - p.remaining) * 100 / p.pagecount;
+				info!("Sqlite snapshot progress: {}%", percent);
+
+				LAST_LOG_TIME.fetch_max(now, Ordering::Relaxed);
+			}
 		}
 
 		std::fs::create_dir_all(base_path)?;
