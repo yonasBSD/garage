@@ -161,6 +161,7 @@ impl Garage {
 
 		let control_rep_param = TableFullReplication {
 			system: system.clone(),
+			consistency_mode,
 		};
 
 		info!("Initialize block manager...");
