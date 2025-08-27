@@ -124,10 +124,17 @@ impl Garage {
 			db::Engine::Lmdb => {
 				db_path.push("db.lmdb");
 			}
+			db::Engine::Fjall => {
+				db_path.push("db.fjall");
+			}
 		}
 		let db_opt = db::OpenOpt {
 			fsync: config.metadata_fsync,
 			lmdb_map_size: match config.lmdb_map_size {
+				v if v == usize::default() => None,
+				v => Some(v),
+			},
+			fjall_block_cache_size: match config.fjall_block_cache_size {
 				v if v == usize::default() => None,
 				v => Some(v),
 			},

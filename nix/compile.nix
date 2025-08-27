@@ -68,7 +68,7 @@ let
   rootFeatures = if features != null then
     features
   else
-    ([ "bundled-libs" "lmdb" "sqlite" "k2v" ] ++ (lib.optionals release [
+    ([ "bundled-libs" "lmdb" "sqlite" "fjall" "k2v" ] ++ (lib.optionals release [
       "consul-discovery"
       "kubernetes-discovery"
       "metrics"

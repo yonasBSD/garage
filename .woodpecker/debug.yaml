@@ -28,6 +28,11 @@ steps:
     commands:
       - nix-build -j4 --attr flakePackages.tests-sqlite
 
+  - name: unit + func tests (fjall)
+    image: nixpkgs/nix:nixos-22.05
+    commands:
+      - nix-build -j4 --attr flakePackages.tests-fjall
+
   - name: integration tests
     image: nixpkgs/nix:nixos-22.05
     commands:

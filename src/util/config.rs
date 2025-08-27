@@ -122,6 +122,10 @@ pub struct Config {
 	#[serde(deserialize_with = "deserialize_capacity", default)]
 	pub lmdb_map_size: usize,
 
+	/// Fjall block cache size
+	#[serde(deserialize_with = "deserialize_capacity", default)]
+	pub fjall_block_cache_size: usize,
+
 	// -- APIs
 	/// Configuration for S3 api
 	pub s3_api: S3ApiConfig,

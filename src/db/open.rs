@@ -1,3 +1,4 @@
+use std::convert::TryInto;
 use std::path::PathBuf;
 
 use crate::{Db, Error, Result};
@@ -11,6 +12,7 @@ use crate::{Db, Error, Result};
 pub enum Engine {
 	Lmdb,
 	Sqlite,
+	Fjall,
 }
 
 impl Engine {
@@ -19,6 +21,7 @@ impl Engine {
 		match self {
 			Self::Lmdb => "lmdb",
 			Self::Sqlite => "sqlite",
+			Self::Fjall => "fjall",
 		}
 	}
 }
@@ -36,6 +39,7 @@ impl std::str::FromStr for Engine {
 		match text {
 			"lmdb" | "heed" => Ok(Self::Lmdb),
 			"sqlite" | "sqlite3" | "rusqlite" => Ok(Self::Sqlite),
+            "fjall" => Ok(Self::Fjall),
 			"sled" => Err(Error("Sled is no longer supported as a database engine. Converting your old metadata db can be done using an older Garage binary (e.g. v0.9.4).".into())),
 			kind => Err(Error(
 				format!(
@@ -51,6 +55,7 @@ impl std::str::FromStr for Engine {
 pub struct OpenOpt {
 	pub fsync: bool,
 	pub lmdb_map_size: Option<usize>,
+	pub fjall_block_cache_size: Option<usize>,
 }
 
 impl Default for OpenOpt {
@@ -58,6 +63,7 @@ impl Default for OpenOpt {
 		Self {
 			fsync: false,
 			lmdb_map_size: None,
+			fjall_block_cache_size: None,
 		}
 	}
 }
@@ -112,6 +118,23 @@ pub fn open_db(path: &PathBuf, engine: Engine, opt: &OpenOpt) -> Result<Db> {
 				Err(e) => Err(Error(format!("Cannot open LMDB database: {}", e).into())),
 				Ok(db) => Ok(crate::lmdb_adapter::LmdbDb::init(db)),
 			}
+		}
+
+		// ---- Fjall DB ----
+		#[cfg(feature = "fjall")]
+		Engine::Fjall => {
+			info!("Opening Fjall database at: {}", path.display());
+			if opt.fsync {
+				return Err(Error(
+					"metadata_fsync is not supported with the Fjall database engine".into(),
+				));
+			}
+			let mut config = fjall::Config::new(path);
+			if let Some(block_cache_size) = opt.fjall_block_cache_size {
+				config = config.cache_size(block_cache_size.try_into().unwrap());
+			}
+			let keyspace = config.open_transactional()?;
+			Ok(crate::fjall_adapter::FjallDb::init(keyspace))
 		}
 
 		// Pattern is unreachable when all supported DB engines are compiled into binary. The allow

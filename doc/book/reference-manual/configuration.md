@@ -333,6 +333,7 @@ Since `v0.8.0`, Garage can use alternative storage backends as follows:
 | --------- | ----------------- | ------------- |
 | [LMDB](https://www.symas.com/lmdb) (since `v0.8.0`, default since `v0.9.0`) | `"lmdb"` | `<metadata_dir>/db.lmdb/` |
 | [Sqlite](https://sqlite.org) (since `v0.8.0`) | `"sqlite"` | `<metadata_dir>/db.sqlite` |
+| [Fjall](https://github.com/fjall-rs/fjall) (**experimental support** since `v1.3.0`) | `"fjall"` | `<metadata_dir>/db.fjall/` |
 | [Sled](https://sled.rs) (old default, removed since `v1.0`) | `"sled"` | `<metadata_dir>/db/` |
 
 Sled was supported until Garage v0.9.x, and was removed in Garage v1.0.
@@ -368,6 +369,14 @@ LMDB works very well, but is known to have the following limitations:
   Sqlite is still probably slower than LMDB due to the way we use it,
   so it is not the best choice for high-performance storage clusters,
   but it should work fine in many cases.
+
+- Fjall: a storage engine based on LSM trees, which theoretically allow for
+  higher write throughput than other storage engines that are based on B-trees.
+  Using Fjall could potentially improve Garage's performance significantly in
+  write-heavy workloads. **Support for Fjall is experimental at this point**,
+  we have added it to Garage for evaluation purposes only. **Do not use it for
+  production-critical workloads.**
+
 
 It is possible to convert Garage's metadata directory from one format to another
 using the `garage convert-db` command, which should be used as follows:
@@ -406,6 +415,7 @@ Here is how this option impacts the different database engines:
 |----------|------------------------------------|-------------------------------|
 | Sqlite   | `PRAGMA synchronous = OFF`         | `PRAGMA synchronous = NORMAL` |
 | LMDB     | `MDB_NOMETASYNC` + `MDB_NOSYNC`    | `MDB_NOMETASYNC`              |
+| Fjall    | default options                    | not supported                 |
 
 Note that the Sqlite database is always ran in `WAL` mode (`PRAGMA journal_mode = WAL`).
 

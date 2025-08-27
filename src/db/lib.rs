@@ -1,6 +1,8 @@
 #[macro_use]
 extern crate tracing;
 
+#[cfg(feature = "fjall")]
+pub mod fjall_adapter;
 #[cfg(feature = "lmdb")]
 pub mod lmdb_adapter;
 #[cfg(feature = "sqlite")]
