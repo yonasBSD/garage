@@ -367,7 +367,7 @@ impl<F: TableSchema, R: TableReplication> TableData<F, R> {
 		}
 	}
 
-	pub fn gc_todo_len(&self) -> Result<usize, Error> {
-		Ok(self.gc_todo.len()?)
+	pub fn gc_todo_approximate_len(&self) -> Result<usize, Error> {
+		Ok(self.gc_todo.approximate_len()?)
 	}
 }

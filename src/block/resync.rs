@@ -106,13 +106,13 @@ impl BlockResyncManager {
 	}
 
 	/// Get length of resync queue
-	pub fn queue_len(&self) -> Result<usize, Error> {
-		Ok(self.queue.len()?)
+	pub fn queue_approximate_len(&self) -> Result<usize, Error> {
+		Ok(self.queue.approximate_len()?)
 	}
 
 	/// Get number of blocks that have an error
-	pub fn errors_len(&self) -> Result<usize, Error> {
-		Ok(self.errors.len()?)
+	pub fn errors_approximate_len(&self) -> Result<usize, Error> {
+		Ok(self.errors.approximate_len()?)
 	}
 
 	/// Clear the error counter for a block and put it in queue immediately
@@ -548,9 +548,11 @@ impl Worker for ResyncWorker {
 		}
 
 		WorkerStatus {
-			queue_length: Some(self.manager.resync.queue_len().unwrap_or(0) as u64),
+			queue_length: Some(self.manager.resync.queue_approximate_len().unwrap_or(0) as u64),
 			tranquility: Some(tranquility),
-			persistent_errors: Some(self.manager.resync.errors_len().unwrap_or(0) as u64),
+			persistent_errors: Some(
+				self.manager.resync.errors_approximate_len().unwrap_or(0) as u64
+			),
 			..Default::default()
 		}
 	}

@@ -219,7 +219,7 @@ impl AdminRpcHandler {
 
 		// Gather block manager statistics
 		writeln!(&mut ret, "\nBlock manager stats:").unwrap();
-		let rc_len = self.garage.block_manager.rc_len()?.to_string();
+		let rc_len = self.garage.block_manager.rc_approximate_len()?.to_string();
 
 		writeln!(
 			&mut ret,
@@ -230,13 +230,13 @@ impl AdminRpcHandler {
 		writeln!(
 			&mut ret,
 			"  resync queue length: {}",
-			self.garage.block_manager.resync.queue_len()?
+			self.garage.block_manager.resync.queue_approximate_len()?
 		)
 		.unwrap();
 		writeln!(
 			&mut ret,
 			"  blocks with resync errors: {}",
-			self.garage.block_manager.resync.errors_len()?
+			self.garage.block_manager.resync.errors_approximate_len()?
 		)
 		.unwrap();
 
@@ -346,16 +346,21 @@ impl AdminRpcHandler {
 		F: TableSchema + 'static,
 		R: TableReplication + 'static,
 	{
-		let data_len = t.data.store.len().map_err(GarageError::from)?.to_string();
-		let mkl_len = t.merkle_updater.merkle_tree_len()?.to_string();
+		let data_len = t
+			.data
+			.store
+			.approximate_len()
+			.map_err(GarageError::from)?
+			.to_string();
+		let mkl_len = t.merkle_updater.merkle_tree_approximate_len()?.to_string();
 
 		Ok(format!(
 			"  {}\t{}\t{}\t{}\t{}",
 			F::TABLE_NAME,
 			data_len,
 			mkl_len,
-			t.merkle_updater.todo_len()?,
-			t.data.gc_todo_len()?
+			t.merkle_updater.todo_approximate_len()?,
+			t.data.gc_todo_approximate_len()?
 		))
 	}
 

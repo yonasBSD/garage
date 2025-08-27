@@ -154,7 +154,7 @@ impl Db {
 		let tree_names = other.list_trees()?;
 		for name in tree_names {
 			let tree = self.open_tree(&name)?;
-			if tree.len()? > 0 {
+			if !tree.is_empty()? {
 				return Err(Error(format!("tree {} already contains data", name).into()));
 			}
 
@@ -196,8 +196,12 @@ impl Tree {
 		self.0.get(self.1, key.as_ref())
 	}
 	#[inline]
-	pub fn len(&self) -> Result<usize> {
-		self.0.len(self.1)
+	pub fn approximate_len(&self) -> Result<usize> {
+		self.0.approximate_len(self.1)
+	}
+	#[inline]
+	pub fn is_empty(&self) -> Result<bool> {
+		self.0.is_empty(self.1)
 	}
 
 	#[inline]
@@ -335,7 +339,8 @@ pub(crate) trait IDb: Send + Sync {
 	fn snapshot(&self, path: &PathBuf) -> Result<()>;
 
 	fn get(&self, tree: usize, key: &[u8]) -> Result<Option<Value>>;
-	fn len(&self, tree: usize) -> Result<usize>;
+	fn approximate_len(&self, tree: usize) -> Result<usize>;
+	fn is_empty(&self, tree: usize) -> Result<bool>;
 
 	fn insert(&self, tree: usize, key: &[u8], value: &[u8]) -> Result<()>;
 	fn remove(&self, tree: usize, key: &[u8]) -> Result<()>;

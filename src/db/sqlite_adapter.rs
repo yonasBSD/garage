@@ -160,7 +160,7 @@ impl IDb for SqliteDb {
 		self.internal_get(&self.db.get()?, &tree, key)
 	}
 
-	fn len(&self, tree: usize) -> Result<usize> {
+	fn approximate_len(&self, tree: usize) -> Result<usize> {
 		let tree = self.get_tree(tree)?;
 		let db = self.db.get()?;
 
@@ -170,6 +170,10 @@ impl IDb for SqliteDb {
 			None => Ok(0),
 			Some(v) => Ok(v.get::<_, usize>(0)?),
 		}
+	}
+
+	fn is_empty(&self, tree: usize) -> Result<bool> {
+		Ok(self.approximate_len(tree)? == 0)
 	}
 
 	fn insert(&self, tree: usize, key: &[u8], value: &[u8]) -> Result<()> {

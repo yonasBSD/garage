@@ -27,7 +27,7 @@ impl<F: TableSchema, R: TableReplication> Worker for InsertQueueWorker<F, R> {
 
 	fn status(&self) -> WorkerStatus {
 		WorkerStatus {
-			queue_length: Some(self.0.data.insert_queue.len().unwrap_or(0) as u64),
+			queue_length: Some(self.0.data.insert_queue.approximate_len().unwrap_or(0) as u64),
 			..Default::default()
 		}
 	}
