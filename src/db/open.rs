@@ -1,6 +1,5 @@
 use std::convert::TryInto;
 use std::path::PathBuf;
-use std::sync::Arc;
 
 use crate::{Db, Error, Result};
 
@@ -128,13 +127,10 @@ pub fn open_db(path: &PathBuf, engine: Engine, opt: &OpenOpt) -> Result<Db> {
 			let fsync_ms = opt.fsync.then(|| 1000 as u16);
 			let mut config = fjall::Config::new(path).fsync_ms(fsync_ms);
 			if let Some(block_cache_size) = opt.fjall_block_cache_size {
-				let block_cache = Arc::new(fjall::BlockCache::with_capacity_bytes(
-					block_cache_size.try_into().unwrap(),
-				));
-				config = config.block_cache(block_cache);
+				config = config.cache_size(block_cache_size.try_into().unwrap());
 			}
 			let keyspace = config.open_transactional()?;
-			Ok(crate::fjall_adapter::FjallDb::init(path, keyspace))
+			Ok(crate::fjall_adapter::FjallDb::init(keyspace))
 		}
 
 		// Pattern is unreachable when all supported DB engines are compiled into binary. The allow

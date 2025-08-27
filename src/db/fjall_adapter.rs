@@ -1,8 +1,9 @@
 use core::ops::Bound;
 
-use std::collections::HashMap;
 use std::path::PathBuf;
-use std::sync::{Arc, RwLock};
+use std::sync::Arc;
+
+use parking_lot::{MappedRwLockReadGuard, RwLock, RwLockReadGuard};
 
 use fjall::{
 	PartitionCreateOptions, PersistMode, TransactionalKeyspace, TransactionalPartitionHandle,
@@ -39,63 +40,48 @@ impl From<fjall::Error> for TxOpError {
 // -- db
 
 pub struct FjallDb {
-	path: PathBuf,
 	keyspace: TransactionalKeyspace,
-	trees: RwLock<(Vec<TransactionalPartitionHandle>, HashMap<String, usize>)>,
+	trees: RwLock<Vec<(String, TransactionalPartitionHandle)>>,
 }
 
 type ByteRefRangeBound<'r> = (Bound<&'r [u8]>, Bound<&'r [u8]>);
 
 impl FjallDb {
-	pub fn init(path: &PathBuf, keyspace: TransactionalKeyspace) -> Db {
+	pub fn init(keyspace: TransactionalKeyspace) -> Db {
 		let s = Self {
-			path: path.clone(),
 			keyspace,
-			trees: RwLock::new((Vec::new(), HashMap::new())),
+			trees: RwLock::new(Vec::new()),
 		};
 		Db(Arc::new(s))
 	}
 
-	fn get_tree(&self, i: usize) -> Result<TransactionalPartitionHandle> {
-		self.trees
-			.read()
-			.unwrap()
-			.0
-			.get(i)
-			.cloned()
-			.ok_or_else(|| Error("invalid tree id".into()))
-	}
-
-	fn canonicalize(name: &str) -> String {
-		name.chars()
-			.map(|c| {
-				if c.is_alphanumeric() || c == '-' || c == '_' {
-					c
-				} else {
-					'_'
-				}
-			})
-			.collect::<String>()
+	fn get_tree(
+		&self,
+		i: usize,
+	) -> Result<MappedRwLockReadGuard<'_, TransactionalPartitionHandle>> {
+		RwLockReadGuard::try_map(self.trees.read(), |trees: &Vec<_>| {
+			trees.get(i).map(|tup| &tup.1)
+		})
+		.map_err(|_| Error("invalid tree id".into()))
 	}
 }
 
 impl IDb for FjallDb {
 	fn engine(&self) -> String {
-		"LSM trees (using Fjall crate)".into()
+		"Fjall (EXPERIMENTAL!)".into()
 	}
 
 	fn open_tree(&self, name: &str) -> Result<usize> {
-		let mut trees = self.trees.write().unwrap();
-		let canonical_name = FjallDb::canonicalize(name);
-		if let Some(i) = trees.1.get(&canonical_name) {
-			Ok(*i)
+		let mut trees = self.trees.write();
+		let safe_name = encode_name(name)?;
+		if let Some(i) = trees.iter().position(|(name, _)| *name == safe_name) {
+			Ok(i)
 		} else {
 			let tree = self
 				.keyspace
-				.open_partition(&canonical_name, PartitionCreateOptions::default())?;
-			let i = trees.0.len();
-			trees.0.push(tree);
-			trees.1.insert(canonical_name, i);
+				.open_partition(&safe_name, PartitionCreateOptions::default())?;
+			let i = trees.len();
+			trees.push((safe_name, tree));
 			Ok(i)
 		}
 	}
@@ -105,8 +91,8 @@ impl IDb for FjallDb {
 			.keyspace
 			.list_partitions()
 			.iter()
-			.map(|n| n.to_string())
-			.collect())
+			.map(|n| decode_name(&n))
+			.collect::<Result<Vec<_>>>()?)
 	}
 
 	fn snapshot(&self, to: &PathBuf) -> Result<()> {
@@ -114,17 +100,17 @@ impl IDb for FjallDb {
 		let mut path = to.clone();
 		path.push("data.fjall");
 
-		let source_keyspace = fjall::Config::new(&self.path).open()?;
+		let source_state = self.keyspace.read_tx();
 		let copy_keyspace = fjall::Config::new(path).open()?;
 
-		for partition_name in source_keyspace.list_partitions() {
-			let source_partition = source_keyspace
+		for partition_name in self.keyspace.list_partitions() {
+			let source_partition = self
+				.keyspace
 				.open_partition(&partition_name, PartitionCreateOptions::default())?;
-			let snapshot = source_partition.snapshot();
 			let copy_partition =
 				copy_keyspace.open_partition(&partition_name, PartitionCreateOptions::default())?;
 
-			for entry in snapshot.iter() {
+			for entry in source_state.iter(&source_partition) {
 				let (key, value) = entry?;
 				copy_partition.insert(key, value)?;
 			}
@@ -169,14 +155,19 @@ impl IDb for FjallDb {
 	}
 
 	fn clear(&self, tree_idx: usize) -> Result<()> {
-		let tree = self.get_tree(tree_idx)?;
-		let tree_name = tree.inner().name.clone();
+		let mut trees = self.trees.write();
+
+		if tree_idx >= trees.len() {
+			return Err(Error("invalid tree id".into()));
+		}
+		let (name, tree) = trees.remove(tree_idx);
+
 		self.keyspace.delete_partition(tree)?;
 		let tree = self
 			.keyspace
-			.open_partition(&tree_name, PartitionCreateOptions::default())?;
-		let mut trees = self.trees.write().unwrap();
-		trees.0[tree_idx] = tree;
+			.open_partition(&name, PartitionCreateOptions::default())?;
+		trees.insert(tree_idx, (name, tree));
+
 		Ok(())
 	}
 
@@ -223,9 +214,9 @@ impl IDb for FjallDb {
 	// ----
 
 	fn transaction(&self, f: &dyn ITxFn) -> TxResult<OnCommit, ()> {
-		let trees = self.trees.read().unwrap();
+		let trees = self.trees.read();
 		let mut tx = FjallTx {
-			trees: &trees.0[..],
+			trees: &trees[..],
 			tx: self.keyspace.write_tx(),
 		};
 
@@ -252,13 +243,13 @@ impl IDb for FjallDb {
 // ----
 
 struct FjallTx<'a> {
-	trees: &'a [TransactionalPartitionHandle],
+	trees: &'a [(String, TransactionalPartitionHandle)],
 	tx: WriteTransaction<'a>,
 }
 
 impl<'a> FjallTx<'a> {
 	fn get_tree(&self, i: usize) -> TxOpResult<&TransactionalPartitionHandle> {
-		self.trees.get(i).ok_or_else(|| {
+		self.trees.get(i).map(|tup| &tup.1).ok_or_else(|| {
 			TxOpError(Error(
 				"invalid tree id (it might have been openned after the transaction started)".into(),
 			))
@@ -362,5 +353,80 @@ fn clone_bound(bound: Bound<&[u8]>) -> ByteVecBound {
 		Bound::Included(_) => Bound::Included(value),
 		Bound::Excluded(_) => Bound::Excluded(value),
 		Bound::Unbounded => Bound::Unbounded,
+	}
+}
+
+// -- utils to encode table names --
+
+fn encode_name(s: &str) -> Result<String> {
+	let base = 'A' as u32;
+
+	let mut ret = String::with_capacity(s.len() + 10);
+	for c in s.chars() {
+		if c.is_alphanumeric() || c == '_' || c == '-' || c == '#' {
+			ret.push(c);
+		} else if c <= u8::MAX as char {
+			ret.push('$');
+			let c_hi = c as u32 / 16;
+			let c_lo = c as u32 % 16;
+			ret.push(char::from_u32(base + c_hi).unwrap());
+			ret.push(char::from_u32(base + c_lo).unwrap());
+		} else {
+			return Err(Error(
+				format!("table name {} could not be safely encoded", s).into(),
+			));
+		}
+	}
+	Ok(ret)
+}
+
+fn decode_name(s: &str) -> Result<String> {
+	use std::convert::TryFrom;
+
+	let errfn = || Error(format!("encoded table name {} is invalid", s).into());
+	let c_map = |c: char| {
+		let c = c as u32;
+		let base = 'A' as u32;
+		if (base..base + 16).contains(&c) {
+			Some(c - base)
+		} else {
+			None
+		}
+	};
+
+	let mut ret = String::with_capacity(s.len());
+	let mut it = s.chars();
+	while let Some(c) = it.next() {
+		if c == '$' {
+			let c_hi = it.next().and_then(c_map).ok_or_else(errfn)?;
+			let c_lo = it.next().and_then(c_map).ok_or_else(errfn)?;
+			let c_dec = char::try_from(c_hi * 16 + c_lo).map_err(|_| errfn())?;
+			ret.push(c_dec);
+		} else {
+			ret.push(c);
+		}
+	}
+	Ok(ret)
+}
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+
+	#[test]
+	fn test_encdec_name() {
+		for name in [
+			"testname",
+			"test_name",
+			"test name",
+			"test$name",
+			"test:name@help.me$get/this**right",
+		] {
+			let encname = encode_name(name).unwrap();
+			assert!(!encname.contains(' '));
+			assert!(!encname.contains('.'));
+			assert!(!encname.contains('*'));
+			assert_eq!(*name, decode_name(&encname).unwrap());
+		}
 	}
 }
