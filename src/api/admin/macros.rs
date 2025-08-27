@@ -74,16 +74,18 @@ macro_rules! admin_endpoints {
                 type Response = AdminApiResponse;
 
                 async fn handle(self, garage: &Arc<Garage>, admin: &Admin) -> Result<AdminApiResponse, Error> {
-                    Ok(match self {
+                    match self {
                         $(
-                            AdminApiRequest::$special_endpoint(_) => panic!(
-                                concat!(stringify!($special_endpoint), " needs to go through a special handler")
+                            AdminApiRequest::$special_endpoint(_) => Err(
+                                Error::Common(CommonError::BadRequest(
+                                    concat!(stringify!($special_endpoint), " cannot be used outside of the HTTP Admin API").into()
+                                ))
                             ),
                         )*
                         $(
-                            AdminApiRequest::$endpoint(req) => AdminApiResponse::$endpoint(req.handle(garage, admin).await?),
+                            AdminApiRequest::$endpoint(req) => Ok(AdminApiResponse::$endpoint(req.handle(garage, admin).await?)),
                         )*
-                    })
+                    }
                 }
             }
         }
