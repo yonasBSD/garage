@@ -1,4 +1,3 @@
-use std::convert::TryInto;
 use std::path::PathBuf;
 
 use crate::{Db, Error, Result};
@@ -24,6 +23,23 @@ impl Engine {
 			Self::Fjall => "fjall",
 		}
 	}
+
+	/// Return engine-specific DB path from base path
+	pub fn db_path(&self, base_path: &PathBuf) -> PathBuf {
+		let mut ret = base_path.clone();
+		match self {
+			Self::Lmdb => {
+				ret.push("db.lmdb");
+			}
+			Self::Sqlite => {
+				ret.push("db.sqlite");
+			}
+			Self::Fjall => {
+				ret.push("db.fjall");
+			}
+		}
+		ret
+	}
 }
 
 impl std::fmt::Display for Engine {
@@ -43,7 +59,7 @@ impl std::str::FromStr for Engine {
 			"sled" => Err(Error("Sled is no longer supported as a database engine. Converting your old metadata db can be done using an older Garage binary (e.g. v0.9.4).".into())),
 			kind => Err(Error(
 				format!(
-					"Invalid DB engine: {} (options are: lmdb, sqlite)",
+					"Invalid DB engine: {} (options are: lmdb, sqlite, fjall)",
 					kind
 				)
 				.into(),
@@ -72,70 +88,15 @@ pub fn open_db(path: &PathBuf, engine: Engine, opt: &OpenOpt) -> Result<Db> {
 	match engine {
 		// ---- Sqlite DB ----
 		#[cfg(feature = "sqlite")]
-		Engine::Sqlite => {
-			info!("Opening Sqlite database at: {}", path.display());
-			let manager = r2d2_sqlite::SqliteConnectionManager::file(path);
-			Ok(crate::sqlite_adapter::SqliteDb::new(manager, opt.fsync)?)
-		}
+		Engine::Sqlite => crate::sqlite_adapter::open_db(path, opt),
 
 		// ---- LMDB DB ----
 		#[cfg(feature = "lmdb")]
-		Engine::Lmdb => {
-			info!("Opening LMDB database at: {}", path.display());
-			if let Err(e) = std::fs::create_dir_all(&path) {
-				return Err(Error(
-					format!("Unable to create LMDB data directory: {}", e).into(),
-				));
-			}
-
-			let map_size = match opt.lmdb_map_size {
-				None => crate::lmdb_adapter::recommended_map_size(),
-				Some(v) => v - (v % 4096),
-			};
-
-			let mut env_builder = heed::EnvOpenOptions::new();
-			env_builder.max_dbs(100);
-			env_builder.map_size(map_size);
-			env_builder.max_readers(2048);
-			unsafe {
-				env_builder.flag(crate::lmdb_adapter::heed::flags::Flags::MdbNoRdAhead);
-				env_builder.flag(crate::lmdb_adapter::heed::flags::Flags::MdbNoMetaSync);
-				if !opt.fsync {
-					env_builder.flag(heed::flags::Flags::MdbNoSync);
-				}
-			}
-			match env_builder.open(&path) {
-				Err(heed::Error::Io(e)) if e.kind() == std::io::ErrorKind::OutOfMemory => {
-					return Err(Error(
-						"OutOfMemory error while trying to open LMDB database. This can happen \
-                        if your operating system is not allowing you to use sufficient virtual \
-                        memory address space. Please check that no limit is set (ulimit -v). \
-                        You may also try to set a smaller `lmdb_map_size` configuration parameter. \
-                        On 32-bit machines, you should probably switch to another database engine."
-							.into(),
-					))
-				}
-				Err(e) => Err(Error(format!("Cannot open LMDB database: {}", e).into())),
-				Ok(db) => Ok(crate::lmdb_adapter::LmdbDb::init(db)),
-			}
-		}
+		Engine::Lmdb => crate::lmdb_adapter::open_db(path, opt),
 
 		// ---- Fjall DB ----
 		#[cfg(feature = "fjall")]
-		Engine::Fjall => {
-			info!("Opening Fjall database at: {}", path.display());
-			if opt.fsync {
-				return Err(Error(
-					"metadata_fsync is not supported with the Fjall database engine".into(),
-				));
-			}
-			let mut config = fjall::Config::new(path);
-			if let Some(block_cache_size) = opt.fjall_block_cache_size {
-				config = config.cache_size(block_cache_size.try_into().unwrap());
-			}
-			let keyspace = config.open_transactional()?;
-			Ok(crate::fjall_adapter::FjallDb::init(keyspace))
-		}
+		Engine::Fjall => crate::fjall_adapter::open_db(path, opt),
 
 		// Pattern is unreachable when all supported DB engines are compiled into binary. The allow
 		// attribute is added so that we won't have to change this match in case stop building
