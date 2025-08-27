@@ -14,7 +14,7 @@ fn test_suite(db: Db) {
 
 	assert!(tree.insert(ka, va).is_ok());
 	assert_eq!(tree.get(ka).unwrap().unwrap(), va);
-	assert_eq!(tree.len().unwrap(), 1);
+	assert_eq!(tree.iter().unwrap().count(), 1);
 
 	// ---- test transaction logic ----
 

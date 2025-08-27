@@ -50,7 +50,7 @@ impl BlockManagerMetrics {
 				.init(),
 			_rc_size: meter
 				.u64_value_observer("block.rc_size", move |observer| {
-					if let Ok(value) = rc_tree.len() {
+					if let Ok(value) = rc_tree.approximate_len() {
 						observer.observe(value as u64, &[])
 					}
 				})
@@ -58,7 +58,7 @@ impl BlockManagerMetrics {
 				.init(),
 			_resync_queue_len: meter
 				.u64_value_observer("block.resync_queue_length", move |observer| {
-					if let Ok(value) = resync_queue.len() {
+					if let Ok(value) = resync_queue.approximate_len() {
 						observer.observe(value as u64, &[]);
 					}
 				})
@@ -68,7 +68,7 @@ impl BlockManagerMetrics {
 				.init(),
 			_resync_errored_blocks: meter
 				.u64_value_observer("block.resync_errored_blocks", move |observer| {
-					if let Ok(value) = resync_errors.len() {
+					if let Ok(value) = resync_errors.approximate_len() {
 						observer.observe(value as u64, &[]);
 					}
 				})

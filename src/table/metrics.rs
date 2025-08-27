@@ -34,7 +34,7 @@ impl TableMetrics {
 				.u64_value_observer(
 					"table.size",
 					move |observer| {
-						if let Ok(value) = store.len() {
+						if let Ok(value) = store.approximate_len() {
 							observer.observe(
 								value as u64,
 								&[KeyValue::new("table_name", table_name)],
@@ -48,7 +48,7 @@ impl TableMetrics {
 				.u64_value_observer(
 					"table.merkle_tree_size",
 					move |observer| {
-						if let Ok(value) = merkle_tree.len() {
+						if let Ok(value) = merkle_tree.approximate_len() {
 							observer.observe(
 								value as u64,
 								&[KeyValue::new("table_name", table_name)],
@@ -62,7 +62,7 @@ impl TableMetrics {
 				.u64_value_observer(
 					"table.merkle_updater_todo_queue_length",
 					move |observer| {
-						if let Ok(v) = merkle_todo.len() {
+						if let Ok(v) = merkle_todo.approximate_len() {
 							observer.observe(
 								v as u64,
 								&[KeyValue::new("table_name", table_name)],
@@ -76,7 +76,7 @@ impl TableMetrics {
 				.u64_value_observer(
 					"table.gc_todo_queue_length",
 					move |observer| {
-                        if let Ok(value) = gc_todo.len() {
+                        if let Ok(value) = gc_todo.approximate_len() {
                             observer.observe(
                                 value as u64,
                                 &[KeyValue::new("table_name", table_name)],

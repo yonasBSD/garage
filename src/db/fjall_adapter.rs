@@ -132,10 +132,14 @@ impl IDb for FjallDb {
 		}
 	}
 
-	fn len(&self, tree_idx: usize) -> Result<usize> {
+	fn approximate_len(&self, tree_idx: usize) -> Result<usize> {
+		let tree = self.get_tree(tree_idx)?;
+		Ok(tree.approximate_len())
+	}
+	fn is_empty(&self, tree_idx: usize) -> Result<bool> {
 		let tree = self.get_tree(tree_idx)?;
 		let tx = self.keyspace.read_tx();
-		Ok(tx.len(&tree)?)
+		Ok(tx.is_empty(&tree)?)
 	}
 
 	fn insert(&self, tree_idx: usize, key: &[u8], value: &[u8]) -> Result<()> {

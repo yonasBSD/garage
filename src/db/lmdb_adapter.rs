@@ -126,10 +126,15 @@ impl IDb for LmdbDb {
 		}
 	}
 
-	fn len(&self, tree: usize) -> Result<usize> {
+	fn approximate_len(&self, tree: usize) -> Result<usize> {
 		let tree = self.get_tree(tree)?;
 		let tx = self.db.read_txn()?;
 		Ok(tree.len(&tx)?.try_into().unwrap())
+	}
+	fn is_empty(&self, tree: usize) -> Result<bool> {
+		let tree = self.get_tree(tree)?;
+		let tx = self.db.read_txn()?;
+		Ok(tree.is_empty(&tx)?)
 	}
 
 	fn insert(&self, tree: usize, key: &[u8], value: &[u8]) -> Result<()> {
