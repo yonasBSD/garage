@@ -171,6 +171,12 @@ impl ApiHandler for K2VApiServer {
 
 		Ok(resp_ok)
 	}
+
+	fn key_id_from_request(&self, req: &Request<IncomingBody>) -> Option<String> {
+		garage_api_common::signature::payload::Authorization::parse_header(req.headers())
+			.map(|auth| auth.key_id)
+			.ok()
+	}
 }
 
 impl ApiEndpoint for K2VApiEndpoint {

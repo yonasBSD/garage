@@ -424,7 +424,7 @@ pub fn verify_v4(
 // ============ Authorization header, or X-Amz-* query params =========
 
 pub struct Authorization {
-	key_id: String,
+	pub key_id: String,
 	scope: String,
 	signed_headers: String,
 	signature: String,
@@ -433,7 +433,7 @@ pub struct Authorization {
 }
 
 impl Authorization {
-	fn parse_header(headers: &HeaderMap) -> Result<Self, Error> {
+	pub fn parse_header(headers: &HeaderMap) -> Result<Self, Error> {
 		let authorization = headers
 			.get(AUTHORIZATION)
 			.ok_or_bad_request("Missing authorization header")?
