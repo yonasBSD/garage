@@ -11,11 +11,54 @@ use heed::types::ByteSlice;
 use heed::{BytesDecode, Env, RoTxn, RwTxn, UntypedDatabase as Database};
 
 use crate::{
+	open::{Engine, OpenOpt},
 	Db, Error, IDb, ITx, ITxFn, OnCommit, Result, TxError, TxFnResult, TxOpError, TxOpResult,
 	TxResult, TxValueIter, Value, ValueIter,
 };
 
 pub use heed;
+
+// ---- top-level open function
+
+pub(crate) fn open_db(path: &PathBuf, opt: &OpenOpt) -> Result<Db> {
+	info!("Opening LMDB database at: {}", path.display());
+	if let Err(e) = std::fs::create_dir_all(&path) {
+		return Err(Error(
+			format!("Unable to create LMDB data directory: {}", e).into(),
+		));
+	}
+
+	let map_size = match opt.lmdb_map_size {
+		None => recommended_map_size(),
+		Some(v) => v - (v % 4096),
+	};
+
+	let mut env_builder = heed::EnvOpenOptions::new();
+	env_builder.max_dbs(100);
+	env_builder.map_size(map_size);
+	env_builder.max_readers(2048);
+	unsafe {
+		env_builder.flag(heed::flags::Flags::MdbNoRdAhead);
+		env_builder.flag(heed::flags::Flags::MdbNoMetaSync);
+		if !opt.fsync {
+			env_builder.flag(heed::flags::Flags::MdbNoSync);
+		}
+	}
+	match env_builder.open(&path) {
+		Err(heed::Error::Io(e)) if e.kind() == std::io::ErrorKind::OutOfMemory => {
+			return Err(Error(
+				"OutOfMemory error while trying to open LMDB database. This can happen \
+                if your operating system is not allowing you to use sufficient virtual \
+                memory address space. Please check that no limit is set (ulimit -v). \
+                You may also try to set a smaller `lmdb_map_size` configuration parameter. \
+                On 32-bit machines, you should probably switch to another database engine."
+					.into(),
+			))
+		}
+		Err(e) => Err(Error(format!("Cannot open LMDB database: {}", e).into())),
+		Ok(db) => Ok(LmdbDb::init(db)),
+	}
+}
 
 // -- err
 
@@ -104,10 +147,9 @@ impl IDb for LmdbDb {
 		Ok(ret2)
 	}
 
-	fn snapshot(&self, to: &PathBuf) -> Result<()> {
-		std::fs::create_dir_all(to)?;
-		let mut path = to.clone();
-		path.push("data.mdb");
+	fn snapshot(&self, base_path: &PathBuf) -> Result<()> {
+		std::fs::create_dir_all(base_path)?;
+		let path = Engine::Lmdb.db_path(base_path);
 		self.db
 			.copy_to_path(path, heed::CompactionOption::Enabled)?;
 		Ok(())

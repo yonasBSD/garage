@@ -11,11 +11,22 @@ use r2d2_sqlite::SqliteConnectionManager;
 use rusqlite::{params, Rows, Statement, Transaction};
 
 use crate::{
+	open::{Engine, OpenOpt},
 	Db, Error, IDb, ITx, ITxFn, OnCommit, Result, TxError, TxFnResult, TxOpError, TxOpResult,
 	TxResult, TxValueIter, Value, ValueIter,
 };
 
 pub use rusqlite;
+
+// ---- top-level open function
+
+pub(crate) fn open_db(path: &PathBuf, opt: &OpenOpt) -> Result<Db> {
+	info!("Opening Sqlite database at: {}", path.display());
+	let manager = r2d2_sqlite::SqliteConnectionManager::file(path);
+	Ok(SqliteDb::new(manager, opt.fsync)?)
+}
+
+// ----
 
 type Connection = r2d2::PooledConnection<SqliteConnectionManager>;
 
@@ -139,17 +150,19 @@ impl IDb for SqliteDb {
 		Ok(trees)
 	}
 
-	fn snapshot(&self, to: &PathBuf) -> Result<()> {
+	fn snapshot(&self, base_path: &PathBuf) -> Result<()> {
 		fn progress(p: rusqlite::backup::Progress) {
 			let percent = (p.pagecount - p.remaining) * 100 / p.pagecount;
 			info!("Sqlite snapshot progress: {}%", percent);
 		}
-		std::fs::create_dir_all(to)?;
-		let mut path = to.clone();
-		path.push("db.sqlite");
+
+		std::fs::create_dir_all(base_path)?;
+		let path = Engine::Sqlite.db_path(&base_path);
+
 		self.db
 			.get()?
 			.backup(rusqlite::DatabaseName::Main, path, Some(progress))?;
+
 		Ok(())
 	}
 

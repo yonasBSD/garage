@@ -11,11 +11,29 @@ use fjall::{
 };
 
 use crate::{
+	open::{Engine, OpenOpt},
 	Db, Error, IDb, ITx, ITxFn, OnCommit, Result, TxError, TxFnResult, TxOpError, TxOpResult,
 	TxResult, TxValueIter, Value, ValueIter,
 };
 
 pub use fjall;
+
+// --
+
+pub(crate) fn open_db(path: &PathBuf, opt: &OpenOpt) -> Result<Db> {
+	info!("Opening Fjall database at: {}", path.display());
+	if opt.fsync {
+		return Err(Error(
+			"metadata_fsync is not supported with the Fjall database engine".into(),
+		));
+	}
+	let mut config = fjall::Config::new(path);
+	if let Some(block_cache_size) = opt.fjall_block_cache_size {
+		config = config.cache_size(block_cache_size as u64);
+	}
+	let keyspace = config.open_transactional()?;
+	Ok(FjallDb::init(keyspace))
+}
 
 // -- err
 
@@ -95,10 +113,9 @@ impl IDb for FjallDb {
 			.collect::<Result<Vec<_>>>()?)
 	}
 
-	fn snapshot(&self, to: &PathBuf) -> Result<()> {
-		std::fs::create_dir_all(to)?;
-		let mut path = to.clone();
-		path.push("data.fjall");
+	fn snapshot(&self, base_path: &PathBuf) -> Result<()> {
+		std::fs::create_dir_all(base_path)?;
+		let path = Engine::Fjall.db_path(base_path);
 
 		let source_state = self.keyspace.read_tx();
 		let copy_keyspace = fjall::Config::new(path).open()?;
