@@ -124,8 +124,12 @@ pub fn open_db(path: &PathBuf, engine: Engine, opt: &OpenOpt) -> Result<Db> {
 		#[cfg(feature = "fjall")]
 		Engine::Fjall => {
 			info!("Opening Fjall database at: {}", path.display());
-			let fsync_ms = opt.fsync.then(|| 1000 as u16);
-			let mut config = fjall::Config::new(path).fsync_ms(fsync_ms);
+			if opt.fsync {
+				return Err(Error(
+					"metadata_fsync is not supported with the Fjall database engine".into(),
+				));
+			}
+			let mut config = fjall::Config::new(path);
 			if let Some(block_cache_size) = opt.fjall_block_cache_size {
 				config = config.cache_size(block_cache_size.try_into().unwrap());
 			}
