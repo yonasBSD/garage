@@ -2,7 +2,7 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use garage_rpc::layout::*;
-use garage_rpc::system::System;
+use garage_rpc::{replication_mode::ConsistencyMode, system::System};
 use garage_util::data::*;
 
 use crate::replication::*;
@@ -22,6 +22,7 @@ use crate::replication::*;
 pub struct TableFullReplication {
 	/// The membership manager of this node
 	pub system: Arc<System>,
+	pub consistency_mode: ConsistencyMode,
 }
 
 impl TableReplication for TableFullReplication {
@@ -45,33 +46,43 @@ impl TableReplication for TableFullReplication {
 			.to_vec()
 	}
 	fn read_quorum(&self) -> usize {
-		let layout = self.system.cluster_layout();
-		let nodes = layout.read_version().all_nodes();
-		nodes.len().div_euclid(2) + 1
+		match self.consistency_mode {
+			ConsistencyMode::Dangerous | ConsistencyMode::Degraded => 1,
+			ConsistencyMode::Consistent => {
+				let layout = self.system.cluster_layout();
+				let nodes = layout.read_version().all_nodes();
+				nodes.len().div_euclid(2) + 1
+			}
+		}
 	}
 
 	fn write_sets(&self, _hash: &Hash) -> Self::WriteSets {
 		self.system.layout_manager.write_lock_with(write_sets)
 	}
 	fn write_quorum(&self) -> usize {
-		let layout = self.system.cluster_layout();
-		let min_len = layout
-			.versions()
-			.iter()
-			.map(|x| x.all_nodes().len())
-			.min()
-			.unwrap();
-		let max_quorum = layout
-			.versions()
-			.iter()
-			.map(|x| x.all_nodes().len().div_euclid(2) + 1)
-			.max()
-			.unwrap();
-		if min_len < max_quorum {
-			warn!("Write quorum will not be respected for TableFullReplication operations due to multiple active layout versions with vastly different number of nodes");
-			min_len
-		} else {
-			max_quorum
+		match self.consistency_mode {
+			ConsistencyMode::Dangerous => 1,
+			ConsistencyMode::Degraded | ConsistencyMode::Consistent => {
+				let layout = self.system.cluster_layout();
+				let min_len = layout
+					.versions()
+					.iter()
+					.map(|x| x.all_nodes().len())
+					.min()
+					.unwrap();
+				let max_quorum = layout
+					.versions()
+					.iter()
+					.map(|x| x.all_nodes().len().div_euclid(2) + 1)
+					.max()
+					.unwrap();
+				if min_len < max_quorum {
+					warn!("Write quorum will not be respected for TableFullReplication operations due to multiple active layout versions with vastly different number of nodes");
+					min_len
+				} else {
+					max_quorum
+				}
+			}
 		}
 	}
 
