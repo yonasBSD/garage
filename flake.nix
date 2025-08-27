@@ -78,6 +78,9 @@
                 cargo-outdated
                 cargo-machete
                 nixpkgs-fmt
+                openssl
+                socat
+                killall
               ];
             };
           };
