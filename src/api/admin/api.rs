@@ -12,7 +12,7 @@ use garage_rpc::*;
 
 use garage_model::garage::Garage;
 
-use garage_api_common::helpers::is_default;
+use garage_api_common::{common_error::CommonError, helpers::is_default};
 
 use crate::api_server::{find_matching_nodes, AdminRpc, AdminRpcResponse};
 use crate::error::Error;
