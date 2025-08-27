@@ -100,7 +100,7 @@ impl Cli {
 						drain_msg = true;
 						"draining metadata.."
 					}
-					_ => unreachable!(),
+					_ => continue,
 				};
 
 				failed_nodes.push(format!(
