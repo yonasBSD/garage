@@ -478,9 +478,7 @@ In `quotas`: new values of `maxSize` and `maxObjects` must both be specified, or
 to remove the quotas. An absent value will be considered the same as a `null`. It is not possible
 to change only one of the two quotas.
     ",
-    params(
-        ("id" = String, description = "ID of the bucket to update"),
-    ),
+    params(UpdateBucketRequest),
     request_body = UpdateBucketRequestBody,
 	responses(
             (status = 200, description = "Bucket has been updated", body = UpdateBucketResponse),
@@ -498,9 +496,7 @@ Deletes a storage bucket. A bucket cannot be deleted if it is not empty.
 
 **Warning:** this will delete all aliases associated with the bucket!
     ",
-    params(
-        ("id" = String, description = "ID of the bucket to delete"),
-    ),
+    params(DeleteBucketRequest),
 	responses(
             (status = 200, description = "Bucket has been deleted"),
             (status = 400, description = "Bucket is not empty"),
