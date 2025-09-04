@@ -471,8 +471,7 @@
         "parameters": [
           {
             "name": "id",
-            "in": "path",
-            "description": "ID of the bucket to delete",
+            "in": "query",
             "required": true,
             "schema": {
               "type": "string"
@@ -1601,8 +1600,7 @@
         "parameters": [
           {
             "name": "id",
-            "in": "path",
-            "description": "ID of the bucket to update",
+            "in": "query",
             "required": true,
             "schema": {
               "type": "string"
