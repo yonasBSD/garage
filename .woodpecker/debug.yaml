@@ -1,3 +1,6 @@
+labels:
+  nix: "enabled"
+
 when:
   event:
   - push
