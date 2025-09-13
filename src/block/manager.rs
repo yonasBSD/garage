@@ -562,9 +562,6 @@ impl BlockManager {
 			match self.find_block(hash).await {
 				Some(p) => self.read_block_from(hash, &p).await,
 				None => {
-					// Not found but maybe we should have had it ??
-					self.resync
-						.put_to_resync(hash, 2 * self.system.rpc_helper().rpc_timeout())?;
 					return Err(Error::Message(format!(
 						"block {:?} not found on node",
 						hash
