@@ -53,7 +53,7 @@ impl TableReplication for TableFullReplication {
 			ConsistencyMode::Consistent => {
 				let layout = self.system.cluster_layout();
 				let nodes = layout.read_version()?.all_nodes();
-				Ok(nodes.len().div_euclid(2) + 1)
+				Ok(nodes.len().div_ceil(2))
 			}
 		}
 	}
