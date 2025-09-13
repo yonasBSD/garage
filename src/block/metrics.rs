@@ -22,6 +22,7 @@ pub struct BlockManagerMetrics {
 
 	pub(crate) bytes_read: BoundCounter<u64>,
 	pub(crate) block_read_duration: BoundValueRecorder<f64>,
+	pub(crate) block_read_semaphore_timeouts: BoundCounter<u64>,
 	pub(crate) bytes_written: BoundCounter<u64>,
 	pub(crate) block_write_duration: BoundValueRecorder<f64>,
 	pub(crate) delete_counter: BoundCounter<u64>,
@@ -117,6 +118,11 @@ impl BlockManagerMetrics {
 			block_read_duration: meter
 				.f64_value_recorder("block.read_duration")
 				.with_description("Duration of block read operations")
+				.init()
+				.bind(&[]),
+			block_read_semaphore_timeouts: meter
+				.u64_counter("block.read_semaphore_timeouts")
+				.with_description("Number of block reads that failed due to semaphore acquire timeout")
 				.init()
 				.bind(&[]),
 			bytes_written: meter
