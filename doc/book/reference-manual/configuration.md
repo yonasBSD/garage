@@ -24,6 +24,7 @@ db_engine = "lmdb"
 
 block_size = "1M"
 block_ram_buffer_max = "256MiB"
+block_max_concurrent_reads = 16
 
 lmdb_map_size = "1T"
 
@@ -96,6 +97,7 @@ The following gives details about each available configuration option.
 Top-level configuration options, in alphabetical order:
 [`allow_punycode`](#allow_punycode),
 [`allow_world_readable_secrets`](#allow_world_readable_secrets),
+[`block_max_concurrent_reads`](`block_max_concurrent_reads),
 [`block_ram_buffer_max`](#block_ram_buffer_max),
 [`block_size`](#block_size),
 [`bootstrap_peers`](#bootstrap_peers),
@@ -521,6 +523,29 @@ intermediate processing before even trying to send the data to the storage
 node.
 
 The default value is 256MiB.
+
+#### `block_max_concurrent_reads` (since `v1.3.0` / `v2.1.0`) {#block_max_concurrent_reads}
+
+The maximum number of blocks (individual files in the data directory) open
+simultaneously for reading.
+
+Reducing this number does not limit the number of data blocks that can be
+transferred through the network simultaneously. This mechanism was just added
+as a backpressure mechanism for HDD read speed: it helps avoid a situation
+where too many requests are coming in and Garage is reading too many block
+files simultaneously, thus not making timely progress on any of the reads.
+
+When a request to read a data block comes in through the network, the requests
+awaits for one of the `block_max_concurrent_reads` slots to be available
+(internally implemented using a Semaphore object). Once it acquired a read
+slot, it reads the entire block file to RAM and frees the slot as soon as the
+block file is finished reading. Only after the slot is released will the
+block's data start being transferred over the network.  If the request fails to
+acquire a reading slot wihtin 15 seconds, it fails with a timeout error.
+Timeout events can be monitored through the `block_read_semaphore_timeouts`
+metric in Prometheus: a non-zero number of such events indicates an I/O
+bottleneck on HDD read speed.
+
 
 #### `lmdb_map_size` {#lmdb_map_size}
 

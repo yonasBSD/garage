@@ -50,6 +50,8 @@ pub const INLINE_THRESHOLD: usize = 3072;
 // to delete the block locally.
 pub(crate) const BLOCK_GC_DELAY: Duration = Duration::from_secs(600);
 
+const BLOCK_READ_SEMAPHORE_TIMEOUT: Duration = Duration::from_secs(15);
+
 /// RPC messages used to share blocks of data between nodes
 #[derive(Debug, Serialize, Deserialize)]
 pub enum BlockRpc {
@@ -87,6 +89,7 @@ pub struct BlockManager {
 	disable_scrub: bool,
 
 	mutation_lock: Vec<Mutex<BlockManagerLocked>>,
+	read_semaphore: Semaphore,
 
 	pub rc: BlockRc,
 	pub resync: BlockResyncManager,
@@ -176,6 +179,8 @@ impl BlockManager {
 				.iter()
 				.map(|_| Mutex::new(BlockManagerLocked()))
 				.collect::<Vec<_>>(),
+
+			read_semaphore: Semaphore::new(config.block_max_concurrent_reads),
 			rc,
 			resync,
 			system,
@@ -557,9 +562,6 @@ impl BlockManager {
 			match self.find_block(hash).await {
 				Some(p) => self.read_block_from(hash, &p).await,
 				None => {
-					// Not found but maybe we should have had it ??
-					self.resync
-						.put_to_resync(hash, 2 * self.system.rpc_helper().rpc_timeout())?;
 					return Err(Error::Message(format!(
 						"block {:?} not found on node",
 						hash
@@ -580,6 +582,15 @@ impl BlockManager {
 		block_path: &DataBlockPath,
 	) -> Result<DataBlock, Error> {
 		let (header, path) = block_path.as_parts_ref();
+
+		let permit = tokio::select! {
+			sem = self.read_semaphore.acquire() => sem.ok_or_message("acquire read semaphore")?,
+			_ = tokio::time::sleep(BLOCK_READ_SEMAPHORE_TIMEOUT) => {
+				self.metrics.block_read_semaphore_timeouts.add(1);
+				debug!("read block {:?}: read_semaphore acquire timeout", hash);
+				return Err(Error::Message("read block: read_semaphore acquire timeout".into()));
+			}
+		};
 
 		let mut f = fs::File::open(&path).await?;
 		let mut data = vec![];
@@ -604,6 +615,8 @@ impl BlockManager {
 
 			return Err(Error::CorruptData(*hash));
 		}
+
+		drop(permit);
 
 		Ok(data)
 	}
