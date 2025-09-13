@@ -254,7 +254,7 @@ impl<F: TableSchema, R: TableReplication> TableData<F, R> {
 				// any node of the partition is unavailable.
 				let pk_hash = Hash::try_from(&tree_key[..32]).unwrap();
 				// TODO: this probably breaks when the layout changes
-				let nodes = self.replication.storage_nodes(&pk_hash);
+				let nodes = self.replication.storage_nodes(&pk_hash)?;
 				if nodes.first() == Some(&self.system.id) {
 					GcTodoEntry::new(tree_key, new_bytes_hash).save(&self.gc_todo)?;
 				}

@@ -56,48 +56,52 @@ impl RequestHandler for GetClusterStatusRequest {
 			})
 			.collect::<HashMap<_, _>>();
 
-		for (id, _, role) in layout.current().roles.items().iter() {
-			if let layout::NodeRoleV(Some(r)) = role {
-				let role = NodeAssignedRole {
-					zone: r.zone.to_string(),
-					capacity: r.capacity,
-					tags: r.tags.clone(),
-				};
-				match nodes.get_mut(id) {
-					None => {
-						nodes.insert(
-							*id,
-							NodeResp {
-								id: hex::encode(id),
-								role: Some(role),
-								..Default::default()
-							},
-						);
-					}
-					Some(n) => {
-						n.role = Some(role);
+		if let Ok(current_layout) = layout.current() {
+			for (id, _, role) in current_layout.roles.items().iter() {
+				if let layout::NodeRoleV(Some(r)) = role {
+					let role = NodeAssignedRole {
+						zone: r.zone.to_string(),
+						capacity: r.capacity,
+						tags: r.tags.clone(),
+					};
+					match nodes.get_mut(id) {
+						None => {
+							nodes.insert(
+								*id,
+								NodeResp {
+									id: hex::encode(id),
+									role: Some(role),
+									..Default::default()
+								},
+							);
+						}
+						Some(n) => {
+							n.role = Some(role);
+						}
 					}
 				}
 			}
 		}
 
-		for ver in layout.versions().iter().rev().skip(1) {
-			for (id, _, role) in ver.roles.items().iter() {
-				if let layout::NodeRoleV(Some(r)) = role {
-					if r.capacity.is_some() {
-						if let Some(n) = nodes.get_mut(id) {
-							if n.role.is_none() {
-								n.draining = true;
+		if let Ok(layout_versions) = layout.versions() {
+			for ver in layout_versions.iter().rev().skip(1) {
+				for (id, _, role) in ver.roles.items().iter() {
+					if let layout::NodeRoleV(Some(r)) = role {
+						if r.capacity.is_some() {
+							if let Some(n) = nodes.get_mut(id) {
+								if n.role.is_none() {
+									n.draining = true;
+								}
+							} else {
+								nodes.insert(
+									*id,
+									NodeResp {
+										id: hex::encode(id),
+										draining: true,
+										..Default::default()
+									},
+								);
 							}
-						} else {
-							nodes.insert(
-								*id,
-								NodeResp {
-									id: hex::encode(id),
-									draining: true,
-									..Default::default()
-								},
-							);
 						}
 					}
 				}
@@ -108,7 +112,7 @@ impl RequestHandler for GetClusterStatusRequest {
 		nodes.sort_by(|x, y| x.id.cmp(&y.id));
 
 		Ok(GetClusterStatusResponse {
-			layout_version: layout.current().version,
+			layout_version: layout.inner().current().version,
 			nodes,
 		})
 	}
@@ -159,9 +163,11 @@ impl RequestHandler for GetClusterStatisticsRequest {
 		// Gather storage node and free space statistics for current nodes
 		let layout = &garage.system.cluster_layout();
 		let mut node_partition_count = HashMap::<Uuid, u64>::new();
-		for short_id in layout.current().ring_assignment_data.iter() {
-			let id = layout.current().node_id_vec[*short_id as usize];
-			*node_partition_count.entry(id).or_default() += 1;
+		if let Ok(current_layout) = layout.current() {
+			for short_id in current_layout.ring_assignment_data.iter() {
+				let id = current_layout.node_id_vec[*short_id as usize];
+				*node_partition_count.entry(id).or_default() += 1;
+			}
 		}
 		let node_info = garage
 			.system
@@ -174,7 +180,11 @@ impl RequestHandler for GetClusterStatisticsRequest {
 		for (id, parts) in node_partition_count.iter() {
 			let info = node_info.get(id);
 			let status = info.map(|x| &x.status);
-			let role = layout.current().roles.get(id).and_then(|x| x.0.as_ref());
+			let role = layout
+				.current()
+				.ok()
+				.and_then(|l| l.roles.get(id))
+				.and_then(|x| x.0.as_ref());
 			let hostname = status.and_then(|x| x.hostname.as_deref()).unwrap_or("?");
 			let zone = role.map(|x| x.zone.as_str()).unwrap_or("?");
 			let capacity = role

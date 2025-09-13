@@ -345,7 +345,7 @@ impl RpcHelper {
 
 		// Reorder requests to priorize closeness / low latency
 		let request_order =
-			self.request_order(&self.0.layout.read().unwrap().current(), to.iter().copied());
+			self.request_order(self.0.layout.read().unwrap().current()?, to.iter().copied());
 		let send_all_at_once = strategy.rs_send_all_at_once.unwrap_or(false);
 
 		// Build future for each request
@@ -567,25 +567,29 @@ impl RpcHelper {
 	/// The preference order, for each layout version, is given by `request_order`,
 	/// based on factors such as nodes being in the same datacenter,
 	/// having low ping, etc.
-	pub fn block_read_nodes_of(&self, position: &Hash, rpc_helper: &RpcHelper) -> Vec<Uuid> {
+	pub fn block_read_nodes_of(
+		&self,
+		position: &Hash,
+		rpc_helper: &RpcHelper,
+	) -> Result<Vec<Uuid>, Error> {
 		let layout = self.0.layout.read().unwrap();
+		let current_layout = layout.current()?;
 
 		// Compute, for each layout version, the set of nodes that might store
 		// the block, and put them in their preferred order as of `request_order`.
-		let mut vernodes = layout.versions().iter().map(|ver| {
+		let mut vernodes = vec![];
+		for ver in layout.versions()?.iter() {
 			let nodes = ver.nodes_of(position);
-			rpc_helper.request_order(layout.current(), nodes)
-		});
+			vernodes.push(rpc_helper.request_order(current_layout, nodes))
+		}
 
-		let mut ret = if layout.versions().len() == 1 {
+		let mut ret = if vernodes.len() == 1 {
 			// If we have only one active layout version, then these are the
 			// only nodes we ask in step 1
-			vernodes.next().unwrap()
+			vernodes.into_iter().next().unwrap()
 		} else {
-			let vernodes = vernodes.collect::<Vec<_>>();
-
 			let mut nodes = Vec::<Uuid>::with_capacity(12);
-			for i in 0..layout.current().replication_factor {
+			for i in 0..current_layout.replication_factor {
 				for vn in vernodes.iter() {
 					if let Some(n) = vn.get(i) {
 						if !nodes.contains(&n) {
@@ -608,14 +612,14 @@ impl RpcHelper {
 		let old_ver_iter = layout.inner().old_versions.iter().rev();
 		for ver in old_ver_iter {
 			let nodes = ver.nodes_of(position);
-			for node in rpc_helper.request_order(layout.current(), nodes) {
+			for node in rpc_helper.request_order(current_layout, nodes) {
 				if !ret.contains(&node) {
 					ret.push(node);
 				}
 			}
 		}
 
-		ret
+		Ok(ret)
 	}
 
 	fn request_order(

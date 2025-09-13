@@ -4,6 +4,7 @@ use std::time::Duration;
 use garage_rpc::layout::*;
 use garage_rpc::{replication_mode::ConsistencyMode, system::System};
 use garage_util::data::*;
+use garage_util::error::Error;
 
 use crate::replication::*;
 
@@ -34,63 +35,64 @@ impl TableReplication for TableFullReplication {
 	// Also, it's generally a much bigger problem for fullcopy tables to be out of sync.
 	const ANTI_ENTROPY_INTERVAL: Duration = Duration::from_secs(10);
 
-	fn storage_nodes(&self, _hash: &Hash) -> Vec<Uuid> {
-		self.system.cluster_layout().all_nodes().to_vec()
+	fn storage_nodes(&self, _hash: &Hash) -> Result<Vec<Uuid>, Error> {
+		Ok(self.system.cluster_layout().all_nodes()?.to_vec())
 	}
 
-	fn read_nodes(&self, _hash: &Hash) -> Vec<Uuid> {
-		self.system
+	fn read_nodes(&self, _hash: &Hash) -> Result<Vec<Uuid>, Error> {
+		Ok(self
+			.system
 			.cluster_layout()
-			.read_version()
+			.read_version()?
 			.all_nodes()
-			.to_vec()
+			.to_vec())
 	}
-	fn read_quorum(&self) -> usize {
+	fn read_quorum(&self) -> Result<usize, Error> {
 		match self.consistency_mode {
-			ConsistencyMode::Dangerous | ConsistencyMode::Degraded => 1,
+			ConsistencyMode::Dangerous | ConsistencyMode::Degraded => Ok(1),
 			ConsistencyMode::Consistent => {
 				let layout = self.system.cluster_layout();
-				let nodes = layout.read_version().all_nodes();
-				nodes.len().div_euclid(2) + 1
+				let nodes = layout.read_version()?.all_nodes();
+				Ok(nodes.len().div_euclid(2) + 1)
 			}
 		}
 	}
 
-	fn write_sets(&self, _hash: &Hash) -> Self::WriteSets {
+	fn write_sets(&self, _hash: &Hash) -> Result<Self::WriteSets, Error> {
 		self.system.layout_manager.write_lock_with(write_sets)
 	}
-	fn write_quorum(&self) -> usize {
+	fn write_quorum(&self) -> Result<usize, Error> {
 		match self.consistency_mode {
-			ConsistencyMode::Dangerous => 1,
+			ConsistencyMode::Dangerous => Ok(1),
 			ConsistencyMode::Degraded | ConsistencyMode::Consistent => {
 				let layout = self.system.cluster_layout();
 				let min_len = layout
-					.versions()
+					.versions()?
 					.iter()
 					.map(|x| x.all_nodes().len())
 					.min()
 					.unwrap();
 				let max_quorum = layout
-					.versions()
+					.versions()?
 					.iter()
 					.map(|x| x.all_nodes().len().div_euclid(2) + 1)
 					.max()
 					.unwrap();
 				if min_len < max_quorum {
 					warn!("Write quorum will not be respected for TableFullReplication operations due to multiple active layout versions with vastly different number of nodes");
-					min_len
+					Ok(std::cmp::max(1, min_len))
 				} else {
-					max_quorum
+					Ok(max_quorum)
 				}
 			}
 		}
 	}
 
-	fn partition_of(&self, _hash: &Hash) -> Partition {
-		0u16
+	fn partition_of(&self, _hash: &Hash) -> Result<Partition, Error> {
+		Ok(0u16)
 	}
 
-	fn sync_partitions(&self) -> SyncPartitions {
+	fn sync_partitions(&self) -> Result<SyncPartitions, Error> {
 		let layout = self.system.cluster_layout();
 		let layout_version = layout.ack_map_min();
 
@@ -98,19 +100,18 @@ impl TableReplication for TableFullReplication {
 			partition: 0u16,
 			first_hash: [0u8; 32].into(),
 			last_hash: [0xff; 32].into(),
-			storage_sets: write_sets(&layout),
+			storage_sets: write_sets(layout.versions()?),
 		}];
 
-		SyncPartitions {
+		Ok(SyncPartitions {
 			layout_version,
 			partitions,
-		}
+		})
 	}
 }
 
-fn write_sets(layout: &LayoutHelper) -> Vec<Vec<Uuid>> {
-	layout
-		.versions()
+fn write_sets(layout_versions: &[LayoutVersion]) -> Vec<Vec<Uuid>> {
+	layout_versions
 		.iter()
 		.map(|x| x.all_nodes().to_vec())
 		.collect()

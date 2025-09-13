@@ -227,7 +227,7 @@ impl<'a> BucketHelper<'a> {
 				.0
 				.system
 				.cluster_layout()
-				.all_nongateway_nodes()
+				.all_nongateway_nodes()?
 				.to_vec();
 			let k2vindexes = self
 				.0

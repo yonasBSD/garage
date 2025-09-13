@@ -306,38 +306,36 @@ fn verify_authorization(
 }
 
 pub(crate) fn find_matching_nodes(garage: &Garage, spec: &str) -> Result<Vec<Uuid>, Error> {
-	let mut res = vec![];
-	if spec == "*" {
-		res = garage.system.cluster_layout().all_nodes().to_vec();
+	if spec == "self" {
+		Ok(vec![garage.system.id])
+	} else {
+		// Collect all nodes currently up and/or in cluster layout
+		let mut res = vec![];
+		if let Ok(all_nodes) = garage.system.cluster_layout().all_nodes() {
+			res = all_nodes.to_vec();
+		}
 		for node in garage.system.get_known_nodes() {
 			if node.is_up && !res.contains(&node.id) {
 				res.push(node.id);
 			}
 		}
-	} else if spec == "self" {
-		res.push(garage.system.id);
-	} else {
-		let layout = garage.system.cluster_layout();
-		let known_nodes = garage.system.get_known_nodes();
-		let all_nodes = layout
-			.all_nodes()
-			.iter()
-			.copied()
-			.chain(known_nodes.iter().filter(|x| x.is_up).map(|x| x.id));
-		for node in all_nodes {
-			if !res.contains(&node) && hex::encode(node).starts_with(spec) {
-				res.push(node);
+
+		if spec == "*" {
+			// match all nodes
+			Ok(res)
+		} else {
+			// filter nodes that match spec
+			res.retain(|node| hex::encode(node).starts_with(spec));
+			if res.is_empty() {
+				Err(Error::bad_request(format!("No nodes matching {}", spec)))
+			} else if res.len() > 1 {
+				Err(Error::bad_request(format!(
+					"Multiple nodes matching {}: {:?}",
+					spec, res
+				)))
+			} else {
+				Ok(res)
 			}
 		}
-		if res.is_empty() {
-			return Err(Error::bad_request(format!("No nodes matching {}", spec)));
-		}
-		if res.len() > 1 {
-			return Err(Error::bad_request(format!(
-				"Multiple nodes matching {}: {:?}",
-				spec, res
-			)));
-		}
 	}
-	Ok(res)
 }

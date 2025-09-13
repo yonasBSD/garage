@@ -285,7 +285,7 @@ impl BlockManager {
 		let who = self
 			.system
 			.rpc_helper()
-			.block_read_nodes_of(hash, self.system.rpc_helper());
+			.block_read_nodes_of(hash, self.system.rpc_helper())?;
 
 		for node in who.iter() {
 			let node_id = NodeID::from(*node);
@@ -341,12 +341,9 @@ impl BlockManager {
 	/// layout version only: since blocks are immutable, we don't need to
 	/// do complex logic when several layour versions are active at once,
 	/// just move them directly to the new nodes.
-	pub(crate) fn storage_nodes_of(&self, hash: &Hash) -> Vec<Uuid> {
-		self.system
-			.cluster_layout()
-			.current()
-			.nodes_of(hash)
-			.collect()
+	pub(crate) fn storage_nodes_of(&self, hash: &Hash) -> Result<Vec<Uuid>, Error> {
+		let cluster_layout = self.system.cluster_layout();
+		Ok(cluster_layout.current()?.nodes_of(hash).collect())
 	}
 
 	// ---- Public interface ----
@@ -381,7 +378,7 @@ impl BlockManager {
 		prevent_compression: bool,
 		order_tag: Option<OrderTag>,
 	) -> Result<(), Error> {
-		let who = self.storage_nodes_of(&hash);
+		let who = self.storage_nodes_of(&hash)?;
 
 		let compression_level = self.compression_level.filter(|_| !prevent_compression);
 		let (header, bytes) = DataBlock::from_buffer(data, compression_level)

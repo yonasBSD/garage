@@ -118,15 +118,14 @@ impl LayoutVersion {
 	pub fn nodes_of(&self, position: &Hash) -> impl Iterator<Item = Uuid> + '_ {
 		let data = &self.ring_assignment_data;
 
-		let partition_nodes = if data.len() == self.replication_factor * (1 << PARTITION_BITS) {
-			let partition_idx = self.partition_of(position) as usize;
-			let partition_start = partition_idx * self.replication_factor;
-			let partition_end = (partition_idx + 1) * self.replication_factor;
-			&data[partition_start..partition_end]
-		} else {
-			warn!("Ring not yet ready, read/writes will be lost!");
-			&[]
-		};
+		if data.len() != self.replication_factor * (1 << PARTITION_BITS) {
+			panic!(".nodes_of() called on invalid LayoutVersion (this is a bug)");
+		}
+
+		let partition_idx = self.partition_of(position) as usize;
+		let partition_start = partition_idx * self.replication_factor;
+		let partition_end = (partition_idx + 1) * self.replication_factor;
+		let partition_nodes = &data[partition_start..partition_end];
 
 		partition_nodes
 			.iter()

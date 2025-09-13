@@ -375,7 +375,7 @@ impl BlockResyncManager {
 			info!("Resync block {:?}: offloading and deleting", hash);
 			let existing_path = existing_path.unwrap();
 
-			let mut who = manager.storage_nodes_of(hash);
+			let mut who = manager.storage_nodes_of(hash)?;
 			if who.len() < manager.write_quorum {
 				return Err(Error::Message("Not trying to offload block because we don't have a quorum of nodes to write to".to_string()));
 			}
@@ -458,7 +458,7 @@ impl BlockResyncManager {
 
 			// First, check whether we are still supposed to store that
 			// block in the latest cluster layout version.
-			let storage_nodes = manager.storage_nodes_of(&hash);
+			let storage_nodes = manager.storage_nodes_of(&hash)?;
 
 			if !storage_nodes.contains(&manager.system.id) {
 				info!(
