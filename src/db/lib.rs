@@ -106,32 +106,44 @@ impl Db {
 			result: Cell::new(None),
 		};
 		let tx_res = self.0.transaction(&f);
-		let ret = f
-			.result
-			.into_inner()
-			.expect("Transaction did not store result");
+		let fn_res = f.result.into_inner();
 
-		match tx_res {
-			Ok(on_commit) => match ret {
-				Ok(value) => {
-					on_commit.into_iter().for_each(|f| f());
-					Ok(value)
-				}
-				_ => unreachable!(),
-			},
-			Err(TxError::Abort(())) => match ret {
-				Err(TxError::Abort(e)) => Err(TxError::Abort(e)),
-				_ => unreachable!(),
-			},
-			Err(TxError::Db(e2)) => match ret {
-				// Ok was stored -> the error occurred when finalizing
-				// transaction
-				Ok(_) => Err(TxError::Db(e2)),
-				// An error was already stored: that's the one we want to
-				// return
-				Err(TxError::Db(e)) => Err(TxError::Db(e)),
-				_ => unreachable!(),
-			},
+		match (tx_res, fn_res) {
+			(Ok(on_commit), Some(Ok(value))) => {
+				// Transaction succeeded
+				// TxFn stored the value to return to the user in fn_res
+				// tx_res contains the on_commit list of callbacks, run them now
+				on_commit.into_iter().for_each(|f| f());
+				Ok(value)
+			}
+			(Err(TxError::Abort(())), Some(Err(TxError::Abort(e)))) => {
+				// Transaction was aborted by user code
+				// The abort error value is stored in fn_res
+				Err(TxError::Abort(e))
+			}
+			(Err(TxError::Db(_tx_e)), Some(Err(TxError::Db(fn_e)))) => {
+				// Transaction encountered a DB error in user code
+				// The error value encountered is the one in fn_res,
+				// tx_res contains only a dummy error message
+				Err(TxError::Db(fn_e))
+			}
+			(Err(TxError::Db(tx_e)), None) => {
+				// Transaction encounterred a DB error when initializing the transaction,
+				// before user code was called
+				Err(TxError::Db(tx_e))
+			}
+			(Err(TxError::Db(tx_e)), Some(Ok(_))) => {
+				// Transaction encounterred a DB error when commiting the transaction,
+				// after user code was called
+				Err(TxError::Db(tx_e))
+			}
+			(tx_res, fn_res) => {
+				panic!(
+					"unexpected error case: tx_res={:?}, fn_res={:?}",
+					tx_res.map(|_| "..."),
+					fn_res.map(|x| x.map(|_| "...").map_err(|_| "..."))
+				);
+			}
 		}
 	}
 

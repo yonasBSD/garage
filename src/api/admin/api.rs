@@ -1132,6 +1132,7 @@ pub enum RepairType {
 	Rebalance,
 	Scrub(ScrubCommand),
 	Aliases,
+	ClearResyncQueue,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
