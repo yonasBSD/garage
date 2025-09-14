@@ -28,7 +28,7 @@ pub async fn handle_read_index(
 	let node_id_vec = garage
 		.system
 		.cluster_layout()
-		.all_nongateway_nodes()
+		.all_nongateway_nodes()?
 		.to_vec();
 
 	let (partition_keys, more, next_start) = read_range(
@@ -66,7 +66,7 @@ pub async fn handle_read_index(
 					bytes: *vals.get(&s_bytes).unwrap_or(&0),
 				}
 			})
-			.collect::<Vec<_>>(),
+			.collect(),
 		more,
 		next_start,
 	};

@@ -102,7 +102,7 @@ impl<F: TableSchema, R: TableReplication> MerkleUpdater<F, R> {
 			partition: self
 				.data
 				.replication
-				.partition_of(&Hash::try_from(&k[0..32]).unwrap()),
+				.partition_of(&Hash::try_from(&k[0..32]).unwrap())?,
 			prefix: vec![],
 		};
 		self.data

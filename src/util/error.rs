@@ -54,6 +54,9 @@ pub enum Error {
 	#[error(display = "Timeout")]
 	Timeout,
 
+	#[error(display = "Layout not ready")]
+	LayoutNotReady,
+
 	#[error(
 		display = "Could not reach quorum of {} (sets={:?}). {} of {} request succeeded, others returned errors: {:?}",
 		_0,

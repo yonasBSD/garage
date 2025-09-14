@@ -119,7 +119,7 @@ impl<F: TableSchema, R: TableReplication> Table<F, R> {
 
 	async fn insert_internal(&self, e: &F::E) -> Result<(), Error> {
 		let hash = e.partition_key().hash();
-		let who = self.data.replication.write_sets(&hash);
+		let who = self.data.replication.write_sets(&hash)?;
 
 		let e_enc = Arc::new(ByteBuf::from(e.encode()?));
 		let rpc = TableRpc::<F>::Update(vec![e_enc]);
@@ -131,7 +131,7 @@ impl<F: TableSchema, R: TableReplication> Table<F, R> {
 				who.as_ref(),
 				rpc,
 				RequestStrategy::with_priority(PRIO_NORMAL)
-					.with_quorum(self.data.replication.write_quorum()),
+					.with_quorum(self.data.replication.write_quorum()?),
 			)
 			.await?;
 
@@ -180,7 +180,7 @@ impl<F: TableSchema, R: TableReplication> Table<F, R> {
 		// a quorum of nodes has answered OK, then the insert has succeeded and
 		// consistency properties (read-after-write) are preserved.
 
-		let quorum = self.data.replication.write_quorum();
+		let quorum = self.data.replication.write_quorum()?;
 
 		// Serialize all entries and compute the write sets for each of them.
 		// In the case of sharded table replication, this also takes an "ack lock"
@@ -193,7 +193,7 @@ impl<F: TableSchema, R: TableReplication> Table<F, R> {
 		for entry in entries.into_iter() {
 			let entry = entry.borrow();
 			let hash = entry.partition_key().hash();
-			let mut write_sets = self.data.replication.write_sets(&hash);
+			let mut write_sets = self.data.replication.write_sets(&hash)?;
 			for set in write_sets.as_mut().iter_mut() {
 				// Sort nodes in each write sets to merge write sets with same
 				// nodes but in possibly different orders
@@ -309,7 +309,7 @@ impl<F: TableSchema, R: TableReplication> Table<F, R> {
 		sort_key: &F::S,
 	) -> Result<Option<F::E>, Error> {
 		let hash = partition_key.hash();
-		let who = self.data.replication.read_nodes(&hash);
+		let who = self.data.replication.read_nodes(&hash)?;
 
 		let rpc = TableRpc::<F>::ReadEntry(partition_key.clone(), sort_key.clone());
 		let resps = self
@@ -320,7 +320,7 @@ impl<F: TableSchema, R: TableReplication> Table<F, R> {
 				&who,
 				rpc,
 				RequestStrategy::with_priority(PRIO_NORMAL)
-					.with_quorum(self.data.replication.read_quorum()),
+					.with_quorum(self.data.replication.read_quorum()?),
 			)
 			.await?;
 
@@ -397,7 +397,7 @@ impl<F: TableSchema, R: TableReplication> Table<F, R> {
 		enumeration_order: EnumerationOrder,
 	) -> Result<Vec<F::E>, Error> {
 		let hash = partition_key.hash();
-		let who = self.data.replication.read_nodes(&hash);
+		let who = self.data.replication.read_nodes(&hash)?;
 
 		let rpc = TableRpc::<F>::ReadRange {
 			partition: partition_key.clone(),
@@ -415,7 +415,7 @@ impl<F: TableSchema, R: TableReplication> Table<F, R> {
 				&who,
 				rpc,
 				RequestStrategy::with_priority(PRIO_NORMAL)
-					.with_quorum(self.data.replication.read_quorum()),
+					.with_quorum(self.data.replication.read_quorum()?),
 			)
 			.await?;
 

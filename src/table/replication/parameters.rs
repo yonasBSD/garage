@@ -2,6 +2,7 @@ use std::time::Duration;
 
 use garage_rpc::layout::*;
 use garage_util::data::*;
+use garage_util::error::Error;
 
 /// Trait to describe how a table shall be replicated
 pub trait TableReplication: Send + Sync + 'static {
@@ -13,23 +14,23 @@ pub trait TableReplication: Send + Sync + 'static {
 	// To understand various replication methods
 
 	/// The entire list of all nodes that store a partition
-	fn storage_nodes(&self, hash: &Hash) -> Vec<Uuid>;
+	fn storage_nodes(&self, hash: &Hash) -> Result<Vec<Uuid>, Error>;
 
 	/// Which nodes to send read requests to
-	fn read_nodes(&self, hash: &Hash) -> Vec<Uuid>;
+	fn read_nodes(&self, hash: &Hash) -> Result<Vec<Uuid>, Error>;
 	/// Responses needed to consider a read successful
-	fn read_quorum(&self) -> usize;
+	fn read_quorum(&self) -> Result<usize, Error>;
 
 	/// Which nodes to send writes to
-	fn write_sets(&self, hash: &Hash) -> Self::WriteSets;
+	fn write_sets(&self, hash: &Hash) -> Result<Self::WriteSets, Error>;
 	/// Responses needed to consider a write successful in each set
-	fn write_quorum(&self) -> usize;
+	fn write_quorum(&self) -> Result<usize, Error>;
 
 	// Accessing partitions, for Merkle tree & sync
 	/// Get partition for data with given hash
-	fn partition_of(&self, hash: &Hash) -> Partition;
+	fn partition_of(&self, hash: &Hash) -> Result<Partition, Error>;
 	/// List of partitions and nodes to sync with in current layout
-	fn sync_partitions(&self) -> SyncPartitions;
+	fn sync_partitions(&self) -> Result<SyncPartitions, Error>;
 }
 
 #[derive(Debug)]

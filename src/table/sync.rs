@@ -115,7 +115,7 @@ impl<F: TableSchema, R: TableReplication> TableSyncer<F, R> {
 			);
 			let mut result_tracker = QuorumSetResultTracker::new(
 				&partition.storage_sets,
-				self.data.replication.write_quorum(),
+				self.data.replication.write_quorum()?,
 			);
 
 			let mut sync_futures = result_tracker
@@ -179,7 +179,7 @@ impl<F: TableSchema, R: TableReplication> TableSyncer<F, R> {
 			}
 
 			if !items.is_empty() {
-				let nodes = self.data.replication.storage_nodes(begin);
+				let nodes = self.data.replication.storage_nodes(begin)?;
 				if nodes.contains(&self.system.id) {
 					warn!(
 						"({}) Interrupting offload as partitions seem to have changed",
@@ -187,7 +187,7 @@ impl<F: TableSchema, R: TableReplication> TableSyncer<F, R> {
 					);
 					break;
 				}
-				if nodes.len() < self.data.replication.write_quorum() {
+				if nodes.len() < self.data.replication.write_quorum()? {
 					return Err(Error::Message(
 						"Not offloading as we don't have a quorum of nodes to write to."
 							.to_string(),
@@ -502,15 +502,21 @@ impl<F: TableSchema, R: TableReplication> SyncWorker<F, R> {
 	}
 
 	fn add_full_sync(&mut self) {
-		let mut partitions = self.syncer.data.replication.sync_partitions();
-		debug!(
-			"{}: Adding full sync for ack layout version {}",
-			F::TABLE_NAME,
-			partitions.layout_version
-		);
+		match self.syncer.data.replication.sync_partitions() {
+			Ok(mut partitions) => {
+				debug!(
+					"{}: Adding full sync for ack layout version {}",
+					F::TABLE_NAME,
+					partitions.layout_version
+				);
 
-		partitions.partitions.shuffle(&mut thread_rng());
-		self.todo = Some(partitions);
+				partitions.partitions.shuffle(&mut thread_rng());
+				self.todo = Some(partitions);
+			}
+			Err(e) => {
+				debug!("{}: Not adding full sync: {}", F::TABLE_NAME, e);
+			}
+		}
 		self.next_full_sync = Instant::now() + R::ANTI_ENTROPY_INTERVAL;
 	}
 }
