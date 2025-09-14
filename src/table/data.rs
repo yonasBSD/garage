@@ -368,11 +368,11 @@ impl<F: TableSchema, R: TableReplication> TableData<F, R> {
 		}
 	}
 
-	pub fn insert_queue_len(&self) -> Result<usize, Error> {
-		Ok(self.insert_queue.len()?)
+	pub fn insert_queue_approximate_len(&self) -> Result<usize, Error> {
+		Ok(self.insert_queue.approximate_len()?)
 	}
 
-	pub fn gc_todo_len(&self) -> Result<usize, Error> {
-		Ok(self.gc_todo.len()?)
+	pub fn gc_todo_approximate_len(&self) -> Result<usize, Error> {
+		Ok(self.gc_todo.approximate_len()?)
 	}
 }

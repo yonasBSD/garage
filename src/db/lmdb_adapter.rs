@@ -1,8 +1,8 @@
 use core::ops::Bound;
-use core::ptr::NonNull;
 
 use std::collections::HashMap;
 use std::convert::TryInto;
+use std::marker::PhantomPinned;
 use std::path::PathBuf;
 use std::pin::Pin;
 use std::sync::{Arc, RwLock};
@@ -11,11 +11,54 @@ use heed::types::ByteSlice;
 use heed::{BytesDecode, Env, RoTxn, RwTxn, UntypedDatabase as Database};
 
 use crate::{
+	open::{Engine, OpenOpt},
 	Db, Error, IDb, ITx, ITxFn, OnCommit, Result, TxError, TxFnResult, TxOpError, TxOpResult,
 	TxResult, TxValueIter, Value, ValueIter,
 };
 
 pub use heed;
+
+// ---- top-level open function
+
+pub(crate) fn open_db(path: &PathBuf, opt: &OpenOpt) -> Result<Db> {
+	info!("Opening LMDB database at: {}", path.display());
+	if let Err(e) = std::fs::create_dir_all(&path) {
+		return Err(Error(
+			format!("Unable to create LMDB data directory: {}", e).into(),
+		));
+	}
+
+	let map_size = match opt.lmdb_map_size {
+		None => recommended_map_size(),
+		Some(v) => v - (v % 4096),
+	};
+
+	let mut env_builder = heed::EnvOpenOptions::new();
+	env_builder.max_dbs(100);
+	env_builder.map_size(map_size);
+	env_builder.max_readers(2048);
+	unsafe {
+		env_builder.flag(heed::flags::Flags::MdbNoRdAhead);
+		env_builder.flag(heed::flags::Flags::MdbNoMetaSync);
+		if !opt.fsync {
+			env_builder.flag(heed::flags::Flags::MdbNoSync);
+		}
+	}
+	match env_builder.open(&path) {
+		Err(heed::Error::Io(e)) if e.kind() == std::io::ErrorKind::OutOfMemory => {
+			return Err(Error(
+				"OutOfMemory error while trying to open LMDB database. This can happen \
+                if your operating system is not allowing you to use sufficient virtual \
+                memory address space. Please check that no limit is set (ulimit -v). \
+                You may also try to set a smaller `lmdb_map_size` configuration parameter. \
+                On 32-bit machines, you should probably switch to another database engine."
+					.into(),
+			))
+		}
+		Err(e) => Err(Error(format!("Cannot open LMDB database: {}", e).into())),
+		Ok(db) => Ok(LmdbDb::init(db)),
+	}
+}
 
 // -- err
 
@@ -104,10 +147,9 @@ impl IDb for LmdbDb {
 		Ok(ret2)
 	}
 
-	fn snapshot(&self, to: &PathBuf) -> Result<()> {
-		std::fs::create_dir_all(to)?;
-		let mut path = to.clone();
-		path.push("data.mdb");
+	fn snapshot(&self, base_path: &PathBuf) -> Result<()> {
+		std::fs::create_dir_all(base_path)?;
+		let path = Engine::Lmdb.db_path(base_path);
 		self.db
 			.copy_to_path(path, heed::CompactionOption::Enabled)?;
 		Ok(())
@@ -126,10 +168,15 @@ impl IDb for LmdbDb {
 		}
 	}
 
-	fn len(&self, tree: usize) -> Result<usize> {
+	fn approximate_len(&self, tree: usize) -> Result<usize> {
 		let tree = self.get_tree(tree)?;
 		let tx = self.db.read_txn()?;
 		Ok(tree.len(&tx)?.try_into().unwrap())
+	}
+	fn is_empty(&self, tree: usize) -> Result<bool> {
+		let tree = self.get_tree(tree)?;
+		let tx = self.db.read_txn()?;
+		Ok(tree.is_empty(&tx)?)
 	}
 
 	fn insert(&self, tree: usize, key: &[u8], value: &[u8]) -> Result<()> {
@@ -159,13 +206,15 @@ impl IDb for LmdbDb {
 	fn iter(&self, tree: usize) -> Result<ValueIter<'_>> {
 		let tree = self.get_tree(tree)?;
 		let tx = self.db.read_txn()?;
-		TxAndIterator::make(tx, |tx| Ok(tree.iter(tx)?))
+		// Safety: the cloture does not store its argument anywhere,
+		unsafe { TxAndIterator::make(tx, |tx| Ok(tree.iter(tx)?)) }
 	}
 
 	fn iter_rev(&self, tree: usize) -> Result<ValueIter<'_>> {
 		let tree = self.get_tree(tree)?;
 		let tx = self.db.read_txn()?;
-		TxAndIterator::make(tx, |tx| Ok(tree.rev_iter(tx)?))
+		// Safety: the cloture does not store its argument anywhere,
+		unsafe { TxAndIterator::make(tx, |tx| Ok(tree.rev_iter(tx)?)) }
 	}
 
 	fn range<'r>(
@@ -176,7 +225,8 @@ impl IDb for LmdbDb {
 	) -> Result<ValueIter<'_>> {
 		let tree = self.get_tree(tree)?;
 		let tx = self.db.read_txn()?;
-		TxAndIterator::make(tx, |tx| Ok(tree.range(tx, &(low, high))?))
+		// Safety: the cloture does not store its argument anywhere,
+		unsafe { TxAndIterator::make(tx, |tx| Ok(tree.range(tx, &(low, high))?)) }
 	}
 	fn range_rev<'r>(
 		&self,
@@ -186,7 +236,8 @@ impl IDb for LmdbDb {
 	) -> Result<ValueIter<'_>> {
 		let tree = self.get_tree(tree)?;
 		let tx = self.db.read_txn()?;
-		TxAndIterator::make(tx, |tx| Ok(tree.rev_range(tx, &(low, high))?))
+		// Safety: the cloture does not store its argument anywhere,
+		unsafe { TxAndIterator::make(tx, |tx| Ok(tree.rev_range(tx, &(low, high))?)) }
 	}
 
 	// ----
@@ -316,28 +367,41 @@ where
 {
 	tx: RoTxn<'a>,
 	iter: Option<I>,
+	_pin: PhantomPinned,
 }
 
 impl<'a, I> TxAndIterator<'a, I>
 where
 	I: Iterator<Item = IteratorItem<'a>> + 'a,
 {
-	fn make<F>(tx: RoTxn<'a>, iterfun: F) -> Result<ValueIter<'a>>
+	fn iter(self: Pin<&mut Self>) -> &mut Option<I> {
+		// Safety: iter is not structural
+		unsafe { &mut self.get_unchecked_mut().iter }
+	}
+
+	/// Safety: iterfun must not store its argument anywhere but in its result.
+	unsafe fn make<F>(tx: RoTxn<'a>, iterfun: F) -> Result<ValueIter<'a>>
 	where
 		F: FnOnce(&'a RoTxn<'a>) -> Result<I>,
 	{
-		let res = TxAndIterator { tx, iter: None };
+		let res = TxAndIterator {
+			tx,
+			iter: None,
+			_pin: PhantomPinned,
+		};
 		let mut boxed = Box::pin(res);
 
-		// This unsafe allows us to bypass lifetime checks
-		let tx = unsafe { NonNull::from(&boxed.tx).as_ref() };
-		let iter = iterfun(tx)?;
+		let tx_lifetime_overextended: &'a RoTxn<'a> = {
+			let tx = &boxed.tx;
+			// Safety: Artificially extending the lifetime because
+			// this reference will only be stored and accessed from the
+			// returned ValueIter which guarantees that it is destroyed
+			// before the tx it is pointing  to.
+			unsafe { &*&raw const *tx }
+		};
+		let iter = iterfun(&tx_lifetime_overextended)?;
 
-		let mut_ref = Pin::as_mut(&mut boxed);
-		// This unsafe allows us to write in a field of the pinned struct
-		unsafe {
-			Pin::get_unchecked_mut(mut_ref).iter = Some(iter);
-		}
+		*boxed.as_mut().iter() = Some(iter);
 
 		Ok(Box::new(TxAndIteratorPin(boxed)))
 	}
@@ -348,8 +412,10 @@ where
 	I: Iterator<Item = IteratorItem<'a>> + 'a,
 {
 	fn drop(&mut self) {
-		// ensure the iterator is dropped before the RoTxn it references
-		drop(self.iter.take());
+		// Safety: `new_unchecked` is okay because we know this value is never
+		// used again after being dropped.
+		let this = unsafe { Pin::new_unchecked(self) };
+		drop(this.iter().take());
 	}
 }
 
@@ -365,13 +431,12 @@ where
 
 	fn next(&mut self) -> Option<Self::Item> {
 		let mut_ref = Pin::as_mut(&mut self.0);
-		// This unsafe allows us to mutably access the iterator field
-		let next = unsafe { Pin::get_unchecked_mut(mut_ref).iter.as_mut()?.next() };
-		match next {
-			None => None,
-			Some(Err(e)) => Some(Err(e.into())),
-			Some(Ok((k, v))) => Some(Ok((k.to_vec(), v.to_vec()))),
-		}
+		let next = mut_ref.iter().as_mut()?.next()?;
+		let res = match next {
+			Err(e) => Err(e.into()),
+			Ok((k, v)) => Ok((k.to_vec(), v.to_vec())),
+		};
+		Some(res)
 	}
 }
 

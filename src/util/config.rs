@@ -75,6 +75,10 @@ pub struct Config {
 	)]
 	pub block_ram_buffer_max: usize,
 
+	/// Maximum number of concurrent reads of block files on disk
+	#[serde(default = "default_block_max_concurrent_reads")]
+	pub block_max_concurrent_reads: usize,
+
 	/// Skip the permission check of secret files. Useful when
 	/// POSIX ACLs (or more complex chmods) are used.
 	#[serde(default)]
@@ -121,6 +125,10 @@ pub struct Config {
 	/// LMDB map size
 	#[serde(deserialize_with = "deserialize_capacity", default)]
 	pub lmdb_map_size: usize,
+
+	/// Fjall block cache size
+	#[serde(deserialize_with = "deserialize_capacity", default)]
+	pub fjall_block_cache_size: usize,
 
 	// -- APIs
 	/// Configuration for S3 api
@@ -278,6 +286,9 @@ fn default_block_size() -> usize {
 }
 fn default_block_ram_buffer_max() -> usize {
 	256 * 1024 * 1024
+}
+fn default_block_max_concurrent_reads() -> usize {
+	16
 }
 
 fn default_consistency_mode() -> String {

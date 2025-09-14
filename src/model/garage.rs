@@ -119,18 +119,14 @@ impl Garage {
 		info!("Opening database...");
 		let db_engine = db::Engine::from_str(&config.db_engine)
 			.ok_or_message("Invalid `db_engine` value in configuration file")?;
-		let mut db_path = config.metadata_dir.clone();
-		match db_engine {
-			db::Engine::Sqlite => {
-				db_path.push("db.sqlite");
-			}
-			db::Engine::Lmdb => {
-				db_path.push("db.lmdb");
-			}
-		}
+		let db_path = db_engine.db_path(&config.metadata_dir);
 		let db_opt = db::OpenOpt {
 			fsync: config.metadata_fsync,
 			lmdb_map_size: match config.lmdb_map_size {
+				v if v == usize::default() => None,
+				v => Some(v),
+			},
+			fjall_block_cache_size: match config.fjall_block_cache_size {
 				v if v == usize::default() => None,
 				v => Some(v),
 			},

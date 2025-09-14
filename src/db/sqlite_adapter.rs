@@ -11,11 +11,22 @@ use r2d2_sqlite::SqliteConnectionManager;
 use rusqlite::{params, Rows, Statement, Transaction};
 
 use crate::{
+	open::{Engine, OpenOpt},
 	Db, Error, IDb, ITx, ITxFn, OnCommit, Result, TxError, TxFnResult, TxOpError, TxOpResult,
 	TxResult, TxValueIter, Value, ValueIter,
 };
 
 pub use rusqlite;
+
+// ---- top-level open function
+
+pub(crate) fn open_db(path: &PathBuf, opt: &OpenOpt) -> Result<Db> {
+	info!("Opening Sqlite database at: {}", path.display());
+	let manager = r2d2_sqlite::SqliteConnectionManager::file(path);
+	Ok(SqliteDb::new(manager, opt.fsync)?)
+}
+
+// ----
 
 type Connection = r2d2::PooledConnection<SqliteConnectionManager>;
 
@@ -139,17 +150,32 @@ impl IDb for SqliteDb {
 		Ok(trees)
 	}
 
-	fn snapshot(&self, to: &PathBuf) -> Result<()> {
+	fn snapshot(&self, base_path: &PathBuf) -> Result<()> {
 		fn progress(p: rusqlite::backup::Progress) {
-			let percent = (p.pagecount - p.remaining) * 100 / p.pagecount;
-			info!("Sqlite snapshot progress: {}%", percent);
+			use std::sync::atomic::{AtomicU64, Ordering};
+			use std::time::{SystemTime, UNIX_EPOCH};
+
+			static LAST_LOG_TIME: AtomicU64 = AtomicU64::new(0);
+
+			let now = SystemTime::now()
+				.duration_since(UNIX_EPOCH)
+				.expect("Fix your clock :o")
+				.as_millis() as u64;
+			if now >= LAST_LOG_TIME.load(Ordering::Relaxed) + 10 * 1000 {
+				let percent = (p.pagecount - p.remaining) * 100 / p.pagecount;
+				info!("Sqlite snapshot progress: {}%", percent);
+
+				LAST_LOG_TIME.fetch_max(now, Ordering::Relaxed);
+			}
 		}
-		std::fs::create_dir_all(to)?;
-		let mut path = to.clone();
-		path.push("db.sqlite");
+
+		std::fs::create_dir_all(base_path)?;
+		let path = Engine::Sqlite.db_path(&base_path);
+
 		self.db
 			.get()?
 			.backup(rusqlite::DatabaseName::Main, path, Some(progress))?;
+
 		Ok(())
 	}
 
@@ -160,7 +186,7 @@ impl IDb for SqliteDb {
 		self.internal_get(&self.db.get()?, &tree, key)
 	}
 
-	fn len(&self, tree: usize) -> Result<usize> {
+	fn approximate_len(&self, tree: usize) -> Result<usize> {
 		let tree = self.get_tree(tree)?;
 		let db = self.db.get()?;
 
@@ -170,6 +196,10 @@ impl IDb for SqliteDb {
 			None => Ok(0),
 			Some(v) => Ok(v.get::<_, usize>(0)?),
 		}
+	}
+
+	fn is_empty(&self, tree: usize) -> Result<bool> {
+		Ok(self.approximate_len(tree)? == 0)
 	}
 
 	fn insert(&self, tree: usize, key: &[u8], value: &[u8]) -> Result<()> {

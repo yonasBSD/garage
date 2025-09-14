@@ -121,13 +121,13 @@ impl Worker for LifecycleWorker {
 				mpu_aborted,
 				..
 			} => {
-				let n_objects = self.garage.object_table.data.store.len().ok();
+				let n_objects = self.garage.object_table.data.store.approximate_len().ok();
 				let progress = match n_objects {
-					None => "...".to_string(),
-					Some(total) => format!(
+					Some(total) if total > 0 => format!(
 						"~{:.2}%",
 						100. * std::cmp::min(*counter, total) as f32 / total as f32
 					),
+					_ => "...".to_string(),
 				};
 				WorkerStatus {
 					progress: Some(progress),

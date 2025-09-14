@@ -180,10 +180,21 @@ fn watch_shutdown_signal() -> watch::Receiver<bool> {
 		let mut sigterm =
 			signal(SignalKind::terminate()).expect("Failed to install SIGTERM handler");
 		let mut sighup = signal(SignalKind::hangup()).expect("Failed to install SIGHUP handler");
-		tokio::select! {
-			_ = sigint.recv() => info!("Received SIGINT, shutting down."),
-			_ = sigterm.recv() => info!("Received SIGTERM, shutting down."),
-			_ = sighup.recv() => info!("Received SIGHUP, shutting down."),
+		loop {
+			tokio::select! {
+					_ = sigint.recv() => {
+						info!("Received SIGINT, shutting down.");
+						break
+					}
+					_ = sigterm.recv() => {
+						info!("Received SIGTERM, shutting down.");
+						break
+					}
+					_ = sighup.recv() => {
+						info!("Received SIGHUP, reload not supported.");
+						continue
+					}
+			}
 		}
 		send_cancel.send(true).unwrap();
 	});
