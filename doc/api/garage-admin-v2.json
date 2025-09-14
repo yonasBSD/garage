@@ -31,7 +31,7 @@
         "parameters": [
           {
             "name": "domain",
-            "in": "path",
+            "in": "query",
             "description": "The domain name to check for",
             "required": true,
             "schema": {
@@ -408,7 +408,7 @@
         "parameters": [
           {
             "name": "node",
-            "in": "path",
+            "in": "query",
             "description": "Node ID to query, or `*` for all nodes, or `self` for the node responding to the request",
             "required": true,
             "schema": {
@@ -443,7 +443,7 @@
         "parameters": [
           {
             "name": "id",
-            "in": "path",
+            "in": "query",
             "description": "Admin API token ID",
             "required": true,
             "schema": {
@@ -472,6 +472,7 @@
           {
             "name": "id",
             "in": "query",
+            "description": "ID of the bucket to delete",
             "required": true,
             "schema": {
               "type": "string"
@@ -504,7 +505,7 @@
         "parameters": [
           {
             "name": "id",
-            "in": "path",
+            "in": "query",
             "description": "Access key ID",
             "required": true,
             "schema": {
@@ -610,7 +611,7 @@
         "parameters": [
           {
             "name": "node",
-            "in": "path",
+            "in": "query",
             "description": "Node ID to query, or `*` for all nodes, or `self` for the node responding to the request",
             "required": true,
             "schema": {
@@ -902,7 +903,7 @@
         "parameters": [
           {
             "name": "node",
-            "in": "path",
+            "in": "query",
             "description": "Node ID to query, or `*` for all nodes, or `self` for the node responding to the request",
             "required": true,
             "schema": {
@@ -937,7 +938,7 @@
         "parameters": [
           {
             "name": "node",
-            "in": "path",
+            "in": "query",
             "description": "Node ID to query, or `*` for all nodes, or `self` for the node responding to the request",
             "required": true,
             "schema": {
@@ -972,7 +973,7 @@
         "parameters": [
           {
             "name": "node",
-            "in": "path",
+            "in": "query",
             "description": "Node ID to query, or `*` for all nodes, or `self` for the node responding to the request",
             "required": true,
             "schema": {
@@ -1017,7 +1018,7 @@
         "parameters": [
           {
             "name": "node",
-            "in": "path",
+            "in": "query",
             "description": "Node ID to query, or `*` for all nodes, or `self` for the node responding to the request",
             "required": true,
             "schema": {
@@ -1141,7 +1142,7 @@
         "parameters": [
           {
             "name": "node",
-            "in": "path",
+            "in": "query",
             "description": "Node ID to query, or `*` for all nodes, or `self` for the node responding to the request",
             "required": true,
             "schema": {
@@ -1210,7 +1211,7 @@
         "parameters": [
           {
             "name": "node",
-            "in": "path",
+            "in": "query",
             "description": "Node ID to query, or `*` for all nodes, or `self` for the node responding to the request",
             "required": true,
             "schema": {
@@ -1293,7 +1294,7 @@
         "parameters": [
           {
             "name": "node",
-            "in": "path",
+            "in": "query",
             "description": "Node ID to query, or `*` for all nodes, or `self` for the node responding to the request",
             "required": true,
             "schema": {
@@ -1362,7 +1363,7 @@
         "parameters": [
           {
             "name": "node",
-            "in": "path",
+            "in": "query",
             "description": "Node ID to query, or `*` for all nodes, or `self` for the node responding to the request",
             "required": true,
             "schema": {
@@ -1441,7 +1442,7 @@
         "parameters": [
           {
             "name": "node",
-            "in": "path",
+            "in": "query",
             "description": "Node ID to query, or `*` for all nodes, or `self` for the node responding to the request",
             "required": true,
             "schema": {
@@ -1510,7 +1511,7 @@
         "parameters": [
           {
             "name": "node",
-            "in": "path",
+            "in": "query",
             "description": "Node ID to query, or `*` for all nodes, or `self` for the node responding to the request",
             "required": true,
             "schema": {
@@ -1555,7 +1556,7 @@
         "parameters": [
           {
             "name": "id",
-            "in": "path",
+            "in": "query",
             "description": "Admin API token ID",
             "required": true,
             "schema": {
@@ -1601,6 +1602,7 @@
           {
             "name": "id",
             "in": "query",
+            "description": "ID of the bucket to update",
             "required": true,
             "schema": {
               "type": "string"
@@ -1682,7 +1684,7 @@
         "parameters": [
           {
             "name": "id",
-            "in": "path",
+            "in": "query",
             "description": "Access key ID",
             "required": true,
             "schema": {
