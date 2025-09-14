@@ -46,9 +46,7 @@ a static website for the requested domain. This is used by reverse proxies such
 as Caddy or Tricot, to avoid requesting TLS certificates for domain names that
 do not correspond to an actual website.
     ",
-    params(
-        ("domain" = String, description = "The domain name to check for"),
-    ),
+    params(CheckDomainRequest),
     security(()),
 	responses(
             (status = 200, description = "The domain name redirects to a static website bucket"),
@@ -167,9 +165,7 @@ fn CreateAdminToken() -> () {}
 Updates information about the specified admin API token.
     ",
     request_body = UpdateAdminTokenRequestBody,
-    params(
-        ("id" = String, description = "Admin API token ID"),
-    ),
+    params(UpdateAdminTokenRequest),
 	responses(
             (status = 200, description = "Admin token has been updated", body = UpdateAdminTokenResponse),
             (status = 500, description = "Internal server error")
@@ -181,9 +177,7 @@ fn UpdateAdminToken() -> () {}
     path = "/v2/DeleteAdminToken",
     tag = "Admin API token",
     description = "Delete an admin API token from the cluster, revoking all its permissions.",
-    params(
-        ("id" = String, description = "Admin API token ID"),
-    ),
+    params(DeleteAdminTokenRequest),
 	responses(
             (status = 200, description = "Admin token has been deleted"),
             (status = 500, description = "Internal server error")
@@ -391,9 +385,7 @@ Updates information about the specified API access key.
 *Note: the secret key is not returned in the response, `null` is sent instead.*
     ",
     request_body = UpdateKeyRequestBody,
-    params(
-        ("id" = String, description = "Access key ID"),
-    ),
+    params(UpdateKeyRequest),
 	responses(
             (status = 200, description = "Access key has been updated", body = UpdateKeyResponse),
             (status = 500, description = "Internal server error")
@@ -405,9 +397,7 @@ fn UpdateKey() -> () {}
     path = "/v2/DeleteKey",
     tag = "Access key",
     description = "Delete a key from the cluster. Its access will be removed from all the buckets. Buckets are not automatically deleted and can be dangling. You should manually delete them before. ",
-    params(
-        ("id" = String, description = "Access key ID"),
-    ),
+    params(DeleteKeyRequest),
 	responses(
             (status = 200, description = "Access key has been deleted"),
             (status = 500, description = "Internal server error")
@@ -626,9 +616,7 @@ fn RemoveBucketAlias() -> () {}
     description = "
 Return information about the Garage daemon running on one or several nodes.
     ",
-    params(
-        ("node" = String, description = "Node ID to query, or `*` for all nodes, or `self` for the node responding to the request"),
-    ),
+    params(MultiRequestQueryParams),
 	responses(
             (status = 200, description = "Responses from individual cluster nodes", body = MultiResponse<LocalGetNodeInfoResponse>),
             (status = 500, description = "Internal server error")
@@ -644,9 +632,7 @@ Fetch statistics for one or several Garage nodes.
 
 *Note: do not try to parse the `freeform` field of the response, it is given as a string specifically because its format is not stable.*
     ",
-    params(
-        ("node" = String, description = "Node ID to query, or `*` for all nodes, or `self` for the node responding to the request"),
-    ),
+    params(MultiRequestQueryParams),
 	responses(
             (status = 200, description = "Responses from individual cluster nodes", body = MultiResponse<LocalGetNodeStatisticsResponse>),
             (status = 500, description = "Internal server error")
@@ -660,9 +646,7 @@ fn GetNodeStatistics() -> () {}
     description = "
 Instruct one or several nodes to take a snapshot of their metadata databases.
     ",
-    params(
-        ("node" = String, description = "Node ID to query, or `*` for all nodes, or `self` for the node responding to the request"),
-    ),
+    params(MultiRequestQueryParams),
 	responses(
             (status = 200, description = "Responses from individual cluster nodes", body = MultiResponse<LocalCreateMetadataSnapshotResponse>),
             (status = 500, description = "Internal server error")
@@ -676,9 +660,7 @@ fn CreateMetadataSnapshot() -> () {}
     description = "
 Launch a repair operation on one or several cluster nodes.
     ",
-    params(
-        ("node" = String, description = "Node ID to query, or `*` for all nodes, or `self` for the node responding to the request"),
-    ),
+    params(MultiRequestQueryParams),
     request_body = LocalLaunchRepairOperationRequest,
 	responses(
             (status = 200, description = "Responses from individual cluster nodes", body = MultiResponse<LocalLaunchRepairOperationResponse>),
@@ -697,9 +679,7 @@ fn LaunchRepairOperation() -> () {}
     description = "
 List background workers currently running on one or several cluster nodes.
     ",
-    params(
-        ("node" = String, description = "Node ID to query, or `*` for all nodes, or `self` for the node responding to the request"),
-    ),
+    params(MultiRequestQueryParams),
     request_body = LocalListWorkersRequest,
 	responses(
             (status = 200, description = "Responses from individual cluster nodes", body = MultiResponse<LocalListWorkersResponse>),
@@ -714,9 +694,7 @@ fn ListWorkers() -> () {}
     description = "
 Get information about the specified background worker on one or several cluster nodes.
     ",
-    params(
-        ("node" = String, description = "Node ID to query, or `*` for all nodes, or `self` for the node responding to the request"),
-    ),
+    params(MultiRequestQueryParams),
     request_body = LocalGetWorkerInfoRequest,
 	responses(
             (status = 200, description = "Responses from individual cluster nodes", body = MultiResponse<LocalGetWorkerInfoResponse>),
@@ -731,9 +709,7 @@ fn GetWorkerInfo() -> () {}
     description = "
 Fetch values of one or several worker variables, from one or several cluster nodes.
     ",
-    params(
-        ("node" = String, description = "Node ID to query, or `*` for all nodes, or `self` for the node responding to the request"),
-    ),
+    params(MultiRequestQueryParams),
     request_body = LocalGetWorkerVariableRequest,
 	responses(
             (status = 200, description = "Responses from individual cluster nodes", body = MultiResponse<LocalGetWorkerVariableResponse>),
@@ -748,9 +724,7 @@ fn GetWorkerVariable() -> () {}
     description = "
 Set the value for a worker variable, on one or several cluster nodes.
     ",
-    params(
-        ("node" = String, description = "Node ID to query, or `*` for all nodes, or `self` for the node responding to the request"),
-    ),
+    params(MultiRequestQueryParams),
     request_body = LocalSetWorkerVariableRequest,
 	responses(
             (status = 200, description = "Responses from individual cluster nodes", body = MultiResponse<LocalSetWorkerVariableResponse>),
@@ -769,9 +743,7 @@ fn SetWorkerVariable() -> () {}
     description = "
 List data blocks that are currently in an errored state on one or several Garage nodes.
     ",
-    params(
-        ("node" = String, description = "Node ID to query, or `*` for all nodes, or `self` for the node responding to the request"),
-    ),
+    params(MultiRequestQueryParams),
 	responses(
             (status = 200, description = "Responses from individual cluster nodes", body = MultiResponse<LocalListBlockErrorsResponse>),
             (status = 500, description = "Internal server error")
@@ -785,9 +757,7 @@ fn ListBlockErrors() -> () {}
     description = "
 Get detailed information about a data block stored on a Garage node, including all object versions and in-progress multipart uploads that contain a reference to this block.
     ",
-    params(
-        ("node" = String, description = "Node ID to query, or `*` for all nodes, or `self` for the node responding to the request"),
-    ),
+    params(MultiRequestQueryParams),
     request_body = LocalGetBlockInfoRequest,
 	responses(
             (status = 200, description = "Detailed block information", body = MultiResponse<LocalGetBlockInfoResponse>),
@@ -802,9 +772,7 @@ fn GetBlockInfo() -> () {}
     description = "
 Instruct Garage node(s) to retry the resynchronization of one or several missing data block(s).
     ",
-    params(
-        ("node" = String, description = "Node ID to query, or `*` for all nodes, or `self` for the node responding to the request"),
-    ),
+    params(MultiRequestQueryParams),
     request_body = LocalRetryBlockResyncRequest,
 	responses(
             (status = 200, description = "Responses from individual cluster nodes", body = MultiResponse<LocalRetryBlockResyncResponse>),
@@ -821,9 +789,7 @@ Purge references to one or several missing data blocks.
 
 This will remove all objects and in-progress multipart uploads that contain the specified data block(s). The objects will be permanently deleted from the buckets in which they appear. Use with caution.
     ",
-    params(
-        ("node" = String, description = "Node ID to query, or `*` for all nodes, or `self` for the node responding to the request"),
-    ),
+    params(MultiRequestQueryParams),
     request_body = LocalPurgeBlocksRequest,
 	responses(
             (status = 200, description = "Responses from individual cluster nodes", body = MultiResponse<LocalPurgeBlocksResponse>),
