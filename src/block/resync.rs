@@ -133,6 +133,14 @@ impl BlockResyncManager {
 		)))
 	}
 
+	/// Clear the entire resync queue and list of errored blocks
+	/// Corresponds to `garage repair clear-resync-queue`
+	pub fn clear_resync_queue(&self) -> Result<(), Error> {
+		self.queue.clear()?;
+		self.errors.clear()?;
+		Ok(())
+	}
+
 	pub fn register_bg_vars(&self, vars: &mut vars::BgVars) {
 		let notify = self.notify.clone();
 		vars.register_rw(

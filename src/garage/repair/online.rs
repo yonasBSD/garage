@@ -92,6 +92,11 @@ pub async fn launch_online_repair(
 			info!("Repairing bucket aliases (foreground)");
 			garage.locked_helper().await.repair_aliases().await?;
 		}
+		RepairWhat::ClearResyncQueue => {
+			let garage = garage.clone();
+			tokio::task::spawn_blocking(move || garage.block_manager.resync.clear_resync_queue())
+				.await??
+		}
 	}
 	Ok(())
 }
