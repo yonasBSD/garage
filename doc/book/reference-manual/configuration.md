@@ -337,7 +337,7 @@ Since `v0.8.0`, Garage can use alternative storage backends as follows:
 | --------- | ----------------- | ------------- |
 | [LMDB](https://www.symas.com/lmdb) (since `v0.8.0`, default since `v0.9.0`) | `"lmdb"` | `<metadata_dir>/db.lmdb/` |
 | [Sqlite](https://sqlite.org) (since `v0.8.0`) | `"sqlite"` | `<metadata_dir>/db.sqlite` |
-| [Fjall](https://github.com/fjall-rs/fjall) (**experimental support** since `v1.3.0`) | `"fjall"` | `<metadata_dir>/db.fjall/` |
+| [Fjall](https://github.com/fjall-rs/fjall) (**experimental support** since `v1.3.0`/`v2.1.0`) | `"fjall"` | `<metadata_dir>/db.fjall/` |
 | [Sled](https://sled.rs) (old default, removed since `v1.0`) | `"sled"` | `<metadata_dir>/db/` |
 
 Sled was supported until Garage v0.9.x, and was removed in Garage v1.0.
@@ -346,7 +346,7 @@ old Sled metadata databases to another engine.
 
 Performance characteristics of the different DB engines are as follows:
 
-- LMDB: the recommended database engine for high-performance distributed clusters.
+- **LMDB:** the recommended database engine for high-performance distributed clusters.
 LMDB works very well, but is known to have the following limitations:
 
   - The data format of LMDB is not portable between architectures, so for
@@ -366,7 +366,7 @@ LMDB works very well, but is known to have the following limitations:
   - Keys in LMDB are limited to 511 bytes. This limit translates to limits on
     object keys in S3 and sort keys in K2V that are limted to 479 bytes.
 
-- Sqlite: Garage supports Sqlite as an alternative storage backend for
+- **Sqlite:** Garage supports Sqlite as an alternative storage backend for
   metadata, which does not have the issues listed above for LMDB.
   On versions 0.8.x and earlier, Sqlite should be avoided due to abysmal
   performance, which was fixed with the addition of `metadata_fsync`.
@@ -374,12 +374,13 @@ LMDB works very well, but is known to have the following limitations:
   so it is not the best choice for high-performance storage clusters,
   but it should work fine in many cases.
 
-- Fjall: a storage engine based on LSM trees, which theoretically allow for
+- **Fjall:** a storage engine based on LSM trees, which theoretically allow for
   higher write throughput than other storage engines that are based on B-trees.
   Using Fjall could potentially improve Garage's performance significantly in
   write-heavy workloads. **Support for Fjall is experimental at this point**,
-  we have added it to Garage for evaluation purposes only. **Do not use it for
-  production-critical workloads.**
+  we have added it to Garage for evaluation purposes only. **Use it only with
+  test data, and report any issues to our bug tracker. Do not use it for
+  production workloads.**
 
 
 It is possible to convert Garage's metadata directory from one format to another
