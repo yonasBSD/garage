@@ -98,7 +98,7 @@ The following gives details about each available configuration option.
 Top-level configuration options, in alphabetical order:
 [`allow_punycode`](#allow_punycode),
 [`allow_world_readable_secrets`](#allow_world_readable_secrets),
-[`block_max_concurrent_reads`](`block_max_concurrent_reads),
+[`block_max_concurrent_reads`](#block_max_concurrent_reads),
 [`block_ram_buffer_max`](#block_ram_buffer_max),
 [`block_size`](#block_size),
 [`bootstrap_peers`](#bootstrap_peers),
