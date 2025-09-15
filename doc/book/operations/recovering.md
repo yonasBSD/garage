@@ -161,4 +161,7 @@ your recovery options are as follows:
 
 - **Option 3: restoring a filesystem-level snapshot.** If you are using ZFS or
   BTRFS to snapshot your metadata partition, refer to their specific
-  documentation on rolling back or copying files from an old snapshot.
+  documentation on rolling back or copying files from an old snapshot. 
+  Note that, depending on the properties of the filesystem and of the DB engine,
+  if these snapshots were taken during a write operation to the database, they may
+  also be corrupted and thus unfit for recovery.
