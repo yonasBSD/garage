@@ -346,8 +346,16 @@ old Sled metadata databases to another engine.
 
 Performance characteristics of the different DB engines are as follows:
 
-- **LMDB:** the recommended database engine for high-performance distributed clusters.
-LMDB works very well, but is known to have the following limitations:
+- **LMDB:** the recommended database engine for high-performance distributed clusters
+  with `replication_factor` ≥ 2.
+  LMDB works well, but is known to have the following limitations:
+
+  - LMDB is prone to database corruption after an unclean shutdown (e.g. a process kill
+    or a power outage).  It is recommended to configure
+    [`metadata_auto_snapshot_interval`](#metadata_auto_snapshot_interval) to be
+    able to easily recover from this situation. With `replication_factor` ≥ 2,
+    metadata can also be reconstructed from remote nodes upon corruption
+    (see [Recovering from failures](@/documentation/operations/recovering.md#corrupted_meta)).
 
   - The data format of LMDB is not portable between architectures, so for
     instance the Garage database of an x86-64 node cannot be moved to an ARM64
@@ -357,22 +365,13 @@ LMDB works very well, but is known to have the following limitations:
     node to very small database sizes due to how LMDB works; it is therefore
     not recommended.
 
-  - Several users have reported corrupted LMDB database files after an unclean
-    shutdown (e.g. a power outage). This situation can generally be recovered
-    from if your cluster is geo-replicated (by rebuilding your metadata db from
-    other nodes), or if you have saved regular snapshots at the filesystem
-    level.
-
   - Keys in LMDB are limited to 511 bytes. This limit translates to limits on
     object keys in S3 and sort keys in K2V that are limted to 479 bytes.
 
 - **Sqlite:** Garage supports Sqlite as an alternative storage backend for
-  metadata, which does not have the issues listed above for LMDB.
-  On versions 0.8.x and earlier, Sqlite should be avoided due to abysmal
-  performance, which was fixed with the addition of `metadata_fsync`.
-  Sqlite is still probably slower than LMDB due to the way we use it,
-  so it is not the best choice for high-performance storage clusters,
-  but it should work fine in many cases.
+  metadata, which does not have the issues listed above for LMDB.  Sqlite is
+  slower than LMDB, so it is not the best choice for high-performance storage
+  clusters.
 
 - **Fjall:** a storage engine based on LSM trees, which theoretically allow for
   higher write throughput than other storage engines that are based on B-trees.
@@ -381,7 +380,6 @@ LMDB works very well, but is known to have the following limitations:
   we have added it to Garage for evaluation purposes only. **Use it only with
   test data, and report any issues to our bug tracker. Do not use it for
   production workloads.**
-
 
 It is possible to convert Garage's metadata directory from one format to another
 using the `garage convert-db` command, which should be used as follows:
@@ -440,7 +438,8 @@ if geographical replication is used.
 #### `metadata_auto_snapshot_interval` (since `v0.9.4`) {#metadata_auto_snapshot_interval}
 
 If this value is set, Garage will automatically take a snapshot of the metadata
-DB file at a regular interval and save it in the metadata directory.
+DB file at a regular interval and save it in the metadata directory,
+or in [`metadata_snapshots_dir`](#metadata_snapshots_dir) if it is set.
 This parameter can take any duration string that can be parsed by
 the [`parse_duration`](https://docs.rs/parse_duration/latest/parse_duration/#syntax) crate.
 
@@ -449,14 +448,19 @@ corrupted, for instance after an unclean shutdown.  See [this
 page](@/documentation/operations/recovering.md#corrupted_meta) for details.
 Garage keeps only the two most recent snapshots of the metadata DB and deletes
 older ones automatically.
+You can also create metadata snapshots manually at any point using the
+`garage meta snapshot` command.
+
+Using snapshots created by Garage is the best option to make snapshots of your
+node's metadata for potential recovery, as they are guaranteed to be clean and
+consistent, contrarily to filesystem-level snapshots that may be taken while
+some writes are in-flight and thus might be corrupted.
 
 Note that taking a metadata snapshot is a relatively intensive operation as the
 entire data file is copied. A snapshot being taken might have performance
 impacts on the Garage node while it is running. If the cluster is under heavy
 write load when a snapshot operation is running, this might also cause the
 database file to grow in size significantly as pages cannot be recycled easily.
-For this reason, it might be better to use filesystem-level snapshots instead
-if possible.
 
 #### `disable_scrub` {#disable_scrub}
 
