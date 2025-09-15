@@ -34,7 +34,6 @@ use garage_util::metrics::{gen_trace_id, RecordDuration};
 use garage_util::socket_address::UnixOrTCPSocketAddress;
 
 use crate::helpers::{BoxBody, ErrorBody};
-use crate::signature::payload::Authorization;
 
 pub trait ApiEndpoint: Send + Sync + 'static {
 	fn name(&self) -> Cow<'static, str>;
@@ -63,7 +62,7 @@ pub trait ApiHandler: Send + Sync + 'static {
 
 	/// Returns the key id used to authenticate this request. The ID returned must be safe to
 	/// log.
-	fn key_id_from_request(&self, req: &Request<IncomingBody>) -> Option<String> {
+	fn key_id_from_request(&self, _req: &Request<IncomingBody>) -> Option<String> {
 		None
 	}
 }
