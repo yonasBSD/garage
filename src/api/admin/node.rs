@@ -106,17 +106,17 @@ impl RequestHandler for LocalGetNodeStatisticsRequest {
 
 		// Gather block manager statistics
 		writeln!(&mut ret, "\nBlock manager stats:").unwrap();
-		let rc_len = garage.block_manager.rc_len()?.to_string();
+		let rc_len = garage.block_manager.rc_approximate_len()?.to_string();
 
 		ret += &format_table_to_string(vec![
 			format!("  number of RC entries:\t{} (~= number of blocks)", rc_len),
 			format!(
 				"  resync queue length:\t{}",
-				garage.block_manager.resync.queue_len()?
+				garage.block_manager.resync.queue_approximate_len()?
 			),
 			format!(
 				"  blocks with resync errors:\t{}",
-				garage.block_manager.resync.errors_len()?
+				garage.block_manager.resync.errors_approximate_len()?
 			),
 		]);
 
@@ -129,16 +129,21 @@ where
 	F: TableSchema + 'static,
 	R: TableReplication + 'static,
 {
-	let data_len = t.data.store.len().map_err(GarageError::from)?.to_string();
-	let mkl_len = t.merkle_updater.merkle_tree_len()?.to_string();
+	let data_len = t
+		.data
+		.store
+		.approximate_len()
+		.map_err(GarageError::from)?
+		.to_string();
+	let mkl_len = t.merkle_updater.merkle_tree_approximate_len()?.to_string();
 
 	Ok(format!(
 		"  {}\t{}\t{}\t{}\t{}\t{}",
 		F::TABLE_NAME,
 		data_len,
 		mkl_len,
-		t.merkle_updater.todo_len()?,
-		t.data.insert_queue_len()?,
-		t.data.gc_todo_len()?
+		t.merkle_updater.todo_approximate_len()?,
+		t.data.insert_queue_approximate_len()?,
+		t.data.gc_todo_approximate_len()?
 	))
 }

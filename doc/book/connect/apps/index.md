@@ -12,7 +12,7 @@ In this section, we cover the following web applications:
 | [Mastodon](#mastodon)     | ✅       | Natively supported    |
 | [Matrix](#matrix)     | ✅       |  Tested with `synapse-s3-storage-provider`    |
 | [ejabberd](#ejabberd)     | ✅       |  `mod_s3_upload`    |
-| [Pixelfed](#pixelfed)     | ❓       |  Not yet tested    |
+| [Pixelfed](#pixelfed)     | ✅       |  Natively supported    |
 | [Pleroma](#pleroma)     | ❓       |  Not yet tested    |
 | [Lemmy](#lemmy)     | ✅        |  Supported with pict-rs    |
 | [Funkwhale](#funkwhale)     | ❓       | Not yet tested     |
@@ -191,10 +191,10 @@ garage key create peertube-key
 
 Keep the Key ID and the Secret key in a pad, they will be needed later.  
 
-We need two buckets, one for normal videos (named peertube-video) and one for webtorrent videos (named peertube-playlist).
+We need two buckets, one for normal videos (named peertube-videos) and one for webtorrent videos (named peertube-playlists).
 ```bash
 garage bucket create peertube-videos
-garage bucket create peertube-playlist
+garage bucket create peertube-playlists
 ```
 
 Now we allow our key to read and write on these buckets:
@@ -253,7 +253,7 @@ object_storage:
     proxify_private_files: false
 
   streaming_playlists:
-    bucket_name: 'peertube-playlist'
+    bucket_name: 'peertube-playlists'
 
     # Keep it empty for our example
     prefix: ''

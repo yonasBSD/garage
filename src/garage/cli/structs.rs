@@ -645,6 +645,10 @@ pub enum RepairWhat {
 	/// Repair (resync/rebalance) the set of stored blocks in the cluster
 	#[structopt(name = "blocks", version = garage_version())]
 	Blocks,
+	/// Clear the block resync queue. The list of blocks in errored state
+	/// is cleared as well. You MUST run `garage repair blocks` after invoking this.
+	#[structopt(name = "clear-resync-queue", version = garage_version())]
+	ClearResyncQueue,
 	/// Repropagate object deletions to the version table
 	#[structopt(name = "versions", version = garage_version())]
 	Versions,

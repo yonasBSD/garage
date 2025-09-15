@@ -64,6 +64,7 @@ md-5 = "0.10"
 mktemp = "0.5"
 nix = { version = "0.29", default-features = false, features = ["fs"] }
 nom = "7.1"
+parking_lot = "0.12"
 parse_duration = "2.1"
 paste = "1.0"
 pin-project = "1.0.12"
@@ -87,9 +88,10 @@ tracing-journald = "0.3.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 heed = { version = "0.11", default-features = false, features = ["lmdb"] }
-rusqlite = "0.31.0"
+rusqlite = "0.37"
 r2d2 = "0.8"
-r2d2_sqlite = "0.24"
+r2d2_sqlite = "0.31"
+fjall = "2.4"
 
 async-compression = { version = "0.4", features = ["tokio", "zstd"] }
 zstd = { version = "0.13", default-features = false }

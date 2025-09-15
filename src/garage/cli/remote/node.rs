@@ -92,6 +92,7 @@ impl Cli {
 				ScrubCmd::Resume => ScrubCommand::Resume,
 			}),
 			RepairWhat::Aliases => RepairType::Aliases,
+			RepairWhat::ClearResyncQueue => RepairType::ClearResyncQueue,
 		};
 
 		let res = self

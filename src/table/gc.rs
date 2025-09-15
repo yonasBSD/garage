@@ -313,7 +313,7 @@ impl<F: TableSchema, R: TableReplication> Worker for GcWorker<F, R> {
 
 	fn status(&self) -> WorkerStatus {
 		WorkerStatus {
-			queue_length: Some(self.gc.data.gc_todo_len().unwrap_or(0) as u64),
+			queue_length: Some(self.gc.data.gc_todo_approximate_len().unwrap_or(0) as u64),
 			..Default::default()
 		}
 	}

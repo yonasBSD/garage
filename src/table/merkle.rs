@@ -287,12 +287,12 @@ impl<F: TableSchema, R: TableReplication> MerkleUpdater<F, R> {
 		MerkleNode::decode_opt(&ent)
 	}
 
-	pub fn merkle_tree_len(&self) -> Result<usize, Error> {
-		Ok(self.data.merkle_tree.len()?)
+	pub fn merkle_tree_approximate_len(&self) -> Result<usize, Error> {
+		Ok(self.data.merkle_tree.approximate_len()?)
 	}
 
-	pub fn todo_len(&self) -> Result<usize, Error> {
-		Ok(self.data.merkle_todo.len()?)
+	pub fn todo_approximate_len(&self) -> Result<usize, Error> {
+		Ok(self.data.merkle_todo.approximate_len()?)
 	}
 }
 
@@ -306,7 +306,7 @@ impl<F: TableSchema, R: TableReplication> Worker for MerkleWorker<F, R> {
 
 	fn status(&self) -> WorkerStatus {
 		WorkerStatus {
-			queue_length: Some(self.0.todo_len().unwrap_or(0) as u64),
+			queue_length: Some(self.0.todo_approximate_len().unwrap_or(0) as u64),
 			..Default::default()
 		}
 	}
