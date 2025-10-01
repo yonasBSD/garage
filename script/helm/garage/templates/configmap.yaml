@@ -30,6 +30,10 @@ data:
 
     bootstrap_peers = {{ .Values.garage.bootstrapPeers }}
 
+    {{- if .Values.garage.additionalTopLevelConfig }}
+    {{ .Values.garage.additionalTopLevelConfig | nindent 4 }}
+    {{- end }}
+  
     [kubernetes_discovery]
     namespace = "{{ .Release.Namespace }}"
     service_name = "{{ include "garage.fullname" . }}"
