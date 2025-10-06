@@ -62,15 +62,16 @@
 	{\large\bf Garage, an S3 backend as reliable as possible}
 	\vspace{1em}
 
-	\url{https://garagehq.deuxfleurs.fr/}
-
-	\texttt{garagehq@deuxfleurs.fr}
-
-	Matrix channel: \texttt{\#garage:deuxfleurs.fr}
+		\url{https://garagehq.deuxfleurs.fr/}\\
+		\url{mailto:garagehq@deuxfleurs.fr}\\
+		\texttt{\#garage:deuxfleurs.fr} on Matrix
 \end{frame}
 
+
+\section{Meet Garage}
+
 \begin{frame}
-	\frametitle{Garage is a non-profit initiative}
+	\frametitle{A non-profit initiative}
 
 
 	\begin{columns}[t]
@@ -78,13 +79,11 @@
 			\centering
 			\adjincludegraphics[width=.5\linewidth, valign=t]{../assets/logos/deuxfleurs.pdf}
 		\end{column}
-		\begin{column}{.6\textwidth}
-			\textbf{Imagined by ecologists}\\
-			Lead by a ...
+		\begin{column}{.8\textwidth}
+			\textbf{Part of a degrowth initiative}\\
+			Garage has been created at Deuxfleurs where we experiment running Internet services without datacenter on commodity and refurbished hardware.
 		\end{column}
-		\begin{column}{.2\textwidth}
-			~
-		\end{column}
+
 	\end{columns}
 	\vspace{2em}
 	\begin{columns}[t]
@@ -92,18 +91,28 @@
 			\centering
 			\adjincludegraphics[width=.5\linewidth, valign=t]{../assets/logos/deuxfleurs.pdf}
 		\end{column}
-		\begin{column}{.6\textwidth}
+		\begin{column}{.8\textwidth}
 			\textbf{Developed by a community}\\
-			Name, name, name
+			{\small Some recent contributors: Arthur C, Charles H, dongdigua, Etienne L, Jonah A, Julien K, Lapineige, MagicRR, Milas B, Niklas M, RockWolf, Schwitzd, trinity-1686a, Xavier S,  babykart, Baptiste J, eddster2309, James O'C, Joker9944, Maximilien R, Renjaya RZ, Yureka...}
 		\end{column}
+
+	\end{columns}
+	\vspace{2em}
+	\begin{columns}[t]
 		\begin{column}{.2\textwidth}
-			~
+			\centering
+			\adjincludegraphics[width=.5\linewidth, valign=t]{../assets/logos/deuxfleurs.pdf}
 		\end{column}
+		\begin{column}{.8\textwidth}
+			\textbf{Owned by nobody, locked under AGPL}\\
+			AGPL
+		\end{column}
+
 	\end{columns}
 \end{frame}
 
 \begin{frame}
-	\frametitle{Who may offer commercial support for Garage?}
+	\frametitle{Getting support for Garage}
 	\begin{columns}[t]
 		\begin{column}{.2\textwidth}
 			\centering
@@ -112,7 +121,7 @@
 		\begin{column}{.6\textwidth}
 			\textbf{Alex Auvolat}\\
 			PhD; co-founder of Deuxfleurs\\
-			Garage maintainer
+			Garage maintainer, Freelance
 		\end{column}
 		\begin{column}{.2\textwidth}
 			~
@@ -122,12 +131,12 @@
 	\begin{columns}[t]
 		\begin{column}{.2\textwidth}
 			\centering
-			\adjincludegraphics[width=.4\linewidth, valign=t]{../assets/alex.jpg}
+			\adjincludegraphics[width=.4\linewidth, valign=t]{../assets/quentin.jpg}
 		\end{column}
 		\begin{column}{.6\textwidth}
 			\textbf{Quentin Dufour}\\
-			PhD; member of Deuxfleurs\\
-			Garage contributor
+			PhD; co-founder of Deuxfleurs\\
+			Garage contributor, Freelance
 		\end{column}
 		\begin{column}{.2\textwidth}
 			~
@@ -137,12 +146,12 @@
 	\begin{columns}[t]
 		\begin{column}{.2\textwidth}
 			\centering
-			\adjincludegraphics[width=.4\linewidth, valign=t]{../assets/alex.jpg}
+			\adjincludegraphics[width=.4\linewidth, valign=t]{../assets/armael.jpg}
 		\end{column}
 		\begin{column}{.6\textwidth}
 			\textbf{Armaël Guéneau}\\
 			PhD; member of Deuxfleurs\\
-			Garage contributor
+			Garage contributor, Freelance
 		\end{column}
 		\begin{column}{.2\textwidth}
 			~
@@ -153,23 +162,12 @@
 \end{frame}
 
 \begin{frame}
-	\frametitle{Our objective at Deuxfleurs}
-	
-	\begin{center}
-		\textbf{Promote self-hosting and small-scale hosting\\
-			as an alternative to large cloud providers}
-	\end{center}
-	\vspace{2em}
-	\visible<2->{
-		Why is it hard?
-	}
-	\visible<3->{
-		\vspace{2em}
-		\begin{center}
-			\textbf{\underline{Resilience}}\\
-			{\footnotesize we want good uptime/availability with low supervision}
-		\end{center}
-	}
+	\frametitle{Our initial goal}
+
+Being a self-sovereign community to be free of our degrowth choice.
+
+We need reliability without relying on hardware.
+
 \end{frame}
 
 \begin{frame}
@@ -291,6 +289,113 @@
 		\includegraphics[width=.8\linewidth]{../assets/perf/endpoint_latency_0.7_0.8_minio.png}
 	\end{center}
 \end{frame}
+
+% ======================================== OPERATING
+% ======================================== OPERATING
+% ======================================== OPERATING
+
+
+\section{Production clusters}
+
+\begin{frame}
+	\frametitle{Deployment kinds}
+
+	\includegraphics[width=.9\linewidth]{../assets/cluster_kind.png}
+	\vspace{1em}
+	
+\end{frame}
+
+\begin{frame}
+	\frametitle{How big they are?}
+
+	\includegraphics[width=.9\linewidth]{../assets/cluster_size.png}
+	\vspace{1em}
+
+	\textit{"Petabyte storage setup for a video site. Nginx as CDN in-front using garage-s3-website feature. Each storage node has ~64TB storage with raid10, no replication within garage. 25gbit nic. haproxy to loadbalance across 5 nodes. mostly reads with very few writes."}
+
+	\vspace{1em}
+	\textit{"We currently manage 7 Garage nodes, 28TB total storage, 6M blocks for 3M objects and 4TB of object data. We have been running Garage in production for 2.5 years."}
+
+\end{frame}
+
+\begin{frame}
+	\frametitle{Operating Garage}
+	\begin{center}
+		\only<1-2>{
+			\includegraphics[width=.9\linewidth]{../assets/screenshots/garage_status_0.10.png}
+			\\\vspace{1em}
+			\visible<2>{\includegraphics[width=.9\linewidth]{../assets/screenshots/garage_status_unhealthy_0.10.png}}
+		}
+	\end{center}
+\end{frame}
+
+\begin{frame}
+	\frametitle{Garage's architecture}
+	\begin{center}
+		\only<1>{\includegraphics[width=.45\linewidth]{../assets/garage.drawio.pdf}}%
+		\only<2>{\includegraphics[width=.6\linewidth]{../assets/garage_sync.drawio.pdf}}%
+	\end{center}
+\end{frame}
+
+\begin{frame}
+	\frametitle{Digging deeper}
+	\begin{center}
+		\only<1>{\includegraphics[width=.9\linewidth]{../assets/screenshots/garage_stats_0.10.png}}
+		\only<2>{\includegraphics[width=.5\linewidth]{../assets/screenshots/garage_worker_list_0.10.png}}
+		\only<3>{\includegraphics[width=.6\linewidth]{../assets/screenshots/garage_worker_param_0.10.png}}
+	\end{center}
+\end{frame}
+
+\begin{frame}
+	\frametitle{Potential limitations and bottlenecks}
+	\begin{itemize}
+		\item Global:
+			\begin{itemize}
+				\item Max. $\sim$100 nodes per cluster (excluding gateways)
+			\end{itemize}
+			\vspace{1em}
+		\item Metadata:
+			\begin{itemize}
+				\item One big bucket = bottleneck, object list on 3 nodes only
+			\end{itemize}
+			\vspace{1em}
+		\item Block manager:
+			\begin{itemize}
+				\item Lots of small files on disk
+				\item Processing the resync queue can be slow
+			\end{itemize}
+	\end{itemize}
+\end{frame}
+
+\begin{frame}
+	\frametitle{Deployment advice for very large clusters}
+	\begin{itemize}
+		\item Metadata storage:
+			\begin{itemize}
+				\item ZFS mirror (x2) on fast NVMe
+				\item Use LMDB storage engine
+			\end{itemize}
+			\vspace{.5em}
+		\item Data block storage:
+			\begin{itemize}
+				\item Use Garage's native multi-HDD support
+				\item XFS on individual drives
+				\item Increase block size (1MB $\to$ 10MB, requires more RAM and good networking)
+				\item Tune \texttt{resync-tranquility} and \texttt{resync-worker-count} dynamically
+			\end{itemize}
+			\vspace{.5em}
+		\item Other :
+			\begin{itemize}
+				\item Split data over several buckets
+				\item Use less than 100 storage nodes
+				\item Use gateway nodes
+			\end{itemize}
+			\vspace{.5em}
+	\end{itemize}
+\end{frame}
+
+
+
 
 
 % ======================================== TIMELINE
@@ -498,7 +603,7 @@
 
 
 
-% ====================== v0.10.0 ===============================
+% ====================== v1.0.0 ===============================
 
 \begin{frame}
 	\begin{center}
@@ -507,175 +612,19 @@
 \end{frame}
 
 \begin{frame}
-	\frametitle{October 2023 - Garage v0.10.0 beta}
-	Focus on \underline{consistency}
+	\frametitle{April 2024 - Garage v1.0.0}
+	Focus on \underline{consistency, security \& stability}
 	\vspace{2em}
 	\begin{itemize}
-		\item Fix consistency issues when reshuffling data
+		\item Fix consistency issues when reshuffling data (Jepsen testing)
+			\vspace{1em}
+		\item \textbf{Security audit} by Radically Open Security
+			\vspace{1em}
+		\item Misc. S3 features (SSE-C, checksums,  ...) and compatibility fixes
 	\end{itemize}
 \end{frame}
 
-\begin{frame}
-	\frametitle{Working with weak consistency}
-	Not using consensus limits us to the following:
-	\vspace{2em}
-	\begin{itemize}
-		\item<2-> \textbf{Conflict-free replicated data types} (CRDT)\\
-			\vspace{1em}
-			{\footnotesize Non-transactional key-value stores such as S3 are equivalent to a simple CRDT:\\
-			a map of \textbf{last-writer-wins registers} (each key is its own CRDT)}
-			\vspace{1.5em}
-		\item<3-> \textbf{Read-after-write consistency}\\
-			\vspace{1em}
-			{\footnotesize Can be implemented using quorums on read and write operations}
-	\end{itemize}
-\end{frame}
-
-\begin{frame}[t]
-	\frametitle{CRDT read-after-write consistency using quorums}
-
-	\vspace{1em}
-	{\small
-		\textbf{Property:} If client 1 did an operation $write(x)$ and received an OK response,\\
-			\hspace{2cm} and client 2 starts an operation $read()$ after client 1 received OK,\\
-			\hspace{2cm} then client 2 will read a value $x' \sqsupseteq x$.
-	}
-
-	\vspace{1.5em}
-	\begin{overprint}
-		\onslide<2-9>
-		\begin{figure}
-			\centering
-			\footnotesize
-			\def\svgwidth{.7\textwidth}
-			\only<2>{\import{../assets/lattice/}{lattice1.pdf_tex}}%
-			\only<3>{\import{../assets/lattice/}{lattice2.pdf_tex}}%
-			\only<4>{\import{../assets/lattice/}{lattice3.pdf_tex}}%
-			\only<5>{\import{../assets/lattice/}{lattice4.pdf_tex}}%
-			\only<6>{\import{../assets/lattice/}{lattice5.pdf_tex}}%
-			\only<7>{\import{../assets/lattice/}{lattice6.pdf_tex}}%
-			\only<8>{\import{../assets/lattice/}{lattice7.pdf_tex}}%
-			\only<9>{\import{../assets/lattice/}{lattice8.pdf_tex}}%
-		\end{figure}
-		
-		\onslide<10>
-		\begin{minipage}{.10\textwidth}
-			~
-		\end{minipage}
-		\begin{minipage}{.40\textwidth}
-			\footnotesize
-			\textbf{Algorithm $write(x)$:}
-			\begin{enumerate}
-				\item Broadcast $write(x)$ to all nodes
-				\item Wait for $k > n/2$ nodes to reply OK
-				\item Return OK
-			\end{enumerate}
-		\end{minipage}
-		\begin{minipage}{.40\textwidth}
-			\footnotesize
-			\vspace{1em}
-			\textbf{Algorithm $read()$:}
-			\begin{enumerate}
-				\item Broadcast $read()$ to all nodes
-				\item Wait for $k > n/2$ nodes to reply\\
-					with values $x_1, \dots, x_k$
-				\item Return $x_1 \sqcup \dots \sqcup x_k$
-			\end{enumerate}
-		\end{minipage}
-	\end{overprint}
-\end{frame}
-
-\begin{frame}
-	\frametitle{A hard problem: layout changes}
-	\begin{itemize}
-		\item We rely on quorums $k > n/2$ within each partition:\\
-			$$n=3,~~~~~~~k\ge 2$$
-		\item<2-> When rebalancing, the set of nodes responsible for a partition can change:\\
-
-			\vspace{1em}
-			\begin{minipage}{.04\linewidth}~
-			\end{minipage}
-			\begin{minipage}{.40\linewidth}
-			{\tiny
-				\begin{tabular}{|l|l|l|l|}
-					\hline
-					\textbf{Partition} & \textbf{Node 1} & \textbf{Node 2} & \textbf{Node 3} \\
-					\hline
-					\hline
-					Partition 0 & \textcolor{Crimson}{df-ymk}  & Abricot  & \textcolor{Crimson}{Courgette} \\
-					\hline
-					Partition 1 & Ananas  & \textcolor{Crimson}{Courgette} & \textcolor{Crimson}{df-ykl}  \\
-					\hline
-					Partition 2 & \textcolor{Crimson}{df-ymf}  & \textcolor{Crimson}{Celeri} & Abricot  \\
-					\hline
-					\hspace{1em}$\dots$ & \hspace{1em}$\dots$ & \hspace{1em}$\dots$ & \hspace{1em}$\dots$ \\
-					\hline
-				\end{tabular}
-			}
-			\end{minipage}
-			\begin{minipage}{.04\linewidth}
-				$\to$
-			\end{minipage}
-			\begin{minipage}{.40\linewidth}
-			{\tiny
-				\begin{tabular}{|l|l|l|l|}
-					\hline
-					\textbf{Partition} & \textbf{Node 1} & \textbf{Node 2} & \textbf{Node 3} \\
-					\hline
-					\hline
-					Partition 0 & \textcolor{ForestGreen}{Dahlia}  & Abricot  & \textcolor{ForestGreen}{Eucalyptus} \\
-					\hline
-					Partition 1 & Ananas  & \textcolor{ForestGreen}{Euphorbe}  & \textcolor{ForestGreen}{Doradille} \\
-					\hline
-					Partition 2 & \textcolor{ForestGreen}{Dahlia}  & \textcolor{ForestGreen}{Echinops} & Abricot  \\
-					\hline
-					\hspace{1em}$\dots$ & \hspace{1em}$\dots$ & \hspace{1em}$\dots$ & \hspace{1em}$\dots$ \\
-					\hline
-				\end{tabular}
-			}
-			\end{minipage}
-
-			\vspace{2em}
-		\item<3-> During the rebalancing, new nodes don't yet have the data,\\
-			~~~~~~~~~~~~~~~~~~~and old nodes want to get rid of the data to free up space\\
-			\vspace{1.2em}
-			$\to$ risk of inconsistency, \textbf{how to coordinate?}
-	\end{itemize}
-\end{frame}
-
-\begin{frame}
-	\frametitle{Handling layout changes without losing consistency}
-	\begin{minipage}{.55\textwidth}
-		\begin{itemize}
-			\item \textbf{Solution:}\\
-				\vspace{.5em}
-				\begin{itemize}
-					\item keep track of data transfer to new nodes
-						\vspace{.5em}
-					\item use multiple write quorums\\
-						(new nodes + old nodes\\
-						while data transfer is in progress)
-						\vspace{.5em}
-					\item switching reads to new nodes\\
-						only once copy is finished
-				\end{itemize}
-				\vspace{1em}
-			\item \textbf{Implemented} in v0.10
-				\vspace{1em}
-			\item \textbf{Validated} with Jepsen testing
-		\end{itemize}
-	\end{minipage}
-	\begin{minipage}{.23\textwidth}
-		\includegraphics[width=3cm]{../assets/jepsen-0.9.png}\\
-		{\footnotesize Garage v0.9.0}
-	\end{minipage}
-	\begin{minipage}{.2\textwidth}
-		\includegraphics[width=3cm]{../assets/jepsen-0.10.png}\\
-		{\footnotesize Garage v0.10 beta}
-	\end{minipage}
-\end{frame}
-
-% ====================== v0.10.0 ===============================
+% ====================== v2.0.0 ===============================
 
 \begin{frame}
 	\begin{center}
@@ -684,111 +633,26 @@
 \end{frame}
 
 \begin{frame}
-	\frametitle{Towards v1.0...}
-	Focus on \underline{security \& stability}
+	\frametitle{Garage v2.0.0}
+	Focus on \underline{}
 	\vspace{2em}
 	\begin{itemize}
-		\item \textbf{Security audit} in progress by Radically Open Security
-			\vspace{1em}
-		\item Misc. S3 features (SSE-C, ...) and compatibility fixes
-			\vspace{1em}
-		\item Improve UX
-			\vspace{1em}
-		\item Fix bugs
 	\end{itemize}
 \end{frame}
 
+
 \begin{frame}
-	\frametitle{...and beyond!}
+	\frametitle{Currently funding...}
+
+	\textit{...}
+\end{frame}
+
+\begin{frame}
+	\frametitle{Our backlog}
 	\begin{center}
 		\includegraphics[width=.6\linewidth]{../assets/survey_requested_features.png}
 	\end{center}
 \end{frame}
-
-% ======================================== OPERATING
-% ======================================== OPERATING
-% ======================================== OPERATING
-
-
-\section{Operating big Garage clusters}
-
-\begin{frame}
-	\frametitle{Operating Garage}
-	\begin{center}
-		\only<1-2>{
-			\includegraphics[width=.9\linewidth]{../assets/screenshots/garage_status_0.10.png}
-			\\\vspace{1em}
-			\visible<2>{\includegraphics[width=.9\linewidth]{../assets/screenshots/garage_status_unhealthy_0.10.png}}
-		}
-	\end{center}
-\end{frame}
-
-\begin{frame}
-	\frametitle{Garage's architecture}
-	\begin{center}
-		\only<1>{\includegraphics[width=.45\linewidth]{../assets/garage.drawio.pdf}}%
-		\only<2>{\includegraphics[width=.6\linewidth]{../assets/garage_sync.drawio.pdf}}%
-	\end{center}
-\end{frame}
-
-\begin{frame}
-	\frametitle{Digging deeper}
-	\begin{center}
-		\only<1>{\includegraphics[width=.9\linewidth]{../assets/screenshots/garage_stats_0.10.png}}
-		\only<2>{\includegraphics[width=.5\linewidth]{../assets/screenshots/garage_worker_list_0.10.png}}
-		\only<3>{\includegraphics[width=.6\linewidth]{../assets/screenshots/garage_worker_param_0.10.png}}
-	\end{center}
-\end{frame}
-
-\begin{frame}
-	\frametitle{Potential limitations and bottlenecks}
-	\begin{itemize}
-		\item Global:
-			\begin{itemize}
-				\item Max. $\sim$100 nodes per cluster (excluding gateways)
-			\end{itemize}
-			\vspace{1em}
-		\item Metadata:
-			\begin{itemize}
-				\item One big bucket = bottleneck, object list on 3 nodes only
-			\end{itemize}
-			\vspace{1em}
-		\item Block manager:
-			\begin{itemize}
-				\item Lots of small files on disk
-				\item Processing the resync queue can be slow
-			\end{itemize}
-	\end{itemize}
-\end{frame}
-
-\begin{frame}
-	\frametitle{Deployment advice for very large clusters}
-	\begin{itemize}
-		\item Metadata storage:
-			\begin{itemize}
-				\item ZFS mirror (x2) on fast NVMe
-				\item Use LMDB storage engine
-			\end{itemize}
-			\vspace{.5em}
-		\item Data block storage:
-			\begin{itemize}
-				\item Use Garage's native multi-HDD support
-				\item XFS on individual drives
-				\item Increase block size (1MB $\to$ 10MB, requires more RAM and good networking)
-				\item Tune \texttt{resync-tranquility} and \texttt{resync-worker-count} dynamically
-			\end{itemize}
-			\vspace{.5em}
-		\item Other :
-			\begin{itemize}
-				\item Split data over several buckets
-				\item Use less than 100 storage nodes
-				\item Use gateway nodes
-			\end{itemize}
-			\vspace{.5em}
-	\end{itemize}
-	Our deployments: $< 10$ TB. Some people have done more!
-\end{frame}
-
 
 % ======================================== END
 % ======================================== END
