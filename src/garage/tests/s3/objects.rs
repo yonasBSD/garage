@@ -198,6 +198,7 @@ async fn test_precondition() {
 		);
 	}
 	let older_date = DateTime::from_secs_f64(last_modified.as_secs_f64() - 10.0);
+	let same_date = DateTime::from_secs_f64(last_modified.as_secs_f64());
 	let newer_date = DateTime::from_secs_f64(last_modified.as_secs_f64() + 10.0);
 	{
 		let err = ctx
@@ -206,6 +207,18 @@ async fn test_precondition() {
 			.bucket(&bucket)
 			.key(STD_KEY)
 			.if_modified_since(newer_date)
+			.send()
+			.await;
+		assert!(
+			matches!(err, Err(SdkError::ServiceError(se)) if se.raw().status().as_u16() == 304)
+		);
+
+		let err = ctx
+			.client
+			.get_object()
+			.bucket(&bucket)
+			.key(STD_KEY)
+			.if_modified_since(same_date)
 			.send()
 			.await;
 		assert!(
@@ -235,6 +248,17 @@ async fn test_precondition() {
 		assert!(
 			matches!(err, Err(SdkError::ServiceError(se)) if se.raw().status().as_u16() == 412)
 		);
+
+		let o = ctx
+			.client
+			.get_object()
+			.bucket(&bucket)
+			.key(STD_KEY)
+			.if_unmodified_since(same_date)
+			.send()
+			.await
+			.unwrap();
+		assert_eq!(o.e_tag.as_ref().unwrap().as_str(), etag);
 
 		let o = ctx
 			.client
