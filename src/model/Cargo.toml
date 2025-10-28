@@ -41,8 +41,8 @@ futures.workspace = true
 tokio.workspace = true
 
 [features]
-default = [ "lmdb", "sqlite" ]
-k2v = [ "garage_util/k2v" ]
-lmdb = [ "garage_db/lmdb" ]
-sqlite = [ "garage_db/sqlite" ]
-fjall = [ "garage_db/fjall" ]
+default = ["lmdb", "sqlite"]
+k2v = ["garage_util/k2v"]
+lmdb = ["garage_db/lmdb"]
+sqlite = ["garage_db/sqlite"]
+fjall = ["garage_db/fjall"]

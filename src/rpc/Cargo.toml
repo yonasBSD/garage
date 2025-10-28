@@ -48,6 +48,6 @@ tokio.workspace = true
 opentelemetry.workspace = true
 
 [features]
-kubernetes-discovery = [ "kube", "k8s-openapi", "schemars" ]
-consul-discovery = [ "reqwest", "thiserror" ]
-system-libs = [ "sodiumoxide/use-pkg-config" ]
+kubernetes-discovery = ["kube", "k8s-openapi", "schemars"]
+consul-discovery = ["reqwest", "thiserror"]
+system-libs = ["sodiumoxide/use-pkg-config"]

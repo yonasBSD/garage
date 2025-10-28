@@ -39,4 +39,4 @@ tokio.workspace = true
 tokio-util.workspace = true
 
 [features]
-system-libs = [ "zstd/pkg-config" ]
+system-libs = ["zstd/pkg-config"]

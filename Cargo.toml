@@ -95,7 +95,7 @@ fjall = "2.4"
 async-compression = { version = "0.4", features = ["tokio", "zstd"] }
 zstd = { version = "0.13", default-features = false }
 
-quick-xml = { version = "0.26", features = [ "serialize" ] }
+quick-xml = { version = "0.26", features = ["serialize"] }
 rmp-serde = "1.1.2"
 serde = { version = "1.0", default-features = false, features = ["derive", "rc"] }
 serde_bytes = "0.11"
@@ -115,7 +115,7 @@ httpdate = "1.0"
 http-range = "0.1"
 http-body-util = "0.1"
 hyper = { version = "1.0", default-features = false }
-hyper-util = { version = "0.1", features = [ "full" ] }
+hyper-util = { version = "0.1", features = ["full"] }
 multer = "3.0"
 percent-encoding = "2.2"
 roxmltree = "0.19"
@@ -127,7 +127,7 @@ tokio = { version = "1.0", default-features = false, features = ["rt", "rt-multi
 tokio-util = { version = "0.7", features = ["compat", "io"] }
 tokio-stream = { version = "0.1", features = ["net"] }
 
-opentelemetry = { version = "0.17", features = [ "rt-tokio", "metrics", "trace" ] }
+opentelemetry = { version = "0.17", features = ["rt-tokio", "metrics", "trace"] }
 opentelemetry-prometheus = "0.10"
 opentelemetry-otlp = "0.10"
 opentelemetry-contrib = "0.9"

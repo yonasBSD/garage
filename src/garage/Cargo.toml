@@ -86,32 +86,36 @@ k2v-client.workspace = true
 
 
 [features]
-default = [ "bundled-libs", "metrics", "lmdb", "sqlite", "k2v" ]
+default = ["bundled-libs", "metrics", "lmdb", "sqlite", "k2v"]
 
-k2v = [ "garage_util/k2v", "garage_api_k2v", "garage_api_admin/k2v" ]
+k2v = ["garage_util/k2v", "garage_api_k2v", "garage_api_admin/k2v"]
 
 # Database engines
-lmdb = [ "garage_model/lmdb" ]
-sqlite = [ "garage_model/sqlite" ]
-fjall = [ "garage_model/fjall" ]
+lmdb = ["garage_model/lmdb"]
+sqlite = ["garage_model/sqlite"]
+fjall = ["garage_model/fjall"]
 
 # Automatic registration and discovery via Consul API
-consul-discovery = [ "garage_rpc/consul-discovery" ]
+consul-discovery = ["garage_rpc/consul-discovery"]
 # Automatic registration and discovery via Kubernetes API
-kubernetes-discovery = [ "garage_rpc/kubernetes-discovery" ]
+kubernetes-discovery = ["garage_rpc/kubernetes-discovery"]
 # Prometheus exporter (/metrics endpoint).
-metrics = [ "garage_api_admin/metrics", "opentelemetry-prometheus" ]
+metrics = ["garage_api_admin/metrics", "opentelemetry-prometheus"]
 # Exporter for the OpenTelemetry Collector.
-telemetry-otlp = [ "opentelemetry-otlp" ]
+telemetry-otlp = ["opentelemetry-otlp"]
 # Logging to syslog
-syslog = [ "syslog-tracing" ]
+syslog = ["syslog-tracing"]
 # Logging to journald
-journald = [ "tracing-journald" ]
+journald = ["tracing-journald"]
 
 # NOTE: bundled-libs and system-libs should be treat as mutually exclusive;
 # exactly one of them should be enabled.
 
 # Use bundled libsqlite instead of linking against system-provided.
-bundled-libs = [ "garage_db/bundled-libs" ]
+bundled-libs = ["garage_db/bundled-libs"]
 # Link against system-provided libsodium and libzstd.
-system-libs = [ "garage_block/system-libs", "garage_rpc/system-libs", "sodiumoxide/use-pkg-config" ]
+system-libs = [
+	"garage_block/system-libs",
+	"garage_rpc/system-libs",
+	"sodiumoxide/use-pkg-config",
+]

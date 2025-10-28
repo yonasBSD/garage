@@ -28,8 +28,8 @@ parking_lot = { workspace = true, optional = true }
 mktemp.workspace = true
 
 [features]
-default = [ "lmdb", "sqlite" ]
-bundled-libs = [ "rusqlite?/bundled" ]
-lmdb = [ "heed" ]
-fjall = [ "dep:fjall", "dep:parking_lot" ]
-sqlite = [ "rusqlite", "r2d2", "r2d2_sqlite" ]
+default = ["lmdb", "sqlite"]
+bundled-libs = ["rusqlite?/bundled"]
+lmdb = ["heed"]
+fjall = ["dep:fjall", "dep:parking_lot"]
+sqlite = ["rusqlite", "r2d2", "r2d2_sqlite"]
