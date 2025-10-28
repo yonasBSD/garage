@@ -123,7 +123,7 @@ url = "2.3"
 
 futures = "0.3"
 futures-util = "0.3"
-tokio = { version = "1.0", default-features = false, features = ["net", "rt", "rt-multi-thread", "io-util", "net", "time", "macros", "sync", "signal", "fs"] }
+tokio = { version = "1.0", default-features = false, features = ["rt", "rt-multi-thread", "io-util", "net", "time", "macros", "sync", "signal", "fs"] }
 tokio-util = { version = "0.7", features = ["compat", "io"] }
 tokio-stream = { version = "0.1", features = ["net"] }
 
