@@ -13,7 +13,7 @@ use garage_util::data::*;
 use garage_util::encode::{nonversioned_decode, nonversioned_encode};
 use garage_util::error::Error;
 
-use garage_rpc::ring::*;
+use garage_rpc::layout::*;
 
 use crate::data::*;
 use crate::replication::*;
@@ -31,14 +31,14 @@ pub struct MerkleUpdater<F: TableSchema, R: TableReplication> {
 	// - value = the hash of the full serialized item, if present,
 	//			 or an empty vec if item is absent (deleted)
 	// Fields in data:
-	//		pub(crate) merkle_todo: sled::Tree,
+	//		pub(crate) merkle_todo: db::Tree,
 	//		pub(crate) merkle_todo_notify: Notify,
 
 	// Content of the merkle tree: items where
 	// - key = .bytes() for MerkleNodeKey
 	// - value = serialization of a MerkleNode, assumed to be MerkleNode::empty if not found
 	// Field in data:
-	//		pub(crate) merkle_tree: sled::Tree,
+	//		pub(crate) merkle_tree: db::Tree,
 	empty_node_hash: Hash,
 }
 
@@ -102,7 +102,7 @@ impl<F: TableSchema, R: TableReplication> MerkleUpdater<F, R> {
 			partition: self
 				.data
 				.replication
-				.partition_of(&Hash::try_from(&k[0..32]).unwrap()),
+				.partition_of(&Hash::try_from(&k[0..32]).unwrap())?,
 			prefix: vec![],
 		};
 		self.data
@@ -287,16 +287,12 @@ impl<F: TableSchema, R: TableReplication> MerkleUpdater<F, R> {
 		MerkleNode::decode_opt(&ent)
 	}
 
-	pub fn merkle_tree_len(&self) -> Result<usize, Error> {
-		Ok(self.data.merkle_tree.len()?)
+	pub fn merkle_tree_approximate_len(&self) -> Result<usize, Error> {
+		Ok(self.data.merkle_tree.approximate_len()?)
 	}
 
-	pub fn merkle_tree_fast_len(&self) -> Result<Option<usize>, Error> {
-		Ok(self.data.merkle_tree.fast_len()?)
-	}
-
-	pub fn todo_len(&self) -> Result<usize, Error> {
-		Ok(self.data.merkle_todo.len()?)
+	pub fn todo_approximate_len(&self) -> Result<usize, Error> {
+		Ok(self.data.merkle_todo.approximate_len()?)
 	}
 }
 
@@ -310,7 +306,7 @@ impl<F: TableSchema, R: TableReplication> Worker for MerkleWorker<F, R> {
 
 	fn status(&self) -> WorkerStatus {
 		WorkerStatus {
-			queue_length: Some(self.0.todo_len().unwrap_or(0) as u64),
+			queue_length: Some(self.0.todo_approximate_len().unwrap_or(0) as u64),
 			..Default::default()
 		}
 	}

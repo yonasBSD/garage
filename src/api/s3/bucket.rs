@@ -1,27 +1,25 @@
 use std::collections::HashMap;
-use std::sync::Arc;
 
-use http_body_util::BodyExt;
 use hyper::{Request, Response, StatusCode};
 
 use garage_model::bucket_alias_table::*;
 use garage_model::bucket_table::Bucket;
 use garage_model::garage::Garage;
-use garage_model::key_table::Key;
+use garage_model::key_table::{Key, KeyParams};
 use garage_model::permission::BucketKeyPerm;
 use garage_table::util::*;
 use garage_util::crdt::*;
-use garage_util::data::*;
 use garage_util::time::*;
 
-use crate::common_error::CommonError;
-use crate::helpers::*;
-use crate::s3::api_server::{ReqBody, ResBody};
-use crate::s3::error::*;
-use crate::s3::xml as s3_xml;
-use crate::signature::verify_signed_content;
+use garage_api_common::common_error::CommonError;
+use garage_api_common::helpers::*;
 
-pub fn handle_get_bucket_location(garage: Arc<Garage>) -> Result<Response<ResBody>, Error> {
+use crate::api_server::{ReqBody, ResBody};
+use crate::error::*;
+use crate::xml as s3_xml;
+
+pub fn handle_get_bucket_location(ctx: ReqCtx) -> Result<Response<ResBody>, Error> {
+	let ReqCtx { garage, .. } = ctx;
 	let loc = s3_xml::LocationConstraint {
 		xmlns: (),
 		region: garage.config.s3_api.s3_region.to_string(),
@@ -40,6 +38,55 @@ pub fn handle_get_bucket_versioning() -> Result<Response<ResBody>, Error> {
 	};
 
 	let xml = s3_xml::to_xml_with_header(&versioning)?;
+
+	Ok(Response::builder()
+		.header("Content-Type", "application/xml")
+		.body(string_body(xml))?)
+}
+
+pub fn handle_get_bucket_acl(ctx: ReqCtx) -> Result<Response<ResBody>, Error> {
+	let ReqCtx {
+		bucket_id, api_key, ..
+	} = ctx;
+	let key_p = api_key.params().ok_or_internal_error(
+		"Key should not be in deleted state at this point (in handle_get_bucket_acl)",
+	)?;
+
+	let mut grants: Vec<s3_xml::Grant> = vec![];
+	let kp = api_key.bucket_permissions(&bucket_id);
+
+	if kp.allow_owner {
+		grants.push(s3_xml::Grant {
+			grantee: create_grantee(&key_p, &api_key),
+			permission: s3_xml::Value("FULL_CONTROL".to_string()),
+		});
+	} else {
+		if kp.allow_read {
+			grants.push(s3_xml::Grant {
+				grantee: create_grantee(&key_p, &api_key),
+				permission: s3_xml::Value("READ".to_string()),
+			});
+			grants.push(s3_xml::Grant {
+				grantee: create_grantee(&key_p, &api_key),
+				permission: s3_xml::Value("READ_ACP".to_string()),
+			});
+		}
+		if kp.allow_write {
+			grants.push(s3_xml::Grant {
+				grantee: create_grantee(&key_p, &api_key),
+				permission: s3_xml::Value("WRITE".to_string()),
+			});
+		}
+	}
+
+	let access_control_policy = s3_xml::AccessControlPolicy {
+		xmlns: (),
+		owner: None,
+		acl: s3_xml::AccessControlList { entries: grants },
+	};
+
+	let xml = s3_xml::to_xml_with_header(&access_control_policy)?;
+	trace!("xml: {}", xml);
 
 	Ok(Response::builder()
 		.header("Content-Type", "application/xml")
@@ -121,15 +168,10 @@ pub async fn handle_list_buckets(
 pub async fn handle_create_bucket(
 	garage: &Garage,
 	req: Request<ReqBody>,
-	content_sha256: Option<Hash>,
 	api_key_id: &String,
 	bucket_name: String,
 ) -> Result<Response<ResBody>, Error> {
-	let body = BodyExt::collect(req.into_body()).await?.to_bytes();
-
-	if let Some(content_sha256) = content_sha256 {
-		verify_signed_content(content_sha256, &body[..])?;
-	}
+	let body = req.into_body().collect().await?;
 
 	let cmd =
 		parse_create_bucket_xml(&body[..]).ok_or_bad_request("Invalid create bucket XML query")?;
@@ -150,21 +192,16 @@ pub async fn handle_create_bucket(
 	let api_key = helper.key().get_existing_key(api_key_id).await?;
 	let key_params = api_key.params().unwrap();
 
-	let existing_bucket = if let Some(Some(bucket_id)) = key_params.local_aliases.get(&bucket_name)
-	{
-		Some(*bucket_id)
-	} else {
-		helper
-			.bucket()
-			.resolve_global_bucket_name(&bucket_name)
-			.await?
-	};
+	let existing_bucket = helper
+		.bucket()
+		.resolve_bucket(&bucket_name, &api_key.key_id)
+		.await?;
 
-	if let Some(bucket_id) = existing_bucket {
+	if let Some(bucket) = existing_bucket {
 		// Check we have write or owner permission on the bucket,
 		// in that case it's fine, return 200 OK, bucket exists;
 		// otherwise return a forbidden error.
-		let kp = api_key.bucket_permissions(&bucket_id);
+		let kp = api_key.bucket_permissions(&bucket.id);
 		if !(kp.allow_write || kp.allow_owner) {
 			return Err(CommonError::BucketAlreadyExists.into());
 		}
@@ -179,7 +216,7 @@ pub async fn handle_create_bucket(
 		}
 
 		// Create the bucket!
-		if !is_valid_bucket_name(&bucket_name) {
+		if !is_valid_bucket_name(&bucket_name, garage.config.allow_punycode) {
 			return Err(Error::bad_request(format!(
 				"{}: {}",
 				bucket_name, INVALID_BUCKET_NAME_MESSAGE
@@ -204,21 +241,20 @@ pub async fn handle_create_bucket(
 		.unwrap())
 }
 
-pub async fn handle_delete_bucket(
-	garage: &Garage,
-	bucket_id: Uuid,
-	bucket_name: String,
-	api_key_id: &String,
-) -> Result<Response<ResBody>, Error> {
+pub async fn handle_delete_bucket(ctx: ReqCtx) -> Result<Response<ResBody>, Error> {
+	let ReqCtx {
+		garage,
+		bucket_id,
+		bucket_name,
+		bucket_params: bucket_state,
+		api_key,
+		..
+	} = &ctx;
 	let helper = garage.locked_helper().await;
 
-	let api_key = helper.key().get_existing_key(api_key_id).await?;
 	let key_params = api_key.params().unwrap();
 
-	let is_local_alias = matches!(key_params.local_aliases.get(&bucket_name), Some(Some(_)));
-
-	let mut bucket = helper.bucket().get_existing_bucket(bucket_id).await?;
-	let bucket_state = bucket.state.as_option().unwrap();
+	let is_local_alias = matches!(key_params.local_aliases.get(bucket_name), Some(Some(_)));
 
 	// If the bucket has no other aliases, this is a true deletion.
 	// Otherwise, it is just an alias removal.
@@ -228,20 +264,20 @@ pub async fn handle_delete_bucket(
 		.items()
 		.iter()
 		.filter(|(_, _, active)| *active)
-		.any(|(n, _, _)| is_local_alias || (*n != bucket_name));
+		.any(|(n, _, _)| is_local_alias || (*n != *bucket_name));
 
 	let has_other_local_aliases = bucket_state
 		.local_aliases
 		.items()
 		.iter()
 		.filter(|(_, _, active)| *active)
-		.any(|((k, n), _, _)| !is_local_alias || *n != bucket_name || *k != api_key.key_id);
+		.any(|((k, n), _, _)| !is_local_alias || *n != *bucket_name || *k != api_key.key_id);
 
 	if !has_other_global_aliases && !has_other_local_aliases {
 		// Delete bucket
 
 		// Check bucket is empty
-		if !helper.bucket().is_bucket_empty(bucket_id).await? {
+		if !helper.bucket().is_bucket_empty(*bucket_id).await? {
 			return Err(CommonError::BucketNotEmpty.into());
 		}
 
@@ -249,33 +285,36 @@ pub async fn handle_delete_bucket(
 		// 1. delete bucket alias
 		if is_local_alias {
 			helper
-				.unset_local_bucket_alias(bucket_id, &api_key.key_id, &bucket_name)
+				.purge_local_bucket_alias(*bucket_id, &api_key.key_id, bucket_name)
 				.await?;
 		} else {
 			helper
-				.unset_global_bucket_alias(bucket_id, &bucket_name)
+				.purge_global_bucket_alias(*bucket_id, bucket_name)
 				.await?;
 		}
 
 		// 2. delete authorization from keys that had access
-		for (key_id, _) in bucket.authorized_keys() {
+		for (key_id, _) in bucket_state.authorized_keys.items() {
 			helper
-				.set_bucket_key_permissions(bucket.id, key_id, BucketKeyPerm::NO_PERMISSIONS)
+				.set_bucket_key_permissions(*bucket_id, key_id, BucketKeyPerm::NO_PERMISSIONS)
 				.await?;
 		}
 
+		let bucket = Bucket {
+			id: *bucket_id,
+			state: Deletable::delete(),
+		};
 		// 3. delete bucket
-		bucket.state = Deletable::delete();
 		garage.bucket_table.insert(&bucket).await?;
 	} else if is_local_alias {
 		// Just unalias
 		helper
-			.unset_local_bucket_alias(bucket_id, &api_key.key_id, &bucket_name)
+			.unset_local_bucket_alias(*bucket_id, &api_key.key_id, bucket_name)
 			.await?;
 	} else {
 		// Just unalias (but from global namespace)
 		helper
-			.unset_global_bucket_alias(bucket_id, &bucket_name)
+			.unset_global_bucket_alias(*bucket_id, bucket_name)
 			.await?;
 	}
 
@@ -314,6 +353,15 @@ fn parse_create_bucket_xml(xml_bytes: &[u8]) -> Option<Option<String>> {
 	}
 
 	Some(ret)
+}
+
+fn create_grantee(key_params: &KeyParams, api_key: &Key) -> s3_xml::Grantee {
+	s3_xml::Grantee {
+		xmlns_xsi: (),
+		typ: "CanonicalUser".to_string(),
+		display_name: Some(s3_xml::Value(key_params.name.get().to_string())),
+		id: Some(s3_xml::Value(api_key.key_id.to_string())),
+	}
 }
 
 #[cfg(test)]

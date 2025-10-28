@@ -1,30 +1,24 @@
 use quick_xml::de::from_reader;
-use std::sync::Arc;
 
-use http_body_util::BodyExt;
 use hyper::{Request, Response, StatusCode};
 
 use serde::{Deserialize, Serialize};
 
-use crate::helpers::*;
-use crate::s3::api_server::{ReqBody, ResBody};
-use crate::s3::error::*;
-use crate::s3::xml::{to_xml_with_header, xmlns_tag, IntValue, Value};
-use crate::signature::verify_signed_content;
+use garage_api_common::helpers::*;
+
+use crate::api_server::{ReqBody, ResBody};
+use crate::error::*;
+use crate::xml::{to_xml_with_header, xmlns_tag, IntValue, Value};
 
 use garage_model::bucket_table::{
 	parse_lifecycle_date, Bucket, LifecycleExpiration as GarageLifecycleExpiration,
 	LifecycleFilter as GarageLifecycleFilter, LifecycleRule as GarageLifecycleRule,
 };
-use garage_model::garage::Garage;
-use garage_util::data::*;
 
-pub async fn handle_get_lifecycle(bucket: &Bucket) -> Result<Response<ResBody>, Error> {
-	let param = bucket
-		.params()
-		.ok_or_internal_error("Bucket should not be deleted at this point")?;
+pub async fn handle_get_lifecycle(ctx: ReqCtx) -> Result<Response<ResBody>, Error> {
+	let ReqCtx { bucket_params, .. } = ctx;
 
-	if let Some(lifecycle) = param.lifecycle_config.get() {
+	if let Some(lifecycle) = bucket_params.lifecycle_config.get() {
 		let wc = LifecycleConfiguration::from_garage_lifecycle_config(lifecycle);
 		let xml = to_xml_with_header(&wc)?;
 		Ok(Response::builder()
@@ -33,21 +27,23 @@ pub async fn handle_get_lifecycle(bucket: &Bucket) -> Result<Response<ResBody>, 
 			.body(string_body(xml))?)
 	} else {
 		Ok(Response::builder()
-			.status(StatusCode::NO_CONTENT)
+			.status(StatusCode::NOT_FOUND)
 			.body(empty_body())?)
 	}
 }
 
-pub async fn handle_delete_lifecycle(
-	garage: Arc<Garage>,
-	mut bucket: Bucket,
-) -> Result<Response<ResBody>, Error> {
-	let param = bucket
-		.params_mut()
-		.ok_or_internal_error("Bucket should not be deleted at this point")?;
-
-	param.lifecycle_config.update(None);
-	garage.bucket_table.insert(&bucket).await?;
+pub async fn handle_delete_lifecycle(ctx: ReqCtx) -> Result<Response<ResBody>, Error> {
+	let ReqCtx {
+		garage,
+		bucket_id,
+		mut bucket_params,
+		..
+	} = ctx;
+	bucket_params.lifecycle_config.update(None);
+	garage
+		.bucket_table
+		.insert(&Bucket::present(bucket_id, bucket_params))
+		.await?;
 
 	Ok(Response::builder()
 		.status(StatusCode::NO_CONTENT)
@@ -55,28 +51,28 @@ pub async fn handle_delete_lifecycle(
 }
 
 pub async fn handle_put_lifecycle(
-	garage: Arc<Garage>,
-	mut bucket: Bucket,
+	ctx: ReqCtx,
 	req: Request<ReqBody>,
-	content_sha256: Option<Hash>,
 ) -> Result<Response<ResBody>, Error> {
-	let body = BodyExt::collect(req.into_body()).await?.to_bytes();
+	let ReqCtx {
+		garage,
+		bucket_id,
+		mut bucket_params,
+		..
+	} = ctx;
 
-	if let Some(content_sha256) = content_sha256 {
-		verify_signed_content(content_sha256, &body[..])?;
-	}
-
-	let param = bucket
-		.params_mut()
-		.ok_or_internal_error("Bucket should not be deleted at this point")?;
+	let body = req.into_body().collect().await?;
 
 	let conf: LifecycleConfiguration = from_reader(&body as &[u8])?;
 	let config = conf
 		.validate_into_garage_lifecycle_config()
 		.ok_or_bad_request("Invalid lifecycle configuration")?;
 
-	param.lifecycle_config.update(Some(config));
-	garage.bucket_table.insert(&bucket).await?;
+	bucket_params.lifecycle_config.update(Some(config));
+	garage
+		.bucket_table
+		.insert(&Bucket::present(bucket_id, bucket_params))
+		.await?;
 
 	Ok(Response::builder()
 		.status(StatusCode::OK)

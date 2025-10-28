@@ -3,7 +3,6 @@ use std::net::SocketAddr;
 use std::sync::{Arc, Mutex};
 
 use arc_swap::ArcSwapOption;
-use async_trait::async_trait;
 use log::*;
 
 use futures::io::{AsyncReadExt, AsyncWriteExt};
@@ -174,7 +173,6 @@ impl ServerConn {
 
 impl SendLoop for ServerConn {}
 
-#[async_trait]
 impl RecvLoop for ServerConn {
 	fn recv_handler(self: &Arc<Self>, id: RequestID, stream: ByteStream) {
 		let resp_send = match self.resp_send.load_full() {
@@ -190,7 +188,7 @@ impl RecvLoop for ServerConn {
 
 			let (prio, resp_enc_result) = match ReqEnc::decode(stream).await {
 				Ok(req_enc) => (req_enc.prio, self2.recv_handler_aux(req_enc).await),
-				Err(e) => (PRIO_HIGH, Err(e)),
+				Err(e) => (PRIO_NORMAL, Err(e)),
 			};
 
 			debug!("server: sending response to {}", id);

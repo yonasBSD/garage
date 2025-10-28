@@ -1,19 +1,64 @@
 use core::ops::Bound;
-use core::ptr::NonNull;
 
 use std::collections::HashMap;
 use std::convert::TryInto;
+use std::marker::PhantomPinned;
+use std::path::PathBuf;
+use std::pin::Pin;
 use std::sync::{Arc, RwLock};
 
 use heed::types::ByteSlice;
 use heed::{BytesDecode, Env, RoTxn, RwTxn, UntypedDatabase as Database};
 
 use crate::{
+	open::{Engine, OpenOpt},
 	Db, Error, IDb, ITx, ITxFn, OnCommit, Result, TxError, TxFnResult, TxOpError, TxOpResult,
 	TxResult, TxValueIter, Value, ValueIter,
 };
 
 pub use heed;
+
+// ---- top-level open function
+
+pub(crate) fn open_db(path: &PathBuf, opt: &OpenOpt) -> Result<Db> {
+	info!("Opening LMDB database at: {}", path.display());
+	if let Err(e) = std::fs::create_dir_all(&path) {
+		return Err(Error(
+			format!("Unable to create LMDB data directory: {}", e).into(),
+		));
+	}
+
+	let map_size = match opt.lmdb_map_size {
+		None => recommended_map_size(),
+		Some(v) => v - (v % 4096),
+	};
+
+	let mut env_builder = heed::EnvOpenOptions::new();
+	env_builder.max_dbs(100);
+	env_builder.map_size(map_size);
+	env_builder.max_readers(2048);
+	unsafe {
+		env_builder.flag(heed::flags::Flags::MdbNoRdAhead);
+		env_builder.flag(heed::flags::Flags::MdbNoMetaSync);
+		if !opt.fsync {
+			env_builder.flag(heed::flags::Flags::MdbNoSync);
+		}
+	}
+	match env_builder.open(&path) {
+		Err(heed::Error::Io(e)) if e.kind() == std::io::ErrorKind::OutOfMemory => {
+			return Err(Error(
+				"OutOfMemory error while trying to open LMDB database. This can happen \
+                if your operating system is not allowing you to use sufficient virtual \
+                memory address space. Please check that no limit is set (ulimit -v). \
+                You may also try to set a smaller `lmdb_map_size` configuration parameter. \
+                On 32-bit machines, you should probably switch to another database engine."
+					.into(),
+			))
+		}
+		Err(e) => Err(Error(format!("Cannot open LMDB database: {}", e).into())),
+		Ok(db) => Ok(LmdbDb::init(db)),
+	}
+}
 
 // -- err
 
@@ -102,6 +147,14 @@ impl IDb for LmdbDb {
 		Ok(ret2)
 	}
 
+	fn snapshot(&self, base_path: &PathBuf) -> Result<()> {
+		std::fs::create_dir_all(base_path)?;
+		let path = Engine::Lmdb.db_path(base_path);
+		self.db
+			.copy_to_path(path, heed::CompactionOption::Enabled)?;
+		Ok(())
+	}
+
 	// ----
 
 	fn get(&self, tree: usize, key: &[u8]) -> Result<Option<Value>> {
@@ -115,32 +168,31 @@ impl IDb for LmdbDb {
 		}
 	}
 
-	fn len(&self, tree: usize) -> Result<usize> {
+	fn approximate_len(&self, tree: usize) -> Result<usize> {
 		let tree = self.get_tree(tree)?;
 		let tx = self.db.read_txn()?;
 		Ok(tree.len(&tx)?.try_into().unwrap())
 	}
-
-	fn fast_len(&self, tree: usize) -> Result<Option<usize>> {
-		Ok(Some(self.len(tree)?))
+	fn is_empty(&self, tree: usize) -> Result<bool> {
+		let tree = self.get_tree(tree)?;
+		let tx = self.db.read_txn()?;
+		Ok(tree.is_empty(&tx)?)
 	}
 
-	fn insert(&self, tree: usize, key: &[u8], value: &[u8]) -> Result<Option<Value>> {
+	fn insert(&self, tree: usize, key: &[u8], value: &[u8]) -> Result<()> {
 		let tree = self.get_tree(tree)?;
 		let mut tx = self.db.write_txn()?;
-		let old_val = tree.get(&tx, key)?.map(Vec::from);
 		tree.put(&mut tx, key, value)?;
 		tx.commit()?;
-		Ok(old_val)
+		Ok(())
 	}
 
-	fn remove(&self, tree: usize, key: &[u8]) -> Result<Option<Value>> {
+	fn remove(&self, tree: usize, key: &[u8]) -> Result<()> {
 		let tree = self.get_tree(tree)?;
 		let mut tx = self.db.write_txn()?;
-		let old_val = tree.get(&tx, key)?.map(Vec::from);
 		tree.delete(&mut tx, key)?;
 		tx.commit()?;
-		Ok(old_val)
+		Ok(())
 	}
 
 	fn clear(&self, tree: usize) -> Result<()> {
@@ -154,13 +206,15 @@ impl IDb for LmdbDb {
 	fn iter(&self, tree: usize) -> Result<ValueIter<'_>> {
 		let tree = self.get_tree(tree)?;
 		let tx = self.db.read_txn()?;
-		TxAndIterator::make(tx, |tx| Ok(tree.iter(tx)?))
+		// Safety: the cloture does not store its argument anywhere,
+		unsafe { TxAndIterator::make(tx, |tx| Ok(tree.iter(tx)?)) }
 	}
 
 	fn iter_rev(&self, tree: usize) -> Result<ValueIter<'_>> {
 		let tree = self.get_tree(tree)?;
 		let tx = self.db.read_txn()?;
-		TxAndIterator::make(tx, |tx| Ok(tree.rev_iter(tx)?))
+		// Safety: the cloture does not store its argument anywhere,
+		unsafe { TxAndIterator::make(tx, |tx| Ok(tree.rev_iter(tx)?)) }
 	}
 
 	fn range<'r>(
@@ -171,7 +225,8 @@ impl IDb for LmdbDb {
 	) -> Result<ValueIter<'_>> {
 		let tree = self.get_tree(tree)?;
 		let tx = self.db.read_txn()?;
-		TxAndIterator::make(tx, |tx| Ok(tree.range(tx, &(low, high))?))
+		// Safety: the cloture does not store its argument anywhere,
+		unsafe { TxAndIterator::make(tx, |tx| Ok(tree.range(tx, &(low, high))?)) }
 	}
 	fn range_rev<'r>(
 		&self,
@@ -181,7 +236,8 @@ impl IDb for LmdbDb {
 	) -> Result<ValueIter<'_>> {
 		let tree = self.get_tree(tree)?;
 		let tx = self.db.read_txn()?;
-		TxAndIterator::make(tx, |tx| Ok(tree.rev_range(tx, &(low, high))?))
+		// Safety: the cloture does not store its argument anywhere,
+		unsafe { TxAndIterator::make(tx, |tx| Ok(tree.rev_range(tx, &(low, high))?)) }
 	}
 
 	// ----
@@ -228,7 +284,7 @@ impl<'a> LmdbTx<'a> {
 	fn get_tree(&self, i: usize) -> TxOpResult<&Database> {
 		self.trees.get(i).ok_or_else(|| {
 			TxOpError(Error(
-				"invalid tree id (it might have been openned after the transaction started)".into(),
+				"invalid tree id (it might have been opened after the transaction started)".into(),
 			))
 		})
 	}
@@ -242,49 +298,63 @@ impl<'a> ITx for LmdbTx<'a> {
 			None => Ok(None),
 		}
 	}
-	fn len(&self, _tree: usize) -> TxOpResult<usize> {
-		unimplemented!(".len() in transaction not supported with LMDB backend")
+	fn len(&self, tree: usize) -> TxOpResult<usize> {
+		let tree = self.get_tree(tree)?;
+		Ok(tree.len(&self.tx)? as usize)
 	}
 
-	fn insert(&mut self, tree: usize, key: &[u8], value: &[u8]) -> TxOpResult<Option<Value>> {
+	fn insert(&mut self, tree: usize, key: &[u8], value: &[u8]) -> TxOpResult<()> {
 		let tree = *self.get_tree(tree)?;
-		let old_val = tree.get(&self.tx, key)?.map(Vec::from);
 		tree.put(&mut self.tx, key, value)?;
-		Ok(old_val)
+		Ok(())
 	}
-	fn remove(&mut self, tree: usize, key: &[u8]) -> TxOpResult<Option<Value>> {
+	fn remove(&mut self, tree: usize, key: &[u8]) -> TxOpResult<()> {
 		let tree = *self.get_tree(tree)?;
-		let old_val = tree.get(&self.tx, key)?.map(Vec::from);
 		tree.delete(&mut self.tx, key)?;
-		Ok(old_val)
+		Ok(())
+	}
+	fn clear(&mut self, tree: usize) -> TxOpResult<()> {
+		let tree = *self.get_tree(tree)?;
+		tree.clear(&mut self.tx)?;
+		Ok(())
 	}
 
-	fn iter(&self, _tree: usize) -> TxOpResult<TxValueIter<'_>> {
-		unimplemented!("Iterators in transactions not supported with LMDB backend");
+	fn iter(&self, tree: usize) -> TxOpResult<TxValueIter<'_>> {
+		let tree = *self.get_tree(tree)?;
+		Ok(Box::new(tree.iter(&self.tx)?.map(tx_iter_item)))
 	}
-	fn iter_rev(&self, _tree: usize) -> TxOpResult<TxValueIter<'_>> {
-		unimplemented!("Iterators in transactions not supported with LMDB backend");
+	fn iter_rev(&self, tree: usize) -> TxOpResult<TxValueIter<'_>> {
+		let tree = *self.get_tree(tree)?;
+		Ok(Box::new(tree.rev_iter(&self.tx)?.map(tx_iter_item)))
 	}
 
 	fn range<'r>(
 		&self,
-		_tree: usize,
-		_low: Bound<&'r [u8]>,
-		_high: Bound<&'r [u8]>,
+		tree: usize,
+		low: Bound<&'r [u8]>,
+		high: Bound<&'r [u8]>,
 	) -> TxOpResult<TxValueIter<'_>> {
-		unimplemented!("Iterators in transactions not supported with LMDB backend");
+		let tree = *self.get_tree(tree)?;
+		Ok(Box::new(
+			tree.range(&self.tx, &(low, high))?.map(tx_iter_item),
+		))
 	}
 	fn range_rev<'r>(
 		&self,
-		_tree: usize,
-		_low: Bound<&'r [u8]>,
-		_high: Bound<&'r [u8]>,
+		tree: usize,
+		low: Bound<&'r [u8]>,
+		high: Bound<&'r [u8]>,
 	) -> TxOpResult<TxValueIter<'_>> {
-		unimplemented!("Iterators in transactions not supported with LMDB backend");
+		let tree = *self.get_tree(tree)?;
+		Ok(Box::new(
+			tree.rev_range(&self.tx, &(low, high))?.map(tx_iter_item),
+		))
 	}
 }
 
-// ----
+// ---- iterators outside transactions ----
+// complicated, they must hold the transaction object
+// therefore a bit of unsafe code (it is a self-referential struct)
 
 type IteratorItem<'a> = heed::Result<(
 	<ByteSlice as BytesDecode<'a>>::DItem,
@@ -297,22 +367,43 @@ where
 {
 	tx: RoTxn<'a>,
 	iter: Option<I>,
+	_pin: PhantomPinned,
 }
 
 impl<'a, I> TxAndIterator<'a, I>
 where
 	I: Iterator<Item = IteratorItem<'a>> + 'a,
 {
-	fn make<F>(tx: RoTxn<'a>, iterfun: F) -> Result<ValueIter<'a>>
+	fn iter(self: Pin<&mut Self>) -> &mut Option<I> {
+		// Safety: iter is not structural
+		unsafe { &mut self.get_unchecked_mut().iter }
+	}
+
+	/// Safety: iterfun must not store its argument anywhere but in its result.
+	unsafe fn make<F>(tx: RoTxn<'a>, iterfun: F) -> Result<ValueIter<'a>>
 	where
 		F: FnOnce(&'a RoTxn<'a>) -> Result<I>,
 	{
-		let mut res = TxAndIterator { tx, iter: None };
+		let res = TxAndIterator {
+			tx,
+			iter: None,
+			_pin: PhantomPinned,
+		};
+		let mut boxed = Box::pin(res);
 
-		let tx = unsafe { NonNull::from(&res.tx).as_ref() };
-		res.iter = Some(iterfun(tx)?);
+		let tx_lifetime_overextended: &'a RoTxn<'a> = {
+			let tx = &boxed.tx;
+			// Safety: Artificially extending the lifetime because
+			// this reference will only be stored and accessed from the
+			// returned ValueIter which guarantees that it is destroyed
+			// before the tx it is pointing  to.
+			unsafe { &*&raw const *tx }
+		};
+		let iter = iterfun(&tx_lifetime_overextended)?;
 
-		Ok(Box::new(res))
+		*boxed.as_mut().iter() = Some(iter);
+
+		Ok(Box::new(TxAndIteratorPin(boxed)))
 	}
 }
 
@@ -321,26 +412,44 @@ where
 	I: Iterator<Item = IteratorItem<'a>> + 'a,
 {
 	fn drop(&mut self) {
-		drop(self.iter.take());
+		// Safety: `new_unchecked` is okay because we know this value is never
+		// used again after being dropped.
+		let this = unsafe { Pin::new_unchecked(self) };
+		drop(this.iter().take());
 	}
 }
 
-impl<'a, I> Iterator for TxAndIterator<'a, I>
+struct TxAndIteratorPin<'a, I>(Pin<Box<TxAndIterator<'a, I>>>)
+where
+	I: Iterator<Item = IteratorItem<'a>> + 'a;
+
+impl<'a, I> Iterator for TxAndIteratorPin<'a, I>
 where
 	I: Iterator<Item = IteratorItem<'a>> + 'a,
 {
 	type Item = Result<(Value, Value)>;
 
 	fn next(&mut self) -> Option<Self::Item> {
-		match self.iter.as_mut().unwrap().next() {
-			None => None,
-			Some(Err(e)) => Some(Err(e.into())),
-			Some(Ok((k, v))) => Some(Ok((k.to_vec(), v.to_vec()))),
-		}
+		let mut_ref = Pin::as_mut(&mut self.0);
+		let next = mut_ref.iter().as_mut()?.next()?;
+		let res = match next {
+			Err(e) => Err(e.into()),
+			Ok((k, v)) => Ok((k.to_vec(), v.to_vec())),
+		};
+		Some(res)
 	}
 }
 
-// ----
+// ---- iterators within transactions ----
+
+fn tx_iter_item<'a>(
+	item: std::result::Result<(&'a [u8], &'a [u8]), heed::Error>,
+) -> TxOpResult<(Vec<u8>, Vec<u8>)> {
+	item.map(|(k, v)| (k.to_vec(), v.to_vec()))
+		.map_err(|e| TxOpError(Error::from(e)))
+}
+
+// ---- utility ----
 
 #[cfg(target_pointer_width = "64")]
 pub fn recommended_map_size() -> usize {

@@ -1,13 +1,13 @@
 use std::fs::{self, Permissions};
 use std::os::unix::prelude::PermissionsExt;
-use std::{convert::Infallible, sync::Arc};
+use std::sync::Arc;
 
 use tokio::net::{TcpListener, UnixListener};
 use tokio::sync::watch;
 
 use hyper::{
 	body::Incoming as IncomingBody,
-	header::{HeaderValue, HOST},
+	header::{HeaderValue, HOST, LOCATION},
 	Method, Request, Response, StatusCode,
 };
 
@@ -20,17 +20,23 @@ use opentelemetry::{
 
 use crate::error::*;
 
-use garage_api::generic_server::{server_loop, UnixListenerOn};
-use garage_api::helpers::*;
-use garage_api::s3::cors::{add_cors_headers, find_matching_cors_rule, handle_options_for_bucket};
-use garage_api::s3::error::{
+use garage_api_common::cors::{
+	add_cors_headers, find_matching_cors_rule, handle_options_for_bucket,
+};
+use garage_api_common::generic_server::{server_loop, UnixListenerOn};
+use garage_api_common::helpers::*;
+use garage_api_s3::api_server::ResBody;
+use garage_api_s3::error::{
 	CommonErrorDerivative, Error as ApiError, OkOrBadRequest, OkOrInternalError,
 };
-use garage_api::s3::get::{handle_get, handle_head};
+use garage_api_s3::get::{handle_get_without_ctx, handle_head_without_ctx};
+use garage_api_s3::website::X_AMZ_WEBSITE_REDIRECT_LOCATION;
 
+use garage_model::bucket_table::{self, RoutingRule};
 use garage_model::garage::Garage;
 
 use garage_table::*;
+use garage_util::config::WebConfig;
 use garage_util::data::Uuid;
 use garage_util::error::Error as GarageError;
 use garage_util::forwarded_headers;
@@ -67,16 +73,18 @@ pub struct WebServer {
 	garage: Arc<Garage>,
 	metrics: Arc<WebMetrics>,
 	root_domain: String,
+	add_host_to_metrics: bool,
 }
 
 impl WebServer {
 	/// Run a web server
-	pub fn new(garage: Arc<Garage>, root_domain: String) -> Arc<Self> {
+	pub fn new(garage: Arc<Garage>, config: &WebConfig) -> Arc<Self> {
 		let metrics = Arc::new(WebMetrics::new());
 		Arc::new(WebServer {
 			garage,
 			metrics,
-			root_domain,
+			root_domain: config.root_domain.clone(),
+			add_host_to_metrics: config.add_host_to_metrics,
 		})
 	}
 
@@ -118,18 +126,27 @@ impl WebServer {
 		req: Request<IncomingBody>,
 		addr: String,
 	) -> Result<Response<BoxBody<Error>>, http::Error> {
+		let host_header = req
+			.headers()
+			.get(HOST)
+			.and_then(|x| x.to_str().ok())
+			.unwrap_or("<unknown>")
+			.to_string();
+
 		if let Ok(forwarded_for_ip_addr) =
 			forwarded_headers::handle_forwarded_for_headers(req.headers())
 		{
+			// uri() below has a preceding '/', so no space with host
 			info!(
-				"{} (via {}) {} {}",
+				"{} (via {}) {} {}{}",
 				forwarded_for_ip_addr,
 				addr,
 				req.method(),
+				host_header,
 				req.uri()
 			);
 		} else {
-			info!("{} {} {}", addr, req.method(), req.uri());
+			info!("{} {} {}{}", addr, req.method(), host_header, req.uri());
 		}
 
 		// Lots of instrumentation
@@ -138,12 +155,18 @@ impl WebServer {
 			.span_builder(format!("Web {} request", req.method()))
 			.with_trace_id(gen_trace_id())
 			.with_attributes(vec![
+				KeyValue::new("host", format!("{}", host_header.clone())),
 				KeyValue::new("method", format!("{}", req.method())),
 				KeyValue::new("uri", req.uri().to_string()),
 			])
 			.start(&tracer);
 
-		let metrics_tags = &[KeyValue::new("method", req.method().to_string())];
+		let mut metrics_tags = vec![KeyValue::new("method", req.method().to_string())];
+		if self.add_host_to_metrics {
+			metrics_tags.push(KeyValue::new("host", host_header.clone()));
+		}
+
+		let req = req.map(|_| ());
 
 		// The actual handler
 		let res = self
@@ -158,25 +181,30 @@ impl WebServer {
 		// Returning the result
 		match res {
 			Ok(res) => {
-				debug!("{} {} {}", req.method(), res.status(), req.uri());
+				debug!(
+					"{} {} {}{}",
+					req.method(),
+					res.status(),
+					host_header,
+					req.uri()
+				);
 				Ok(res
 					.map(|body| BoxBody::new(http_body_util::BodyExt::map_err(body, Error::from))))
 			}
 			Err(error) => {
 				info!(
-					"{} {} {} {}",
+					"{} {} {}{} {}",
 					req.method(),
 					error.http_status_code(),
+					host_header,
 					req.uri(),
 					error
 				);
-				self.metrics.error_counter.add(
-					1,
-					&[
-						metrics_tags[0].clone(),
-						KeyValue::new("status_code", error.http_status_code().to_string()),
-					],
-				);
+				metrics_tags.push(KeyValue::new(
+					"status_code",
+					error.http_status_code().to_string(),
+				));
+				self.metrics.error_counter.add(1, &metrics_tags);
 				Ok(error_to_res(error))
 			}
 		}
@@ -195,7 +223,7 @@ impl WebServer {
 
 	async fn serve_file(
 		self: &Arc<Self>,
-		req: &Request<IncomingBody>,
+		req: &Request<()>,
 	) -> Result<Response<BoxBody<ApiError>>, Error> {
 		// Get http authority string (eg. [::1]:3902 or garage.tld:80)
 		let authority = req
@@ -219,14 +247,13 @@ impl WebServer {
 		// Check bucket isn't deleted and has website access enabled
 		let bucket = self
 			.garage
-			.bucket_table
-			.get(&EmptyKey, &bucket_id)
-			.await?
-			.ok_or(Error::NotFound)?;
+			.bucket_helper()
+			.get_existing_bucket(bucket_id)
+			.await
+			.map_err(|_| Error::NotFound)?;
+		let bucket_params = bucket.state.into_option().unwrap();
 
-		let website_config = bucket
-			.params()
-			.ok_or(Error::NotFound)?
+		let website_config = bucket_params
 			.website_config
 			.get()
 			.as_ref()
@@ -235,40 +262,76 @@ impl WebServer {
 		// Get path
 		let path = req.uri().path().to_string();
 		let index = &website_config.index_document;
-		let (key, may_redirect) = path_to_keys(&path, index)?;
+		let routing_result = path_to_keys(&path, index, &website_config.routing_rules)?;
 
 		debug!(
-			"Selected bucket: \"{}\" {:?}, target key: \"{}\", may redirect to: {:?}",
-			bucket_name, bucket_id, key, may_redirect
+			"Selected bucket: \"{}\" {:?}, routing to {:?}",
+			bucket_name, bucket_id, routing_result,
 		);
 
-		let ret_doc = match *req.method() {
-			Method::OPTIONS => handle_options_for_bucket(req, &bucket)
+		let ret_doc = match (req.method(), routing_result.main_target()) {
+			(&Method::OPTIONS, _) => handle_options_for_bucket(req, &bucket_params)
 				.map_err(ApiError::from)
 				.map(|res| res.map(|_empty_body: EmptyBody| empty_body())),
-			Method::HEAD => handle_head(self.garage.clone(), &req, bucket_id, &key, None).await,
-			Method::GET => {
-				handle_get(
+			(_, Err((url, code))) => Ok(Response::builder()
+				.status(code)
+				.header("Location", url)
+				.body(empty_body())
+				.unwrap()),
+			(_, Ok((key, code))) => {
+				handle_inner(self.garage.clone(), req, bucket_id, key, code).await
+			}
+		};
+
+		// Try handling errors if bucket configuration provided fallbacks
+		let ret_doc_with_redir = match (&ret_doc, &routing_result) {
+			(
+				Err(ApiError::NoSuchKey),
+				RoutingResult::LoadOrRedirect {
+					redirect_if_exists,
+					redirect_url,
+					redirect_code,
+					..
+				},
+			) => {
+				let redirect = if let Some(redirect_key) = redirect_if_exists {
+					self.check_key_exists(bucket_id, redirect_key.as_str())
+						.await?
+				} else {
+					true
+				};
+				if redirect {
+					Ok(Response::builder()
+						.status(redirect_code)
+						.header("Location", redirect_url)
+						.body(empty_body())
+						.unwrap())
+				} else {
+					ret_doc
+				}
+			}
+			(
+				Err(ApiError::NoSuchKey),
+				RoutingResult::LoadOrAlternativeError {
+					redirect_key,
+					redirect_code,
+					..
+				},
+			) => {
+				handle_inner(
 					self.garage.clone(),
-					&req,
+					req,
 					bucket_id,
-					&key,
-					None,
-					Default::default(),
+					redirect_key,
+					*redirect_code,
 				)
 				.await
 			}
-			_ => Err(ApiError::bad_request("HTTP method not supported")),
-		};
-
-		// Try implicit redirect on error
-		let ret_doc_with_redir = match (&ret_doc, may_redirect) {
-			(Err(ApiError::NoSuchKey), ImplicitRedirect::To { key, url })
-				if self.check_key_exists(bucket_id, key.as_str()).await? =>
-			{
+			(Ok(ret), _) if ret.headers().contains_key(X_AMZ_WEBSITE_REDIRECT_LOCATION) => {
+				let redirect_location = ret.headers().get(X_AMZ_WEBSITE_REDIRECT_LOCATION).unwrap();
 				Ok(Response::builder()
-					.status(StatusCode::FOUND)
-					.header("Location", url)
+					.status(StatusCode::MOVED_PERMANENTLY)
+					.header(LOCATION, redirect_location)
 					.body(empty_body())
 					.unwrap())
 			}
@@ -297,17 +360,17 @@ impl WebServer {
 				// We want to return the error document
 				// Create a fake HTTP request with path = the error document
 				let req2 = Request::builder()
+					.method("GET")
 					.uri(format!("http://{}/{}", host, &error_document))
-					.body(empty_body::<Infallible>())
+					.body(())
 					.unwrap();
 
-				match handle_get(
+				match handle_inner(
 					self.garage.clone(),
 					&req2,
 					bucket_id,
 					&error_document,
-					None,
-					Default::default(),
+					error.http_status_code(),
 				)
 				.await
 				{
@@ -321,8 +384,6 @@ impl WebServer {
 							error.http_status_code(),
 							error
 						);
-
-						*error_doc.status_mut() = error.http_status_code();
 
 						// Preserve error message in a special header
 						for error_line in error.to_string().split('\n') {
@@ -344,12 +405,58 @@ impl WebServer {
 			}
 			Ok(mut resp) => {
 				// Maybe add CORS headers
-				if let Some(rule) = find_matching_cors_rule(&bucket, req)? {
+				if let Some(rule) = find_matching_cors_rule(&bucket_params, req)? {
 					add_cors_headers(&mut resp, rule)
 						.ok_or_internal_error("Invalid bucket CORS configuration")?;
 				}
 				Ok(resp)
 			}
+		}
+	}
+}
+
+async fn handle_inner(
+	garage: Arc<Garage>,
+	req: &Request<()>,
+	bucket_id: Uuid,
+	key: &str,
+	status_code: StatusCode,
+) -> Result<Response<ResBody>, ApiError> {
+	if status_code != StatusCode::OK {
+		// If we are returning an error document, discard all headers from
+		// the original request that would have influenced the result:
+		// - Range header, we don't want to return a subrange of the error document
+		// - Caching directives such as If-None-Match, etc, which are not relevant
+		let cleaned_req = Request::builder().uri(req.uri()).body(()).unwrap();
+
+		let mut ret = match req.method() {
+			&Method::HEAD => {
+				handle_head_without_ctx(garage, &cleaned_req, bucket_id, key, None).await?
+			}
+			&Method::GET => {
+				handle_get_without_ctx(
+					garage,
+					&cleaned_req,
+					bucket_id,
+					key,
+					None,
+					Default::default(),
+				)
+				.await?
+			}
+			_ => return Err(ApiError::bad_request("HTTP method not supported")),
+		};
+
+		*ret.status_mut() = status_code;
+
+		Ok(ret)
+	} else {
+		match req.method() {
+			&Method::HEAD => handle_head_without_ctx(garage, req, bucket_id, key, None).await,
+			&Method::GET => {
+				handle_get_without_ctx(garage, req, bucket_id, key, None, Default::default()).await
+			}
+			_ => Err(ApiError::bad_request("HTTP method not supported")),
 		}
 	}
 }
@@ -362,17 +469,72 @@ fn error_to_res(e: Error) -> Response<BoxBody<Error>> {
 	//   was a HEAD request or we couldn't get the error document)
 	// We do NOT enter this code path when returning the bucket's
 	// error document (this is handled in serve_file)
-	let body = string_body(format!("{}\n", e));
-	let mut http_error = Response::new(body);
+	let mut body_str = format!(
+		r"<title>{http_code} {code_text}</title>
+<h1>{http_code} {code_text}</h1>",
+		http_code = e.http_status_code().as_u16(),
+		code_text = e.http_status_code().canonical_reason().unwrap_or("Unknown"),
+	);
+	if let Error::ApiError(ref err) = e {
+		body_str.push_str(&format!(
+			r"
+<ul>
+<li>Code: {s3_code}</li>
+<li>Message: {s3_message}.</li>
+</ul>",
+			s3_code = err.aws_code(),
+			s3_message = err,
+		));
+	}
+	let mut http_error = Response::new(string_body(body_str));
 	*http_error.status_mut() = e.http_status_code();
 	e.add_headers(http_error.headers_mut());
+	http_error.headers_mut().insert(
+		http::header::CONTENT_TYPE,
+		"text/html; charset=utf-8".parse().unwrap(),
+	);
 	http_error
 }
 
 #[derive(Debug, PartialEq)]
-enum ImplicitRedirect {
-	No,
-	To { key: String, url: String },
+enum RoutingResult {
+	// Load a key and use `code` as status, or fallback to normal 404 handler if not found
+	LoadKey {
+		key: String,
+		code: StatusCode,
+	},
+	// Load a key and use `200` as status, or fallback with a redirection using `redirect_code`
+	// as status
+	LoadOrRedirect {
+		key: String,
+		redirect_if_exists: Option<String>,
+		redirect_url: String,
+		redirect_code: StatusCode,
+	},
+	// Load a key and use `200` as status, or fallback by loading a different key and use
+	// `redirect_code` as status
+	LoadOrAlternativeError {
+		key: String,
+		redirect_key: String,
+		redirect_code: StatusCode,
+	},
+	// Send an http redirect with `code` as status
+	Redirect {
+		url: String,
+		code: StatusCode,
+	},
+}
+
+impl RoutingResult {
+	// return Ok((key_to_deref, status_code)) or Err((redirect_target, status_code))
+	fn main_target(&self) -> Result<(&str, StatusCode), (&str, StatusCode)> {
+		match self {
+			RoutingResult::LoadKey { key, code } => Ok((key, *code)),
+			RoutingResult::LoadOrRedirect { key, .. } => Ok((key, StatusCode::OK)),
+			RoutingResult::LoadOrAlternativeError { key, .. } => Ok((key, StatusCode::OK)),
+			RoutingResult::Redirect { url, code } => Err((url, *code)),
+		}
+	}
 }
 
 /// Path to key
@@ -382,33 +544,152 @@ enum ImplicitRedirect {
 /// which is also AWS S3 behavior.
 ///
 /// Check: https://docs.aws.amazon.com/AmazonS3/latest/userguide/IndexDocumentSupport.html
-fn path_to_keys<'a>(path: &'a str, index: &str) -> Result<(String, ImplicitRedirect), Error> {
+fn path_to_keys(
+	path: &str,
+	index: &str,
+	routing_rules: &[RoutingRule],
+) -> Result<RoutingResult, Error> {
 	let path_utf8 = percent_encoding::percent_decode_str(path).decode_utf8()?;
 
 	let base_key = match path_utf8.strip_prefix("/") {
 		Some(bk) => bk,
 		None => return Err(Error::BadRequest("Path must start with a / (slash)".into())),
 	};
-	let is_bucket_root = base_key.len() == 0;
+
+	let is_bucket_root = base_key.is_empty();
 	let is_trailing_slash = path_utf8.ends_with("/");
 
-	match (is_bucket_root, is_trailing_slash) {
-		// It is not possible to store something at the root of the bucket (ie. empty key),
-		// the only option is to fetch the index
-		(true, _) => Ok((index.to_string(), ImplicitRedirect::No)),
+	let key = if is_bucket_root || is_trailing_slash {
+		// we can't store anything at the root, so we need to query the index
+		// if the key end with a slash, we always query the index
+		format!("{base_key}{index}")
+	} else {
+		// if the key doesn't end with `/`, leave it unmodified
+		base_key.to_string()
+	};
 
-		// "If you create a folder structure in your bucket, you must have an index document at each level. In each folder, the index document must have the same name, for example, index.html. When a user specifies a URL that resembles a folder lookup, the presence or absence of a trailing slash determines the behavior of the website. For example, the following URL, with a trailing slash, returns the photos/index.html index document."
-		(false, true) => Ok((format!("{base_key}{index}"), ImplicitRedirect::No)),
+	let mut routing_rules_iter = routing_rules.iter();
+	let key = loop {
+		let Some(routing_rule) = routing_rules_iter.next() else {
+			break key;
+		};
 
-		// "However, if you exclude the trailing slash from the preceding URL, Amazon S3 first looks for an object photos in the bucket. If the photos object is not found, it searches for an index document, photos/index.html. If that document is found, Amazon S3 returns a 302 Found message and points to the photos/ key. For subsequent requests to photos/, Amazon S3 returns photos/index.html. If the index document is not found, Amazon S3 returns an error."
-		(false, false) => Ok((
-			base_key.to_string(),
-			ImplicitRedirect::To {
-				key: format!("{base_key}/{index}"),
-				url: format!("{path}/"),
-			},
-		)),
+		let Ok(status_code) = StatusCode::from_u16(routing_rule.redirect.http_redirect_code) else {
+			continue;
+		};
+		if let Some(condition) = &routing_rule.condition {
+			let suffix = if let Some(prefix) = &condition.prefix {
+				let Some(suffix) = key.strip_prefix(prefix) else {
+					continue;
+				};
+				Some(suffix)
+			} else {
+				None
+			};
+			let mut target = compute_redirect_target(&routing_rule.redirect, suffix);
+			let query_alternative_key =
+				status_code == StatusCode::OK || status_code == StatusCode::NOT_FOUND;
+			let redirect_on_error =
+				condition.http_error_code == Some(StatusCode::NOT_FOUND.as_u16());
+			match (query_alternative_key, redirect_on_error) {
+				(false, false) => {
+					return Ok(RoutingResult::Redirect {
+						url: target,
+						code: status_code,
+					})
+				}
+				(true, false) => {
+					// we need to remove the leading /
+					target.remove(0);
+					if status_code == StatusCode::OK {
+						break target;
+					} else {
+						return Ok(RoutingResult::LoadKey {
+							key: target,
+							code: status_code,
+						});
+					}
+				}
+				(false, true) => {
+					return Ok(RoutingResult::LoadOrRedirect {
+						key,
+						redirect_if_exists: None,
+						redirect_url: target,
+						redirect_code: status_code,
+					});
+				}
+				(true, true) => {
+					target.remove(0);
+					return Ok(RoutingResult::LoadOrAlternativeError {
+						key,
+						redirect_key: target,
+						redirect_code: status_code,
+					});
+				}
+			}
+		} else {
+			let target = compute_redirect_target(&routing_rule.redirect, None);
+			return Ok(RoutingResult::Redirect {
+				url: target,
+				code: status_code,
+			});
+		}
+	};
+
+	if is_bucket_root || is_trailing_slash {
+		Ok(RoutingResult::LoadKey {
+			key,
+			code: StatusCode::OK,
+		})
+	} else {
+		Ok(RoutingResult::LoadOrRedirect {
+			redirect_if_exists: Some(format!("{key}/{index}")),
+			// we can't use `path` because key might have changed substentially in case of
+			// routing rules
+			redirect_url: percent_encoding::percent_encode(
+				format!("/{key}/").as_bytes(),
+				PATH_ENCODING_SET,
+			)
+			.to_string(),
+			key,
+			redirect_code: StatusCode::FOUND,
+		})
 	}
+}
+
+// per https://url.spec.whatwg.org/#path-percent-encode-set
+const PATH_ENCODING_SET: &percent_encoding::AsciiSet = &percent_encoding::CONTROLS
+	.add(b' ')
+	.add(b'"')
+	.add(b'#')
+	.add(b'<')
+	.add(b'>')
+	.add(b'?')
+	.add(b'`')
+	.add(b'{')
+	.add(b'}');
+
+fn compute_redirect_target(redirect: &bucket_table::Redirect, suffix: Option<&str>) -> String {
+	let mut res = String::new();
+	if let Some(hostname) = &redirect.hostname {
+		if let Some(protocol) = &redirect.protocol {
+			res.push_str(protocol);
+			res.push_str("://");
+		} else {
+			res.push_str("//");
+		}
+		res.push_str(hostname);
+	}
+	res.push('/');
+	if let Some(replace_key_prefix) = &redirect.replace_key_prefix {
+		res.push_str(replace_key_prefix);
+		if let Some(suffix) = suffix {
+			res.push_str(suffix)
+		}
+	} else if let Some(replace_key) = &redirect.replace_key {
+		res.push_str(replace_key)
+	}
+	res
 }
 
 #[cfg(test)]
@@ -418,35 +699,39 @@ mod tests {
 	#[test]
 	fn path_to_keys_test() -> Result<(), Error> {
 		assert_eq!(
-			path_to_keys("/file%20.jpg", "index.html")?,
-			(
-				"file .jpg".to_string(),
-				ImplicitRedirect::To {
-					key: "file .jpg/index.html".to_string(),
-					url: "/file%20.jpg/".to_string()
-				}
-			)
+			path_to_keys("/file%20.jpg", "index.html", &[])?,
+			RoutingResult::LoadOrRedirect {
+				key: "file .jpg".to_string(),
+				redirect_url: "/file%20.jpg/".to_string(),
+				redirect_if_exists: Some("file .jpg/index.html".to_string()),
+				redirect_code: StatusCode::FOUND,
+			}
 		);
 		assert_eq!(
-			path_to_keys("/%20t/", "index.html")?,
-			(" t/index.html".to_string(), ImplicitRedirect::No)
+			path_to_keys("/%20t/", "index.html", &[])?,
+			RoutingResult::LoadKey {
+				key: " t/index.html".to_string(),
+				code: StatusCode::OK
+			}
 		);
 		assert_eq!(
-			path_to_keys("/", "index.html")?,
-			("index.html".to_string(), ImplicitRedirect::No)
+			path_to_keys("/", "index.html", &[])?,
+			RoutingResult::LoadKey {
+				key: "index.html".to_string(),
+				code: StatusCode::OK
+			}
 		);
 		assert_eq!(
-			path_to_keys("/hello", "index.html")?,
-			(
-				"hello".to_string(),
-				ImplicitRedirect::To {
-					key: "hello/index.html".to_string(),
-					url: "/hello/".to_string()
-				}
-			)
+			path_to_keys("/hello", "index.html", &[])?,
+			RoutingResult::LoadOrRedirect {
+				key: "hello".to_string(),
+				redirect_url: "/hello/".to_string(),
+				redirect_if_exists: Some("hello/index.html".to_string()),
+				redirect_code: StatusCode::FOUND,
+			}
 		);
-		assert!(path_to_keys("", "index.html").is_err());
-		assert!(path_to_keys("i/am/relative", "index.html").is_err());
+		assert!(path_to_keys("", "index.html", &[]).is_err());
+		assert!(path_to_keys("i/am/relative", "index.html", &[]).is_err());
 		Ok(())
 	}
 }

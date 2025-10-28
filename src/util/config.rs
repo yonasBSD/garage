@@ -23,6 +23,21 @@ pub struct Config {
 	#[serde(default)]
 	pub data_fsync: bool,
 
+	/// Disable automatic scrubbing of the data directory
+	#[serde(default)]
+	pub disable_scrub: bool,
+
+	/// Use local timezone
+	#[serde(default)]
+	pub use_local_tz: bool,
+
+	/// Optional directory where metadata snapshots will be store
+	pub metadata_snapshots_dir: Option<PathBuf>,
+
+	/// Automatic snapshot interval for metadata
+	#[serde(default)]
+	pub metadata_auto_snapshot_interval: Option<String>,
+
 	/// Size of data blocks to save to disk
 	#[serde(
 		deserialize_with = "deserialize_capacity",
@@ -30,12 +45,20 @@ pub struct Config {
 	)]
 	pub block_size: usize,
 
-	/// Replication mode. Supported values:
-	/// - none, 1 -> no replication
-	/// - 2 -> 2-way replication
-	/// - 3 -> 3-way replication
-	// (we can add more aliases for this later)
-	pub replication_mode: String,
+	/// Number of replicas. Can be any positive integer, but uneven numbers are more favorable.
+	/// - 1 for single-node clusters, or to disable replication
+	/// - 3 is the recommended and supported setting.
+	#[serde(default)]
+	pub replication_factor: Option<usize>,
+
+	/// Consistency mode for all for requests through this node
+	/// - Degraded -> Disable read quorum
+	/// - Dangerous -> Disable read and write quorum
+	#[serde(default = "default_consistency_mode")]
+	pub consistency_mode: String,
+
+	/// Legacy option
+	pub replication_mode: Option<String>,
 
 	/// Zstd compression level used on data blocks
 	#[serde(
@@ -43,6 +66,18 @@ pub struct Config {
 		default = "default_compression"
 	)]
 	pub compression_level: Option<i32>,
+
+	/// Maximum amount of block data to buffer in RAM for sending to
+	/// remote nodes when these nodes are on slower links
+	#[serde(
+		deserialize_with = "deserialize_capacity",
+		default = "default_block_ram_buffer_max"
+	)]
+	pub block_ram_buffer_max: usize,
+
+	/// Maximum number of concurrent reads of block files on disk
+	#[serde(default = "default_block_max_concurrent_reads")]
+	pub block_max_concurrent_reads: usize,
 
 	/// Skip the permission check of secret files. Useful when
 	/// POSIX ACLs (or more complex chmods) are used.
@@ -61,12 +96,16 @@ pub struct Config {
 	/// Public IP address of this node
 	pub rpc_public_addr: Option<String>,
 
-	/// Timeout for Netapp's ping messagess
+	/// In case `rpc_public_addr` was not set, this can filter
+	/// the addresses announced to other peers to a specific subnet.
+	pub rpc_public_addr_subnet: Option<String>,
+
+	/// Timeout for Netapp's ping messages
 	pub rpc_ping_timeout_msec: Option<u64>,
 	/// Timeout for Netapp RPC calls
 	pub rpc_timeout_msec: Option<u64>,
 
-	// -- Bootstraping and discovery
+	// -- Bootstrapping and discovery
 	/// Bootstrap peers RPC address
 	#[serde(default)]
 	pub bootstrap_peers: Vec<String>,
@@ -79,23 +118,17 @@ pub struct Config {
 	pub kubernetes_discovery: Option<KubernetesDiscoveryConfig>,
 
 	// -- DB
-	/// Database engine to use for metadata (options: sled, sqlite, lmdb)
+	/// Database engine to use for metadata (options: sqlite, lmdb)
 	#[serde(default = "default_db_engine")]
 	pub db_engine: String,
-
-	/// Sled cache size, in bytes
-	#[serde(
-		deserialize_with = "deserialize_capacity",
-		default = "default_sled_cache_capacity"
-	)]
-	pub sled_cache_capacity: usize,
-	/// Sled flush interval in milliseconds
-	#[serde(default = "default_sled_flush_every_ms")]
-	pub sled_flush_every_ms: u64,
 
 	/// LMDB map size
 	#[serde(deserialize_with = "deserialize_capacity", default)]
 	pub lmdb_map_size: usize,
+
+	/// Fjall block cache size
+	#[serde(deserialize_with = "deserialize_capacity", default)]
+	pub fjall_block_cache_size: usize,
 
 	// -- APIs
 	/// Configuration for S3 api
@@ -110,6 +143,10 @@ pub struct Config {
 	/// Configuration for the admin API endpoint
 	#[serde(default = "Default::default")]
 	pub admin: AdminConfig,
+
+	/// Allow punycode in bucket names
+	#[serde(default)]
+	pub allow_punycode: bool,
 }
 
 /// Value for data_dir: either a single directory or a list of dirs with attributes
@@ -158,6 +195,9 @@ pub struct WebConfig {
 	pub bind_addr: UnixOrTCPSocketAddress,
 	/// Suffix to remove from domain name to find bucket
 	pub root_domain: String,
+	/// Whether to add the requested domain to exported Prometheus metrics
+	#[serde(default)]
+	pub add_host_to_metrics: bool,
 }
 
 /// Configuration for the admin and monitoring HTTP API
@@ -170,6 +210,9 @@ pub struct AdminConfig {
 	pub metrics_token: Option<String>,
 	/// File to read metrics token from
 	pub metrics_token_file: Option<PathBuf>,
+	/// Whether to require an access token for accessing the metrics endpoint
+	#[serde(default)]
+	pub metrics_require_token: bool,
 
 	/// Bearer token to use to access Admin API endpoints
 	pub admin_token: Option<String>,
@@ -238,14 +281,18 @@ fn default_db_engine() -> String {
 	"lmdb".into()
 }
 
-fn default_sled_cache_capacity() -> usize {
-	128 * 1024 * 1024
-}
-fn default_sled_flush_every_ms() -> u64 {
-	2000
-}
 fn default_block_size() -> usize {
 	1048576
+}
+fn default_block_ram_buffer_max() -> usize {
+	256 * 1024 * 1024
+}
+fn default_block_max_concurrent_reads() -> usize {
+	16
+}
+
+fn default_consistency_mode() -> String {
+	"consistent".into()
 }
 
 fn default_compression() -> Option<i32> {
@@ -359,7 +406,7 @@ mod tests {
 			r#"
 			metadata_dir = "/tmp/garage/meta"
 			data_dir = "/tmp/garage/data"
-			replication_mode = "3"
+			replication_factor = 3
 			rpc_bind_addr = "[::]:3901"
 			rpc_secret = "foo"
 

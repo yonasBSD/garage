@@ -1,13 +1,8 @@
-.PHONY: doc all release shell run1 run2 run3
+.PHONY: doc all run1 run2 run3
 
 all:
-	clear; cargo build
-
-release:
-	nix-build --attr pkgs.amd64.release --no-build-output
-
-shell:
-	nix-shell
+	clear
+	cargo build
 
 # ----
 

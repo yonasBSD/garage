@@ -1,13 +1,13 @@
 use opentelemetry::{global, metrics::*, KeyValue};
 
 use garage_db as db;
-use garage_db::counted_tree_hack::CountedTree;
 
 /// TableMetrics reference all counter used for metrics
 pub struct TableMetrics {
 	pub(crate) _table_size: ValueObserver<u64>,
 	pub(crate) _merkle_tree_size: ValueObserver<u64>,
 	pub(crate) _merkle_todo_len: ValueObserver<u64>,
+	pub(crate) _insert_queue_len: ValueObserver<u64>,
 	pub(crate) _gc_todo_len: ValueObserver<u64>,
 
 	pub(crate) get_request_counter: BoundCounter<u64>,
@@ -27,7 +27,8 @@ impl TableMetrics {
 		store: db::Tree,
 		merkle_tree: db::Tree,
 		merkle_todo: db::Tree,
-		gc_todo: CountedTree,
+		insert_queue: db::Tree,
+		gc_todo: db::Tree,
 	) -> Self {
 		let meter = global::meter(table_name);
 		TableMetrics {
@@ -35,9 +36,9 @@ impl TableMetrics {
 				.u64_value_observer(
 					"table.size",
 					move |observer| {
-						if let Ok(Some(v)) = store.fast_len() {
+						if let Ok(value) = store.approximate_len() {
 							observer.observe(
-								v as u64,
+								value as u64,
 								&[KeyValue::new("table_name", table_name)],
 							);
 						}
@@ -49,9 +50,9 @@ impl TableMetrics {
 				.u64_value_observer(
 					"table.merkle_tree_size",
 					move |observer| {
-						if let Ok(Some(v)) = merkle_tree.fast_len() {
+						if let Ok(value) = merkle_tree.approximate_len() {
 							observer.observe(
-								v as u64,
+								value as u64,
 								&[KeyValue::new("table_name", table_name)],
 							);
 						}
@@ -63,7 +64,7 @@ impl TableMetrics {
 				.u64_value_observer(
 					"table.merkle_updater_todo_queue_length",
 					move |observer| {
-						if let Ok(v) = merkle_todo.len() {
+						if let Ok(v) = merkle_todo.approximate_len() {
 							observer.observe(
 								v as u64,
 								&[KeyValue::new("table_name", table_name)],
@@ -73,14 +74,30 @@ impl TableMetrics {
 				)
 				.with_description("Merkle tree updater TODO queue length")
 				.init(),
+			_insert_queue_len: meter
+				.u64_value_observer(
+					"table.insert_queue_length",
+					move |observer| {
+						if let Ok(v) = insert_queue.approximate_len() {
+							observer.observe(
+								v as u64,
+								&[KeyValue::new("table_name", table_name)],
+							);
+						}
+					},
+				)
+				.with_description("Table insert queue length")
+				.init(),
 			_gc_todo_len: meter
 				.u64_value_observer(
 					"table.gc_todo_queue_length",
 					move |observer| {
-						observer.observe(
-							gc_todo.len() as u64,
-							&[KeyValue::new("table_name", table_name)],
-						);
+                        if let Ok(value) = gc_todo.approximate_len() {
+                            observer.observe(
+                                value as u64,
+                                &[KeyValue::new("table_name", table_name)],
+                            );
+                        }
 					},
 				)
 				.with_description("Table garbage collector TODO queue length")

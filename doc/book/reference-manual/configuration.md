@@ -8,19 +8,24 @@ weight = 20
 Here is an example `garage.toml` configuration file that illustrates all of the possible options:
 
 ```toml
-replication_mode = "3"
+replication_factor = 3
+consistency_mode = "consistent"
 
 metadata_dir = "/var/lib/garage/meta"
 data_dir = "/var/lib/garage/data"
+metadata_snapshots_dir = "/var/lib/garage/snapshots"
 metadata_fsync = true
 data_fsync = false
+disable_scrub = false
+use_local_tz = false
+metadata_auto_snapshot_interval = "6h"
 
 db_engine = "lmdb"
 
 block_size = "1M"
+block_ram_buffer_max = "256MiB"
+block_max_concurrent_reads = 16
 
-sled_cache_capacity = "128MiB"
-sled_flush_every_ms = 2000
 lmdb_map_size = "1T"
 
 compression_level = 1
@@ -29,6 +34,11 @@ rpc_secret = "4425f5c26c5e11581d3223904324dcb5b5d5dfb14e5e7f35e38c595424f5f1e6"
 rpc_bind_addr = "[::]:3901"
 rpc_bind_outgoing = false
 rpc_public_addr = "[fc00:1::1]:3901"
+# or set rpc_public_adr_subnet to filter down autodiscovery to a subnet:
+# rpc_public_addr_subnet = "2001:0db8:f00:b00:/64"
+
+
+allow_world_readable_secrets = false
 
 bootstrap_peers = [
     "563e1ac825ee3323aa441e72c26d1030d6d4414aeb3dd25287c531e7fc2bc95d@[fc00:1::1]:3901",
@@ -37,6 +47,7 @@ bootstrap_peers = [
     "212fd62eeaca72c122b45a7f4fa0f55e012aa5e24ac384a72a3016413fa724ff@[fc00:F::1]:3901",
 ]
 
+allow_punycode = false
 
 [consul_discovery]
 api = "catalog"
@@ -66,11 +77,13 @@ root_domain = ".s3.garage"
 [s3_web]
 bind_addr = "[::]:3902"
 root_domain = ".web.garage"
+add_host_to_metrics = true
 
 [admin]
 api_bind_addr = "0.0.0.0:3903"
-metrics_token = "cacce0b2de4bc2d9f5b5fdff551e01ac1496055aed248202d415398987e35f81"
-admin_token = "ae8cb40ea7368bbdbb6430af11cca7da833d3458a5f52086f4e805a570fb5c2a"
+metrics_token = "BCAdFjoa9G0KJR0WXnHHm7fs1ZAbfpI8iIZ+Z/a2NgI="
+metrics_require_token = true
+admin_token = "UkLeGWEvHnXBqnueR3ISEMWpOnm40jH2tM2HnnL/0F4="
 trace_sink = "http://localhost:4317"
 ```
 
@@ -80,23 +93,33 @@ The following gives details about each available configuration option.
 
 ### Index
 
-Top-level configuration options:
+[Environment variables](#env_variables).
+
+Top-level configuration options, in alphabetical order:
+[`allow_punycode`](#allow_punycode),
+[`allow_world_readable_secrets`](#allow_world_readable_secrets),
+[`block_max_concurrent_reads`](#block_max_concurrent_reads),
+[`block_ram_buffer_max`](#block_ram_buffer_max),
 [`block_size`](#block_size),
 [`bootstrap_peers`](#bootstrap_peers),
 [`compression_level`](#compression_level),
+[`consistency_mode`](#consistency_mode),
 [`data_dir`](#data_dir),
 [`data_fsync`](#data_fsync),
 [`db_engine`](#db_engine),
+[`disable_scrub`](#disable_scrub),
 [`lmdb_map_size`](#lmdb_map_size),
+[`metadata_auto_snapshot_interval`](#metadata_auto_snapshot_interval),
 [`metadata_dir`](#metadata_dir),
 [`metadata_fsync`](#metadata_fsync),
-[`replication_mode`](#replication_mode),
+[`metadata_snapshots_dir`](#metadata_snapshots_dir),
+[`replication_factor`](#replication_factor),
 [`rpc_bind_addr`](#rpc_bind_addr),
 [`rpc_bind_outgoing`](#rpc_bind_outgoing),
 [`rpc_public_addr`](#rpc_public_addr),
+[`rpc_public_addr_subnet`](#rpc_public_addr_subnet)
 [`rpc_secret`/`rpc_secret_file`](#rpc_secret),
-[`sled_cache_capacity`](#sled_cache_capacity),
-[`sled_flush_every_ms`](#sled_flush_every_ms).
+[`use_local_tz`](#use_local_tz).
 
 The `[consul_discovery]` section:
 [`api`](#consul_api),
@@ -121,23 +144,47 @@ The `[s3_api]` section:
 [`s3_region`](#s3_region).
 
 The `[s3_web]` section:
+[`add_host_to_metrics`](#web_add_host_to_metrics),
 [`bind_addr`](#web_bind_addr),
 [`root_domain`](#web_root_domain).
 
 The `[admin]` section:
 [`api_bind_addr`](#admin_api_bind_addr),
+[`metrics_require_token`](#admin_metrics_require_token),
 [`metrics_token`/`metrics_token_file`](#admin_metrics_token),
 [`admin_token`/`admin_token_file`](#admin_token),
 [`trace_sink`](#admin_trace_sink),
 
+### Environment variables {#env_variables}
+
+The following configuration parameters must be specified as environment variables,
+they do not exist in the configuration file:
+
+- `GARAGE_LOG_TO_SYSLOG` (since `v0.9.4`): set this to `1` or `true` to make the
+  Garage daemon send its logs to `syslog` (using the libc `syslog` function)
+  instead of printing to stderr.
+
+- `GARAGE_LOG_TO_JOURNALD` (since `v1.2.0`): set this to `1` or `true` to make the
+  Garage daemon send its logs to `journald` (using the native protocol of `systemd-journald`)
+  instead of printing to stderr.
+
+The following environment variables can be used to override the corresponding
+values in the configuration file:
+
+- [`GARAGE_ALLOW_WORLD_READABLE_SECRETS`](#allow_world_readable_secrets)
+- [`GARAGE_RPC_SECRET` and `GARAGE_RPC_SECRET_FILE`](#rpc_secret)
+- [`GARAGE_ADMIN_TOKEN` and `GARAGE_ADMIN_TOKEN_FILE`](#admin_token)
+- [`GARAGE_METRICS_TOKEN` and `GARAGE_METRICS_TOKEN`](#admin_metrics_token)
+
 
 ### Top-level configuration options
 
-#### `replication_mode` {#replication_mode}
+#### `replication_factor` (since `v1.0.0`) {#replication_factor}
 
-Garage supports the following replication modes:
+The replication factor can be any positive integer smaller or equal the node count in your cluster.
+The chosen replication factor has a big impact on the cluster's failure tolerancy and performance characteristics.
 
-- `none` or `1`: data stored on Garage is stored on a single node. There is no
+- `1`: data stored on Garage is stored on a single node. There is no
   redundancy, and data will be unavailable as soon as one node fails or its
   network is disconnected.  Do not use this for anything else than test
   deployments.
@@ -148,17 +195,6 @@ Garage supports the following replication modes:
   before losing data. Data remains available in read-only mode when one node is
   down, but write operations will fail.
 
-  - `2-dangerous`: a variant of mode `2`, where written objects are written to
-    the second replica asynchronously. This means that Garage will return `200
-    OK` to a PutObject request before the second copy is fully written (or even
-    before it even starts being written).  This means that data can more easily
-    be lost if the node crashes before a second copy can be completed.  This
-    also means that written objects might not be visible immediately in read
-    operations.  In other words, this mode severely breaks the consistency and
-    durability guarantees of standard Garage cluster operation.  Benefits of
-    this mode: you can still write to your cluster when one node is
-    unavailable.
-
 - `3`: data stored on Garage will be stored on three different nodes, if
   possible each in a different zones.  Garage tolerates two node failure, or
   several node failures but in no more than two zones (in a deployment with at
@@ -166,55 +202,84 @@ Garage supports the following replication modes:
   or node failures are only in a single zone, reading and writing data to
   Garage can continue normally.
 
-  - `3-degraded`: a variant of replication mode `3`, that lowers the read
-    quorum to `1`, to allow you to read data from your cluster when several
-    nodes (or nodes in several zones) are unavailable.  In this mode, Garage
-    does not provide read-after-write consistency anymore.  The write quorum is
-    still 2, ensuring that data successfully written to Garage is stored on at
-    least two nodes.
-
-  - `3-dangerous`: a variant of replication mode `3` that lowers both the read
-    and write quorums to `1`, to allow you to both read and write to your
-    cluster when several nodes (or nodes in several zones) are unavailable.  It
-    is the least consistent mode of operation proposed by Garage, and also one
-    that should probably never be used.
+- `5`, `7`, ...: When setting the replication factor above 3, it is most useful to
+  choose an uneven value, since for every two copies added, one more node can fail
+  before losing the ability to write and read to the cluster.
 
 Note that in modes `2` and `3`,
 if at least the same number of zones are available, an arbitrary number of failures in
 any given zone is tolerated as copies of data will be spread over several zones.
 
-**Make sure `replication_mode` is the same in the configuration files of all nodes.
+**Make sure `replication_factor` is the same in the configuration files of all nodes.
 Never run a Garage cluster where that is not the case.**
+
+It is technically possible to change the replication factor although it's a
+dangerous operation that is not officially supported.  This requires you to
+delete the existing cluster layout and create a new layout from scratch,
+meaning that a full rebalancing of your cluster's data will be needed.  To do
+it, shut down your cluster entirely, delete the `custer_layout` files in the
+meta directories of all your nodes, update all your configuration files with
+the new `replication_factor` parameter, restart your cluster, and then create a
+new layout with all the nodes you want to keep.  Rebalancing data will take
+some time, and data might temporarily appear unavailable to your users.
+It is recommended to shut down public access to the cluster while rebalancing
+is in progress.  In theory, no data should be lost as rebalancing is a
+routine operation for Garage, although we cannot guarantee you that everything
+ will go right in such an extreme scenario.
+
+#### `consistency_mode` (since `v1.0.0`) {#consistency_mode}
+
+The consistency mode setting determines the read and write behaviour of your cluster.
+
+  - `consistent`: The default setting. This is what the paragraph above describes.
+    The read and write quorum will be determined so that read-after-write consistency
+    is guaranteed.
+  - `degraded`: Lowers the read
+    quorum to `1`, to allow you to read data from your cluster when several
+    nodes (or nodes in several zones) are unavailable.  In this mode, Garage
+    does not provide read-after-write consistency anymore.
+    The write quorum stays the same as in the `consistent` mode, ensuring that
+    data successfully written to Garage is stored on multiple nodes (depending
+    the replication factor).
+  - `dangerous`: This mode lowers both the read
+    and write quorums to `1`, to allow you to both read and write to your
+    cluster when several nodes (or nodes in several zones) are unavailable.  It
+    is the least consistent mode of operation proposed by Garage, and also one
+    that should probably never be used.
+
+Changing the `consistency_mode` between modes while leaving the `replication_factor` untouched
+(e.g. setting your node's `consistency_mode` to `degraded` when it was previously unset, or from
+`dangerous` to `consistent`), can be done easily by just changing the `consistency_mode`
+parameter in your config files and restarting all your Garage nodes.
+
+The consistency mode can be used together with various replication factors, to achieve
+a wide range of read and write characteristics. Some examples:
+
+  - Replication factor `2`, consistency mode `degraded`: While this mode
+    technically exists, its properties are the same as with consistency mode `consistent`,
+    since the read quorum with replication factor `2`, consistency mode `consistent` is already 1.
+
+  - Replication factor `2`, consistency mode `dangerous`: written objects are written to
+    the second replica asynchronously. This means that Garage will return `200
+    OK` to a PutObject request before the second copy is fully written (or even
+    before it even starts being written).  This means that data can more easily
+    be lost if the node crashes before a second copy can be completed.  This
+    also means that written objects might not be visible immediately in read
+    operations.  In other words, this configuration severely breaks the consistency and
+    durability guarantees of standard Garage cluster operation.  Benefits of
+    this configuration: you can still write to your cluster when one node is
+    unavailable.
 
 The quorums associated with each replication mode are described below:
 
-| `replication_mode` | Number of replicas | Write quorum | Read quorum | Read-after-write consistency? |
-| ------------------ | ------------------ | ------------ | ----------- | ----------------------------- |
-| `none` or `1`      | 1                  | 1            | 1           | yes                           |
-| `2`                | 2                  | 2            | 1           | yes                           |
-| `2-dangerous`      | 2                  | 1            | 1           | NO                            |
-| `3`                | 3                  | 2            | 2           | yes                           |
-| `3-degraded`       | 3                  | 2            | 1           | NO                            |
-| `3-dangerous`      | 3                  | 1            | 1           | NO                            |
-
-Changing the `replication_mode` between modes with the same number of replicas
-(e.g. from `3` to `3-degraded`, or from `2-dangerous` to `2`), can be done easily by
-just changing the `replication_mode` parameter in your config files and restarting all your
-Garage nodes.
-
-It is also technically possible to change the replication mode to a mode with a
-different numbers of replicas, although it's a dangerous operation that is not
-officially supported.  This requires you to delete the existing cluster layout
-and create a new layout from scratch, meaning that a full rebalancing of your
-cluster's data will be needed.  To do it, shut down your cluster entirely,
-delete the `custer_layout` files in the meta directories of all your nodes,
-update all your configuration files with the new `replication_mode` parameter,
-restart your cluster, and then create a new layout with all the nodes you want
-to keep.  Rebalancing data will take some time, and data might temporarily
-appear unavailable to your users.  It is recommended to shut down public access
-to the cluster while rebalancing is in progress.  In theory, no data should be
-lost as rebalancing is a routine operation for Garage, although we cannot
-guarantee you that everything will go right in such an extreme scenario.
+| `consistency_mode` | `replication_factor` | Write quorum | Read quorum | Read-after-write consistency? |
+| ------------------ | -------------------- | ------------ | ----------- | ----------------------------- |
+| `consistent`       | 1                    | 1            | 1           | yes                           |
+| `consistent`       | 2                    | 2            | 1           | yes                           |
+| `dangerous`        | 2                    | 1            | 1           | NO                            |
+| `consistent`       | 3                    | 2            | 2           | yes                           |
+| `degraded`         | 3                    | 2            | 1           | NO                            |
+| `dangerous`        | 3                    | 1            | 1           | NO                            |
 
 #### `metadata_dir` {#metadata_dir}
 
@@ -223,6 +288,7 @@ the network configuration and the peer list, the list of buckets and keys as wel
 as the index of all objects, object version and object blocks.
 
 Store this folder on a fast SSD drive if possible to maximize Garage's performance.
+
 
 #### `data_dir` {#data_dir}
 
@@ -244,38 +310,76 @@ data_dir = [
 See [the dedicated documentation page](@/documentation/operations/multi-hdd.md)
 on how to operate Garage in such a setup.
 
+#### `metadata_snapshots_dir` (since `v1.1.0`) {#metadata_snapshots_dir}
+
+The directory in which Garage will store metadata snapshots when it
+performs a snapshot of the metadata database, either when instructed to do
+so from a RPC call or regularly through
+[`metadata_auto_snapshot_interval`](#metadata_auto_snapshot_interval).
+
+By default, Garage will store snapshots into a `snapshots/` subdirectory
+of [`metadata_dir`](#metadata_dir). This might quickly fill up your
+metadata storage space if you use snapshots, because Garage will need up
+to 4x the space of the existing metadata database: each snapshot requires
+roughly as much space as the original database, and Garage temporarily
+needs to store up to three different snapshots before it cleans up the oldest
+snapshot to go back to two stored snapshots.
+
+To prevent filling your disk, you might to change this setting to a
+directory with ample available space, e.g. on the same storage space as
+[`data_dir`](#data_dir).
+
 #### `db_engine` (since `v0.8.0`) {#db_engine}
 
 Since `v0.8.0`, Garage can use alternative storage backends as follows:
 
 | DB engine | `db_engine` value | Database path |
 | --------- | ----------------- | ------------- |
-| [LMDB](https://www.lmdb.tech) (default since `v0.9.0`) | `"lmdb"` | `<metadata_dir>/db.lmdb/` |
-| [Sled](https://sled.rs) (default up to `v0.8.0`) | `"sled"` | `<metadata_dir>/db/` |
-| [Sqlite](https://sqlite.org) | `"sqlite"` | `<metadata_dir>/db.sqlite` |
+| [LMDB](https://www.symas.com/lmdb) (since `v0.8.0`, default since `v0.9.0`) | `"lmdb"` | `<metadata_dir>/db.lmdb/` |
+| [Sqlite](https://sqlite.org) (since `v0.8.0`) | `"sqlite"` | `<metadata_dir>/db.sqlite` |
+| [Fjall](https://github.com/fjall-rs/fjall) (**experimental support** since `v1.3.0`/`v2.1.0`) | `"fjall"` | `<metadata_dir>/db.fjall/` |
+| [Sled](https://sled.rs) (old default, removed since `v1.0`) | `"sled"` | `<metadata_dir>/db/` |
 
-Sled was the only database engine up to Garage v0.7.0. Performance issues and
-API limitations of Sled prompted the addition of alternative engines in v0.8.0.
-Since v0.9.0, LMDB is the default engine instead of Sled, and Sled is
-deprecated. We plan to remove Sled in Garage v1.0.
+Sled was supported until Garage v0.9.x, and was removed in Garage v1.0.
+You can still use an older binary of Garage (e.g. v0.9.4) to migrate
+old Sled metadata databases to another engine.
 
 Performance characteristics of the different DB engines are as follows:
 
-- Sled: tends to produce large data files and also has performance issues,
-  especially when the metadata folder is on a traditional HDD and not on SSD.
+- **LMDB:** the recommended database engine for high-performance distributed clusters
+  with `replication_factor` ≥ 2.
+  LMDB works well, but is known to have the following limitations:
 
-- LMDB: the recommended database engine on 64-bit systems, much more
-  space-efficient and slightly faster. Note that the data format of LMDB is not
-  portable between architectures, so for instance the Garage database of an
-  x86-64 node cannot be moved to an ARM64 node. Also note that, while LMDB can
-  technically be used on 32-bit systems, this will limit your node to very
-  small database sizes due to how LMDB works; it is therefore not recommended.
+  - LMDB is prone to database corruption after an unclean shutdown (e.g. a process kill
+    or a power outage).  It is recommended to configure
+    [`metadata_auto_snapshot_interval`](#metadata_auto_snapshot_interval) to be
+    able to easily recover from this situation. With `replication_factor` ≥ 2,
+    metadata can also be reconstructed from remote nodes upon corruption
+    (see [Recovering from failures](@/documentation/operations/recovering.md#corrupted_meta)).
 
-- Sqlite: Garage supports Sqlite as an alternative storage backend for
-  metadata, and although it has not been tested as much, it is expected to work
-  satisfactorily.  Since Garage v0.9.0, performance issues have largely been
-  fixed by allowing for a no-fsync mode (see `metadata_fsync`). Sqlite does not
-  have the database size limitation of LMDB on 32-bit systems.
+  - The data format of LMDB is not portable between architectures, so for
+    instance the Garage database of an x86-64 node cannot be moved to an ARM64
+    node.
+
+  - While LMDB can technically be used on 32-bit systems, this will limit your
+    node to very small database sizes due to how LMDB works; it is therefore
+    not recommended.
+
+  - Keys in LMDB are limited to 511 bytes. This limit translates to limits on
+    object keys in S3 and sort keys in K2V that are limted to 479 bytes.
+
+- **Sqlite:** Garage supports Sqlite as an alternative storage backend for
+  metadata, which does not have the issues listed above for LMDB.  Sqlite is
+  slower than LMDB, so it is not the best choice for high-performance storage
+  clusters.
+
+- **Fjall:** a storage engine based on LSM trees, which theoretically allow for
+  higher write throughput than other storage engines that are based on B-trees.
+  Using Fjall could potentially improve Garage's performance significantly in
+  write-heavy workloads. **Support for Fjall is experimental at this point**,
+  we have added it to Garage for evaluation purposes only. **Use it only with
+  test data, and report any issues to our bug tracker. Do not use it for
+  production workloads.**
 
 It is possible to convert Garage's metadata directory from one format to another
 using the `garage convert-db` command, which should be used as follows:
@@ -302,7 +406,7 @@ Using this option reduces the risk of simultaneous metadata corruption on severa
 cluster nodes, which could lead to data loss.
 
 If multi-site replication is used, this option is most likely not necessary, as
-it is extremely unlikely that two nodes in different locations will have a 
+it is extremely unlikely that two nodes in different locations will have a
 power failure at the exact same time.
 
 (Metadata corruption on a single node is not an issue, the corrupted data file
@@ -312,9 +416,9 @@ Here is how this option impacts the different database engines:
 
 | Database | `metadata_fsync = false` (default) | `metadata_fsync = true`       |
 |----------|------------------------------------|-------------------------------|
-| Sled     | default options                    | *unsupported*                 |
 | Sqlite   | `PRAGMA synchronous = OFF`         | `PRAGMA synchronous = NORMAL` |
 | LMDB     | `MDB_NOMETASYNC` + `MDB_NOSYNC`    | `MDB_NOMETASYNC`              |
+| Fjall    | default options                    | not supported                 |
 
 Note that the Sqlite database is always ran in `WAL` mode (`PRAGMA journal_mode = WAL`).
 
@@ -331,6 +435,56 @@ at the cost of a moderate drop in write performance.
 Similarly to `metatada_fsync`, this is likely not necessary
 if geographical replication is used.
 
+#### `metadata_auto_snapshot_interval` (since `v0.9.4`) {#metadata_auto_snapshot_interval}
+
+If this value is set, Garage will automatically take a snapshot of the metadata
+DB file at a regular interval and save it in the metadata directory,
+or in [`metadata_snapshots_dir`](#metadata_snapshots_dir) if it is set.
+This parameter can take any duration string that can be parsed by
+the [`parse_duration`](https://docs.rs/parse_duration/latest/parse_duration/#syntax) crate.
+
+Snapshots can allow to recover from situations where the metadata DB file is
+corrupted, for instance after an unclean shutdown.  See [this
+page](@/documentation/operations/recovering.md#corrupted_meta) for details.
+Garage keeps only the two most recent snapshots of the metadata DB and deletes
+older ones automatically.
+You can also create metadata snapshots manually at any point using the
+`garage meta snapshot` command.
+
+Using snapshots created by Garage is the best option to make snapshots of your
+node's metadata for potential recovery, as they are guaranteed to be clean and
+consistent, contrarily to filesystem-level snapshots that may be taken while
+some writes are in-flight and thus might be corrupted.
+
+Note that taking a metadata snapshot is a relatively intensive operation as the
+entire data file is copied. A snapshot being taken might have performance
+impacts on the Garage node while it is running. If the cluster is under heavy
+write load when a snapshot operation is running, this might also cause the
+database file to grow in size significantly as pages cannot be recycled easily.
+
+#### `disable_scrub` {#disable_scrub}
+
+By default, Garage runs a scrub of the data directory approximately once per
+month, with a random delay to avoid all nodes running at the same time.  When
+it scrubs the data directory, Garage will read all of the data files stored on
+disk to check their integrity, and will rebuild any data files that it finds
+corrupted, using the remaining valid copies stored on other nodes.
+See [this page](@/documentation/operations/durability-repairs.md#scrub) for details.
+
+Set the `disable_scrub` configuration value to `true` if you don't need Garage
+to scrub the data directory, for instance if you are already scrubbing at the
+filesystem level. Note that in this case, if you find a corrupted data file,
+you should delete it from the data directory and then call `garage repair
+blocks` on the node to ensure that it re-obtains a copy from another node on
+the network.
+
+#### `use_local_tz` (since `v1.1.0`) {#use_local_tz}
+
+By default, Garage runs the lifecycle worker every day at midnight in UTC. Set the
+`use_local_tz` configuration value to `true` if you want Garage to run the
+lifecycle worker at midnight in your local timezone. If you have multiple nodes,
+you should also ensure that each node has the same timezone configuration.
+
 #### `block_size` {#block_size}
 
 Garage splits stored objects in consecutive chunks of size `block_size`
@@ -346,20 +500,59 @@ files will remain available. This however means that chunks from existing files
 will not be deduplicated with chunks from newly uploaded files, meaning you
 might use more storage space that is optimally possible.
 
-#### `sled_cache_capacity` {#sled_cache_capacity}
+#### `block_ram_buffer_max` (since `v0.9.4`) {#block_ram_buffer_max}
 
-This parameter can be used to tune the capacity of the cache used by
-[sled](https://sled.rs), the database Garage uses internally to store metadata.
-Tune this to fit the RAM you wish to make available to your Garage instance.
-This value has a conservative default (128MB) so that Garage doesn't use too much
-RAM by default, but feel free to increase this for higher performance.
+A limit on the total size of data blocks kept in RAM by S3 API nodes awaiting
+to be sent to storage nodes asynchronously.
 
-#### `sled_flush_every_ms` {#sled_flush_every_ms}
+Explanation: since Garage wants to tolerate node failures, it uses quorum
+writes to send data blocks to storage nodes: try to write the block to three
+nodes, and return ok as soon as two writes complete. So even if all three nodes
+are online, the third write always completes asynchronously.  In general, there
+are not many writes to a cluster, and the third asynchronous write can
+terminate early enough so as to not cause unbounded RAM growth.  However, if
+the S3 API node is continuously receiving large quantities of data and the
+third node is never able to catch up, many data blocks will be kept buffered in
+RAM as they are awaiting transfer to the third node.
 
-This parameters can be used to tune the flushing interval of sled.
-Increase this if sled is thrashing your SSD, at the risk of losing more data in case
-of a power outage (though this should not matter much as data is replicated on other
-nodes). The default value, 2000ms, should be appropriate for most use cases.
+The `block_ram_buffer_max` sets a limit to the size of buffers that can be kept
+in RAM in this process.  When the limit is reached, backpressure is applied
+back to the S3 client.
+
+Note that this only counts buffers that have arrived to a certain stage of
+processing (received from the client + encrypted and/or compressed as
+necessary) and are ready to send to the storage nodes. Many other buffers will
+not be counted and this is not a hard limit on RAM consumption.  In particular,
+if many clients send requests simultaneously with large objects, the RAM
+consumption will always grow linearly with the number of concurrent requests,
+as each request will use a few buffers of size `block_size` for receiving and
+intermediate processing before even trying to send the data to the storage
+node.
+
+The default value is 256MiB.
+
+#### `block_max_concurrent_reads` (since `v1.3.0` / `v2.1.0`) {#block_max_concurrent_reads}
+
+The maximum number of blocks (individual files in the data directory) open
+simultaneously for reading.
+
+Reducing this number does not limit the number of data blocks that can be
+transferred through the network simultaneously. This mechanism was just added
+as a backpressure mechanism for HDD read speed: it helps avoid a situation
+where too many requests are coming in and Garage is reading too many block
+files simultaneously, thus not making timely progress on any of the reads.
+
+When a request to read a data block comes in through the network, the requests
+awaits for one of the `block_max_concurrent_reads` slots to be available
+(internally implemented using a Semaphore object). Once it acquired a read
+slot, it reads the entire block file to RAM and frees the slot as soon as the
+block file is finished reading. Only after the slot is released will the
+block's data start being transferred over the network.  If the request fails to
+acquire a reading slot wihtin 15 seconds, it fails with a timeout error.
+Timeout events can be monitored through the `block_read_semaphore_timeouts`
+metric in Prometheus: a non-zero number of such events indicates an I/O
+bottleneck on HDD read speed.
+
 
 #### `lmdb_map_size` {#lmdb_map_size}
 
@@ -417,7 +610,7 @@ the node, even in the case of a NAT: the NAT should be configured to forward the
 port number to the same internal port nubmer. This means that if you have several nodes running
 behind a NAT, they should each use a different RPC port number.
 
-#### `rpc_bind_outgoing` {#rpc_bind_outgoing} (since v0.9.2)
+#### `rpc_bind_outgoing` (since `v0.9.2`) {#rpc_bind_outgoing}
 
 If enabled, pre-bind all sockets for outgoing connections to the same IP address
 used for listening (the IP address specified in `rpc_bind_addr`) before
@@ -435,6 +628,14 @@ RPC calls.  **This parameter is optional but recommended.** In case you have
 a NAT that binds the RPC port to a port that is different on your public IP,
 this field might help making it work.
 
+#### `rpc_public_addr_subnet` {#rpc_public_addr_subnet}
+In case `rpc_public_addr` is not set, but autodiscovery is used, this allows
+filtering the list of automatically discovered IPs to a specific subnet.
+
+For example, if nodes should pick *their* IP inside a specific subnet, but you
+don't want to explicitly write the IP down (as it's dynamic, or you want to
+share configs across nodes), you can use this option.
+
 #### `bootstrap_peers` {#bootstrap_peers}
 
 A list of peer identifiers on which to contact other Garage peers of this cluster.
@@ -451,7 +652,7 @@ be obtained by running `garage node id` and then included directly in the
 key will be returned by `garage node id` and you will have to add the IP
 yourself.
 
-### `allow_world_readable_secrets`
+#### `allow_world_readable_secrets` or `GARAGE_ALLOW_WORLD_READABLE_SECRETS` (env) {#allow_world_readable_secrets}
 
 Garage checks the permissions of your secret files to make sure they're not
 world-readable. In some cases, the check might fail and consider your files as
@@ -462,6 +663,13 @@ permission verification.
 
 Alternatively, you can set the `GARAGE_ALLOW_WORLD_READABLE_SECRETS`
 environment variable to `true` to bypass the permissions check.
+
+#### `allow_punycode` {#allow_punycode}
+
+Allow creating buckets with names containing punycode. When used for buckets served
+as websites, this allows using almost any unicode character in the domain name.
+
+Default to `false`.
 
 ### The `[consul_discovery]` section
 
@@ -593,6 +801,13 @@ For instance, if `root_domain` is `web.garage.eu`, a bucket called `deuxfleurs.f
 will be accessible either with hostname `deuxfleurs.fr.web.garage.eu`
 or with hostname `deuxfleurs.fr`.
 
+#### `add_host_to_metrics` {#web_add_host_to_metrics}
+
+Whether to include the requested domain name (HTTP `Host` header) in the
+Prometheus metrics of the web endpoint. This is disabled by default as the
+number of possible values is not bounded and can be a source of cardinality
+explosion in the exported metrics.
+
 
 ### The `[admin]` section
 
@@ -607,29 +822,48 @@ See [administration API reference](@/documentation/reference-manual/admin-api.md
 Alternatively, since `v0.8.5`, a path can be used to create a unix socket. Note that for security reasons,
 the socket will have 0220 mode. Make sure to set user and group permissions accordingly.
 
+#### `admin_token`, `admin_token_file` or `GARAGE_ADMIN_TOKEN`, `GARAGE_ADMIN_TOKEN_FILE` (env) {#admin_token}
+
+The token for accessing all administration functions on the admin endpoint,
+with the exception of the metrics endpoint (see `metrics_token`).
+
+You can use any random string for this value. We recommend generating a random
+token with `openssl rand -base64 32`.
+
+For Garage version earlier than `v2.0`, if this token is not set,
+access to these endpoints is disabled entirely.
+
+Since Garage `v2.0`, additional admin API tokens can be defined dynamically
+in your Garage cluster using administration commands. This new admin token system
+is more flexible since it allows admin tokens to have an expiration date,
+and to have a scope restricted to certain admin API functions. If `admin_token`
+is set, it behaves as an admin token without expiration and with full scope.
+Otherwise, only admin API tokens defined dynamically can be used.
+
+`admin_token` was introduced in Garage `v0.7.2`.
+`admin_token_file` and the `GARAGE_ADMIN_TOKEN` environment variable are supported since Garage `v0.8.2`.
+
+`GARAGE_ADMIN_TOKEN_FILE` is supported since `v0.8.5` / `v0.9.1`.
+
 #### `metrics_token`, `metrics_token_file` or `GARAGE_METRICS_TOKEN`, `GARAGE_METRICS_TOKEN_FILE` (env) {#admin_metrics_token}
 
-The token for accessing the Metrics endpoint. If this token is not set, the
-Metrics endpoint can be accessed without access control.
+The token for accessing the Prometheus metrics endpoint (`/metrics`).
+If this token is not set, and unless `metrics_require_token` is set to `true`,
+the metrics endpoint can be accessed without access control.
 
-You can use any random string for this value. We recommend generating a random token with `openssl rand -hex 32`.
+You can use any random string for this value. We recommend generating a random token with `openssl rand -base64 32`.
 
 `metrics_token` was introduced in Garage `v0.7.2`.
 `metrics_token_file` and the `GARAGE_METRICS_TOKEN` environment variable are supported since Garage `v0.8.2`.
 
 `GARAGE_METRICS_TOKEN_FILE` is supported since `v0.8.5` / `v0.9.1`.
 
-#### `admin_token`, `admin_token_file` or `GARAGE_ADMIN_TOKEN`, `GARAGE_ADMIN_TOKEN_FILE` (env) {#admin_token}
+#### `metrics_require_token` (since `v2.0.0`) {#admin_metrics_require_token}
 
-The token for accessing all of the other administration endpoints.  If this
-token is not set, access to these endpoints is disabled entirely.
-
-You can use any random string for this value. We recommend generating a random token with `openssl rand -hex 32`.
-
-`admin_token` was introduced in Garage `v0.7.2`.
-`admin_token_file` and the `GARAGE_ADMIN_TOKEN` environment variable are supported since Garage `v0.8.2`.
-
-`GARAGE_ADMIN_TOKEN_FILE` is supported since `v0.8.5` / `v0.9.1`.
+If this is set to `true`, accessing the metrics endpoint will always require
+an access token. Valid tokens include the `metrics_token` if it is set,
+and admin API token defined dynamicaly in Garage which have
+the `Metrics` endpoint in their scope.
 
 #### `trace_sink` {#admin_trace_sink}
 

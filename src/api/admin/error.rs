@@ -1,25 +1,45 @@
+use std::convert::TryFrom;
+
 use err_derive::Error;
 use hyper::header::HeaderValue;
 use hyper::{HeaderMap, StatusCode};
 
 pub use garage_model::helper::error::Error as HelperError;
 
-use crate::common_error::CommonError;
-pub use crate::common_error::{CommonErrorDerivative, OkOrBadRequest, OkOrInternalError};
-use crate::generic_server::ApiError;
-use crate::helpers::*;
+use garage_api_common::common_error::{commonErrorDerivative, CommonError};
+pub use garage_api_common::common_error::{
+	CommonErrorDerivative, OkOrBadRequest, OkOrInternalError,
+};
+use garage_api_common::generic_server::ApiError;
+use garage_api_common::helpers::*;
 
 /// Errors of this crate
 #[derive(Debug, Error)]
 pub enum Error {
 	#[error(display = "{}", _0)]
 	/// Error from common error
-	Common(CommonError),
+	Common(#[error(source)] CommonError),
 
 	// Category: cannot process
+	/// The admin API token does not exist
+	#[error(display = "Admin token not found: {}", _0)]
+	NoSuchAdminToken(String),
+
 	/// The API access key does not exist
 	#[error(display = "Access key not found: {}", _0)]
 	NoSuchAccessKey(String),
+
+	/// The requested block does not exist
+	#[error(display = "Block not found: {}", _0)]
+	NoSuchBlock(String),
+
+	/// The requested worker does not exist
+	#[error(display = "Worker not found: {}", _0)]
+	NoSuchWorker(u64),
+
+	/// The object requested don't exists
+	#[error(display = "Key not found")]
+	NoSuchKey,
 
 	/// In Import key, the key already exists
 	#[error(
@@ -29,23 +49,31 @@ pub enum Error {
 	KeyAlreadyExists(String),
 }
 
-impl<T> From<T> for Error
-where
-	CommonError: From<T>,
-{
-	fn from(err: T) -> Self {
-		Error::Common(CommonError::from(err))
+commonErrorDerivative!(Error);
+
+/// FIXME: helper errors are transformed into their corresponding variants
+/// in the Error struct, but in many case a helper error should be considered
+/// an internal error.
+impl From<HelperError> for Error {
+	fn from(err: HelperError) -> Error {
+		match CommonError::try_from(err) {
+			Ok(ce) => Self::Common(ce),
+			Err(HelperError::NoSuchAccessKey(k)) => Self::NoSuchAccessKey(k),
+			Err(_) => unreachable!(),
+		}
 	}
 }
 
-impl CommonErrorDerivative for Error {}
-
 impl Error {
-	fn code(&self) -> &'static str {
+	pub fn code(&self) -> &'static str {
 		match self {
 			Error::Common(c) => c.aws_code(),
+			Error::NoSuchAdminToken(_) => "NoSuchAdminToken",
 			Error::NoSuchAccessKey(_) => "NoSuchAccessKey",
+			Error::NoSuchWorker(_) => "NoSuchWorker",
+			Error::NoSuchBlock(_) => "NoSuchBlock",
 			Error::KeyAlreadyExists(_) => "KeyAlreadyExists",
+			Error::NoSuchKey => "NoSuchKey",
 		}
 	}
 }
@@ -55,7 +83,11 @@ impl ApiError for Error {
 	fn http_status_code(&self) -> StatusCode {
 		match self {
 			Error::Common(c) => c.http_status_code(),
-			Error::NoSuchAccessKey(_) => StatusCode::NOT_FOUND,
+			Error::NoSuchAdminToken(_)
+			| Error::NoSuchAccessKey(_)
+			| Error::NoSuchWorker(_)
+			| Error::NoSuchBlock(_)
+			| Error::NoSuchKey => StatusCode::NOT_FOUND,
 			Error::KeyAlreadyExists(_) => StatusCode::CONFLICT,
 		}
 	}
@@ -63,6 +95,7 @@ impl ApiError for Error {
 	fn add_http_headers(&self, header_map: &mut HeaderMap<HeaderValue>) {
 		use hyper::header;
 		header_map.append(header::CONTENT_TYPE, "application/json".parse().unwrap());
+		header_map.append(header::ACCESS_CONTROL_ALLOW_ORIGIN, "*".parse().unwrap());
 	}
 
 	fn http_body(&self, garage_region: &str, path: &str) -> ErrorBody {

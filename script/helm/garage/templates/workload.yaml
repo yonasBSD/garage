@@ -10,18 +10,18 @@ spec:
       {{- include "garage.selectorLabels" . | nindent 6 }}
   {{- if eq .Values.deployment.kind "StatefulSet" }}
   replicas: {{ .Values.deployment.replicaCount }}
-  serviceName: {{ include "garage.fullname" . }}
+  serviceName: {{ include "garage.fullname" . }}-headless
+  podManagementPolicy: {{ .Values.deployment.podManagementPolicy }}
   {{- end }}
   template:
     metadata:
-
       annotations:
         checksum/config: {{ include (print $.Template.BasePath "/configmap.yaml") . | sha256sum }}
       {{- with .Values.podAnnotations }}
         {{- toYaml . | nindent 8 }}
       {{- end }}
       labels:
-        {{- include "garage.selectorLabels" . | nindent 8 }}
+        {{- include "garage.labels" . | nindent 8 }}
     spec:
       {{- with .Values.imagePullSecrets }}
       imagePullSecrets:
@@ -63,6 +63,10 @@ spec:
               name: web-api
             - containerPort: 3903
               name: admin
+          {{- with .Values.environment }}
+          env:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
           volumeMounts:
             - name: meta
               mountPath: /mnt/meta
@@ -71,15 +75,17 @@ spec:
             - name: etc
               mountPath: /etc/garage.toml
               subPath: garage.toml
-          # TODO
-          # livenessProbe:
-          #   httpGet:
-          #     path: /
-          #     port: 3900
-          # readinessProbe:
-          #   httpGet:
-          #     path: /
-          #     port: 3900
+          {{- with .Values.extraVolumeMounts }}
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.livenessProbe }}
+          livenessProbe:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
+          {{- with .Values.readinessProbe }}
+          readinessProbe:
+            {{- toYaml . | nindent 12 }}
+          {{- end }}
           resources:
             {{- toYaml .Values.resources | nindent 12 }}
       volumes:
@@ -104,6 +110,9 @@ spec:
           emptyDir: {}
         - name: data
           emptyDir: {}
+        {{- end }}
+        {{- with .Values.extraVolumes }}
+          {{- toYaml . | nindent 8 }}
         {{- end }}
       {{- with .Values.nodeSelector }}
       nodeSelector:

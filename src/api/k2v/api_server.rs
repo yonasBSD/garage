@@ -1,6 +1,5 @@
+use std::borrow::Cow;
 use std::sync::Arc;
-
-use async_trait::async_trait;
 
 use hyper::{body::Incoming as IncomingBody, Method, Request, Response};
 use tokio::sync::watch;
@@ -12,27 +11,25 @@ use garage_util::socket_address::UnixOrTCPSocketAddress;
 
 use garage_model::garage::Garage;
 
-use crate::generic_server::*;
-use crate::k2v::error::*;
+use garage_api_common::cors::*;
+use garage_api_common::generic_server::*;
+use garage_api_common::helpers::*;
+use garage_api_common::signature::verify_request;
 
-use crate::signature::payload::check_payload_signature;
-use crate::signature::streaming::*;
+use crate::batch::*;
+use crate::error::*;
+use crate::index::*;
+use crate::item::*;
+use crate::router::Endpoint;
 
-use crate::helpers::*;
-use crate::k2v::batch::*;
-use crate::k2v::index::*;
-use crate::k2v::item::*;
-use crate::k2v::router::Endpoint;
-use crate::s3::cors::*;
-
-pub use crate::signature::streaming::ReqBody;
+pub use garage_api_common::signature::streaming::ReqBody;
 pub type ResBody = BoxBody<Error>;
 
 pub struct K2VApiServer {
 	garage: Arc<Garage>,
 }
 
-pub(crate) struct K2VApiEndpoint {
+pub struct K2VApiEndpoint {
 	bucket_name: String,
 	endpoint: Endpoint,
 }
@@ -50,7 +47,6 @@ impl K2VApiServer {
 	}
 }
 
-#[async_trait]
 impl ApiHandler for K2VApiServer {
 	const API_NAME: &'static str = "k2v";
 	const API_NAME_DISPLAY: &'static str = "K2V";
@@ -78,34 +74,23 @@ impl ApiHandler for K2VApiServer {
 		} = endpoint;
 		let garage = self.garage.clone();
 
-		// The OPTIONS method is procesed early, before we even check for an API key
+		// The OPTIONS method is processed early, before we even check for an API key
 		if let Endpoint::Options = endpoint {
 			let options_res = handle_options_api(garage, &req, Some(bucket_name))
-				.await
 				.ok_or_bad_request("Error handling OPTIONS")?;
 			return Ok(options_res.map(|_empty_body: EmptyBody| empty_body()));
 		}
 
-		let (api_key, mut content_sha256) = check_payload_signature(&garage, "k2v", &req).await?;
-		let api_key = api_key
-			.ok_or_else(|| Error::forbidden("Garage does not support anonymous access yet"))?;
+		let verified_request = verify_request(&garage, req, "k2v")?;
+		let req = verified_request.request;
+		let api_key = verified_request.access_key;
 
-		let req = parse_streaming_body(
-			&api_key,
-			req,
-			&mut content_sha256,
-			&garage.config.s3_api.s3_region,
-			"k2v",
-		)?;
-
-		let bucket_id = garage
-			.bucket_helper()
-			.resolve_bucket(&bucket_name, &api_key)
-			.await?;
 		let bucket = garage
 			.bucket_helper()
-			.get_existing_bucket(bucket_id)
-			.await?;
+			.resolve_bucket_fast(&bucket_name, &api_key)
+			.map_err(pass_helper_error)?;
+		let bucket_id = bucket.id;
+		let bucket_params = bucket.state.into_option().unwrap();
 
 		let allowed = match endpoint.authorization_type() {
 			Authorization::Read => api_key.allow_read(&bucket_id),
@@ -123,40 +108,42 @@ impl ApiHandler for K2VApiServer {
 		// are always preflighted, i.e. the browser should make
 		// an OPTIONS call before to check it is allowed
 		let matching_cors_rule = match *req.method() {
-			Method::GET | Method::HEAD | Method::POST => find_matching_cors_rule(&bucket, &req)
-				.ok_or_internal_error("Error looking up CORS rule")?,
+			Method::GET | Method::HEAD | Method::POST => {
+				find_matching_cors_rule(&bucket_params, &req)
+					.ok_or_internal_error("Error looking up CORS rule")?
+					.cloned()
+			}
 			_ => None,
+		};
+
+		let ctx = ReqCtx {
+			garage,
+			bucket_id,
+			bucket_name,
+			bucket_params,
+			api_key,
 		};
 
 		let resp = match endpoint {
 			Endpoint::DeleteItem {
 				partition_key,
 				sort_key,
-			} => handle_delete_item(garage, req, bucket_id, &partition_key, &sort_key).await,
+			} => handle_delete_item(ctx, req, &partition_key, &sort_key).await,
 			Endpoint::InsertItem {
 				partition_key,
 				sort_key,
-			} => handle_insert_item(garage, req, bucket_id, &partition_key, &sort_key).await,
+			} => handle_insert_item(ctx, req, &partition_key, &sort_key).await,
 			Endpoint::ReadItem {
 				partition_key,
 				sort_key,
-			} => handle_read_item(garage, &req, bucket_id, &partition_key, &sort_key).await,
+			} => handle_read_item(ctx, &req, &partition_key, &sort_key).await,
 			Endpoint::PollItem {
 				partition_key,
 				sort_key,
 				causality_token,
 				timeout,
 			} => {
-				handle_poll_item(
-					garage,
-					&req,
-					bucket_id,
-					partition_key,
-					sort_key,
-					causality_token,
-					timeout,
-				)
-				.await
+				handle_poll_item(ctx, &req, partition_key, sort_key, causality_token, timeout).await
 			}
 			Endpoint::ReadIndex {
 				prefix,
@@ -164,12 +151,12 @@ impl ApiHandler for K2VApiServer {
 				end,
 				limit,
 				reverse,
-			} => handle_read_index(garage, bucket_id, prefix, start, end, limit, reverse).await,
-			Endpoint::InsertBatch {} => handle_insert_batch(garage, bucket_id, req).await,
-			Endpoint::ReadBatch {} => handle_read_batch(garage, bucket_id, req).await,
-			Endpoint::DeleteBatch {} => handle_delete_batch(garage, bucket_id, req).await,
+			} => handle_read_index(ctx, prefix, start, end, limit, reverse).await,
+			Endpoint::InsertBatch {} => handle_insert_batch(ctx, req).await,
+			Endpoint::ReadBatch {} => handle_read_batch(ctx, req).await,
+			Endpoint::DeleteBatch {} => handle_delete_batch(ctx, req).await,
 			Endpoint::PollRange { partition_key } => {
-				handle_poll_range(garage, bucket_id, &partition_key, req).await
+				handle_poll_range(ctx, &partition_key, req).await
 			}
 			Endpoint::Options => unreachable!(),
 		};
@@ -178,17 +165,23 @@ impl ApiHandler for K2VApiServer {
 		// add the corresponding CORS headers to the response
 		let mut resp_ok = resp?;
 		if let Some(rule) = matching_cors_rule {
-			add_cors_headers(&mut resp_ok, rule)
+			add_cors_headers(&mut resp_ok, &rule)
 				.ok_or_internal_error("Invalid bucket CORS configuration")?;
 		}
 
 		Ok(resp_ok)
 	}
+
+	fn key_id_from_request(&self, req: &Request<IncomingBody>) -> Option<String> {
+		garage_api_common::signature::payload::Authorization::parse_header(req.headers())
+			.map(|auth| auth.key_id)
+			.ok()
+	}
 }
 
 impl ApiEndpoint for K2VApiEndpoint {
-	fn name(&self) -> &'static str {
-		self.endpoint.name()
+	fn name(&self) -> Cow<'static, str> {
+		Cow::Borrowed(self.endpoint.name())
 	}
 
 	fn add_span_attributes(&self, span: SpanRef<'_>) {

@@ -1,6 +1,6 @@
 [package]
 name = "garage_rpc"
-version = "0.9.1"
+version = "2.1.0"
 authors = ["Alex Auvolat <alex@adnab.me>"]
 edition = "2018"
 license = "AGPL-3.0"
@@ -15,15 +15,14 @@ path = "lib.rs"
 
 [dependencies]
 format_table.workspace = true
-garage_db.workspace = true
 garage_util.workspace = true
 garage_net.workspace = true
 
 arc-swap.workspace = true
-bytes.workspace = true
 bytesize.workspace = true
 gethostname.workspace = true
 hex.workspace = true
+ipnet.workspace = true
 tracing.workspace = true
 rand.workspace = true
 itertools.workspace = true
@@ -45,9 +44,7 @@ reqwest = { workspace = true, optional = true }
 pnet_datalink.workspace = true
 
 futures.workspace = true
-futures-util.workspace = true
 tokio.workspace = true
-tokio-stream.workspace = true
 opentelemetry.workspace = true
 
 [features]

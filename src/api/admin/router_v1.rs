@@ -2,15 +2,10 @@ use std::borrow::Cow;
 
 use hyper::{Method, Request};
 
-use crate::admin::error::*;
-use crate::admin::router_v0;
-use crate::router_macros::*;
+use garage_api_common::router_macros::*;
 
-pub enum Authorization {
-	None,
-	MetricsToken,
-	AdminToken,
-}
+use crate::error::*;
+use crate::router_v0;
 
 router_match! {@func
 
@@ -208,15 +203,6 @@ impl Endpoint {
 				"v0/ endpoint is no longer supported: {}",
 				v0_endpoint.name()
 			))),
-		}
-	}
-	/// Get the kind of authorization which is required to perform the operation.
-	pub fn authorization_type(&self) -> Authorization {
-		match self {
-			Self::Health => Authorization::None,
-			Self::CheckDomain => Authorization::None,
-			Self::Metrics => Authorization::MetricsToken,
-			_ => Authorization::AdminToken,
 		}
 	}
 }

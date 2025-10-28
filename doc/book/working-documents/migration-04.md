@@ -1,6 +1,6 @@
 +++
 title = "Migrating from 0.3 to 0.4"
-weight = 20
+weight = 80
 +++
 
 **Migrating from 0.3 to 0.4 is unsupported. This document is only intended to
@@ -68,7 +68,7 @@ The migration steps are as follows:
 5. Turn off Garage 0.3
 
 6. Backup metadata folders if you can (i.e. if you have space to do it
-   somewhere). Backuping data folders could also be usefull but that's much
+   somewhere). Backuping data folders could also be useful but that's much
    harder to do. If your filesystem supports snapshots, this could be a good
    time to use them.
 

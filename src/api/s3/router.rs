@@ -3,9 +3,10 @@ use std::borrow::Cow;
 use hyper::header::HeaderValue;
 use hyper::{HeaderMap, Method, Request};
 
-use crate::helpers::Authorization;
-use crate::router_macros::{generateQueryParameters, router_match};
-use crate::s3::error::*;
+use garage_api_common::helpers::Authorization;
+use garage_api_common::router_macros::{generateQueryParameters, router_match};
+
+use crate::error::*;
 
 router_match! {@func
 
@@ -351,6 +352,18 @@ impl Endpoint {
 			_ => return Err(Error::bad_request("Unknown method")),
 		};
 
+		if let Some(x_id) = query.x_id.take() {
+			if x_id != res.name() {
+				// I think AWS ignores the x-id parameter.
+				// Let's make this at least be a warnin to help debugging.
+				warn!(
+					"x-id ({}) does not match parsed endpoint ({})",
+					x_id,
+					res.name()
+				);
+			}
+		}
+
 		if let Some(message) = query.nonempty_message() {
 			debug!("Unused query parameter: {}", message)
 		}
@@ -695,7 +708,8 @@ generateQueryParameters! {
 		"uploadId" => upload_id,
 		"upload-id-marker" => upload_id_marker,
 		"versionId" => version_id,
-		"version-id-marker" => version_id_marker
+		"version-id-marker" => version_id_marker,
+		"x-id" => x_id
 	]
 }
 

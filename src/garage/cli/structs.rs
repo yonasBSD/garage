@@ -1,9 +1,8 @@
-use serde::{Deserialize, Serialize};
 use structopt::StructOpt;
 
 use garage_util::version::garage_version;
 
-use crate::cli::convert_db;
+use crate::cli::local::convert_db;
 
 #[derive(StructOpt, Debug)]
 pub enum Command {
@@ -31,10 +30,9 @@ pub enum Command {
 	#[structopt(name = "key", version = garage_version())]
 	Key(KeyOperation),
 
-	/// Run migrations from previous Garage version
-	/// (DO NOT USE WITHOUT READING FULL DOCUMENTATION)
-	#[structopt(name = "migrate", version = garage_version())]
-	Migrate(MigrateOpt),
+	/// Operations on admin API tokens
+	#[structopt(name = "admin-token", version = garage_version())]
+	AdminToken(AdminTokenOperation),
 
 	/// Start repair of node data on remote node
 	#[structopt(name = "repair", version = garage_version())]
@@ -53,14 +51,37 @@ pub enum Command {
 	#[structopt(name = "worker", version = garage_version())]
 	Worker(WorkerOperation),
 
-	/// Low-level debug operations on data blocks
+	/// Low-level node-local debug operations on data blocks
 	#[structopt(name = "block", version = garage_version())]
 	Block(BlockOperation),
+
+	/// Operations on the metadata db
+	#[structopt(name = "meta", version = garage_version())]
+	Meta(MetaOperation),
 
 	/// Convert metadata db between database engine formats
 	#[structopt(name = "convert-db", version = garage_version())]
 	ConvertDb(convert_db::ConvertDbOpt),
+
+	/// Output openapi JSON schema for admin api
+	#[structopt(name = "admin-api-schema", version = garage_version(), setting(structopt::clap::AppSettings::Hidden))]
+	AdminApiSchema,
+
+	/// Directly invoke the admin API using a JSON payload.
+	/// The result is printed to `stdout` in JSON format.
+	#[structopt(name = "json-api", version = garage_version())]
+	JsonApi {
+		/// The admin API endpoint to invoke, e.g. GetClusterStatus
+		endpoint: String,
+		/// The JSON payload, or `-` to read from `stdin`
+		#[structopt(default_value = "null")]
+		payload: String,
+	},
 }
+
+// -------------------------
+// ---- garage node ... ----
+// -------------------------
 
 #[derive(StructOpt, Debug)]
 pub enum NodeOperation {
@@ -89,6 +110,10 @@ pub struct ConnectNodeOpt {
 	pub(crate) node: String,
 }
 
+// ---------------------------
+// ---- garage layout ... ----
+// ---------------------------
+
 #[derive(StructOpt, Debug)]
 pub enum LayoutOperation {
 	/// Assign role to Garage node
@@ -114,6 +139,14 @@ pub enum LayoutOperation {
 	/// Revert staged changes to cluster layout
 	#[structopt(name = "revert", version = garage_version())]
 	Revert(RevertLayoutOpt),
+
+	/// View the history of layouts in the cluster
+	#[structopt(name = "history", version = garage_version())]
+	History,
+
+	/// Skip dead nodes when awaiting for a new layout version to be synchronized
+	#[structopt(name = "skip-dead-nodes", version = garage_version())]
+	SkipDeadNodes(SkipDeadNodesOpt),
 }
 
 #[derive(StructOpt, Debug)]
@@ -166,12 +199,28 @@ pub struct ApplyLayoutOpt {
 
 #[derive(StructOpt, Debug)]
 pub struct RevertLayoutOpt {
-	/// Version number of old configuration to which to revert
-	#[structopt(long = "version")]
-	pub(crate) version: Option<u64>,
+	/// The revert operation will not be ran unless this flag is added
+	#[structopt(long = "yes")]
+	pub(crate) yes: bool,
 }
 
-#[derive(Serialize, Deserialize, StructOpt, Debug)]
+#[derive(StructOpt, Debug)]
+pub struct SkipDeadNodesOpt {
+	/// Version number of the layout to assume is currently up-to-date.
+	/// This will generally be the current layout version.
+	#[structopt(long = "version")]
+	pub(crate) version: u64,
+	/// Allow the skip even if a quorum of nodes could not be found for
+	/// the data among the remaining nodes
+	#[structopt(long = "allow-missing-data")]
+	pub(crate) allow_missing_data: bool,
+}
+
+// ---------------------------
+// ---- garage bucket ... ----
+// ---------------------------
+
+#[derive(StructOpt, Debug)]
 pub enum BucketOperation {
 	/// List buckets
 	#[structopt(name = "list", version = garage_version())]
@@ -216,9 +265,13 @@ pub enum BucketOperation {
 	/// Clean up (abort) old incomplete multipart uploads
 	#[structopt(name = "cleanup-incomplete-uploads", version = garage_version())]
 	CleanupIncompleteUploads(CleanupIncompleteUploadsOpt),
+
+	/// Inspect an object in a bucket
+	#[structopt(name = "inspect-object", version = garage_version())]
+	InspectObject(InspectObjectOpt),
 }
 
-#[derive(Serialize, Deserialize, StructOpt, Debug)]
+#[derive(StructOpt, Debug)]
 pub struct WebsiteOpt {
 	/// Create
 	#[structopt(long = "allow")]
@@ -240,13 +293,13 @@ pub struct WebsiteOpt {
 	pub error_document: Option<String>,
 }
 
-#[derive(Serialize, Deserialize, StructOpt, Debug)]
+#[derive(StructOpt, Debug)]
 pub struct BucketOpt {
 	/// Bucket name
 	pub name: String,
 }
 
-#[derive(Serialize, Deserialize, StructOpt, Debug)]
+#[derive(StructOpt, Debug)]
 pub struct DeleteBucketOpt {
 	/// Bucket name
 	pub name: String,
@@ -256,7 +309,7 @@ pub struct DeleteBucketOpt {
 	pub yes: bool,
 }
 
-#[derive(Serialize, Deserialize, StructOpt, Debug)]
+#[derive(StructOpt, Debug)]
 pub struct AliasBucketOpt {
 	/// Existing bucket name (its alias in global namespace or its full hex uuid)
 	pub existing_bucket: String,
@@ -269,7 +322,7 @@ pub struct AliasBucketOpt {
 	pub local: Option<String>,
 }
 
-#[derive(Serialize, Deserialize, StructOpt, Debug)]
+#[derive(StructOpt, Debug)]
 pub struct UnaliasBucketOpt {
 	/// Bucket name
 	pub name: String,
@@ -279,7 +332,7 @@ pub struct UnaliasBucketOpt {
 	pub local: Option<String>,
 }
 
-#[derive(Serialize, Deserialize, StructOpt, Debug)]
+#[derive(StructOpt, Debug)]
 pub struct PermBucketOpt {
 	/// Access key name or ID
 	#[structopt(long = "key")]
@@ -302,7 +355,7 @@ pub struct PermBucketOpt {
 	pub bucket: String,
 }
 
-#[derive(Serialize, Deserialize, StructOpt, Debug)]
+#[derive(StructOpt, Debug)]
 pub struct SetQuotasOpt {
 	/// Bucket name
 	pub bucket: String,
@@ -317,7 +370,7 @@ pub struct SetQuotasOpt {
 	pub max_objects: Option<String>,
 }
 
-#[derive(Serialize, Deserialize, StructOpt, Debug)]
+#[derive(StructOpt, Debug)]
 pub struct CleanupIncompleteUploadsOpt {
 	/// Abort multipart uploads older than this value
 	#[structopt(long = "older-than", default_value = "1d")]
@@ -328,7 +381,19 @@ pub struct CleanupIncompleteUploadsOpt {
 	pub buckets: Vec<String>,
 }
 
-#[derive(Serialize, Deserialize, StructOpt, Debug)]
+#[derive(StructOpt, Debug)]
+pub struct InspectObjectOpt {
+	/// Name or ID of bucket
+	pub bucket: String,
+	/// Key of object to inspect
+	pub key: String,
+}
+
+// ------------------------
+// ---- garage key ... ----
+// ------------------------
+
+#[derive(StructOpt, Debug)]
 pub enum KeyOperation {
 	/// List keys
 	#[structopt(name = "list", version = garage_version())]
@@ -361,9 +426,21 @@ pub enum KeyOperation {
 	/// Import key
 	#[structopt(name = "import", version = garage_version())]
 	Import(KeyImportOpt),
+
+	/// Set parameters for an access key
+	#[structopt(name = "set", version = garage_version())]
+	Set(KeySetOpt),
+
+	/// Delete all expired access keys
+	#[structopt(name = "delete-expired", version = garage_version())]
+	DeleteExpired {
+		/// Confirm deletion
+		#[structopt(long = "yes")]
+		yes: bool,
+	},
 }
 
-#[derive(Serialize, Deserialize, StructOpt, Debug)]
+#[derive(StructOpt, Debug)]
 pub struct KeyInfoOpt {
 	/// ID or name of the key
 	pub key_pattern: String,
@@ -372,14 +449,32 @@ pub struct KeyInfoOpt {
 	pub show_secret: bool,
 }
 
-#[derive(Serialize, Deserialize, StructOpt, Debug)]
+#[derive(StructOpt, Debug)]
 pub struct KeyNewOpt {
 	/// Name of the key
 	#[structopt(default_value = "Unnamed key")]
 	pub name: String,
+	/// Set an expiration time for the access key
+	/// (see docs.rs/parse_duration for date format)
+	#[structopt(long = "expires-in")]
+	pub expires_in: Option<String>,
 }
 
-#[derive(Serialize, Deserialize, StructOpt, Debug)]
+#[derive(StructOpt, Debug)]
+pub struct KeySetOpt {
+	/// ID or name of the key
+	pub key_pattern: String,
+
+	/// Set an expiration time for the access key
+	/// (see docs.rs/parse_duration for date format)
+	#[structopt(long = "expires-in")]
+	pub expires_in: Option<String>,
+	/// Set the access key to never expire
+	#[structopt(long = "never-expires")]
+	pub never_expires: bool,
+}
+
+#[derive(StructOpt, Debug)]
 pub struct KeyRenameOpt {
 	/// ID or name of the key
 	pub key_pattern: String,
@@ -388,7 +483,7 @@ pub struct KeyRenameOpt {
 	pub new_name: String,
 }
 
-#[derive(Serialize, Deserialize, StructOpt, Debug)]
+#[derive(StructOpt, Debug)]
 pub struct KeyDeleteOpt {
 	/// ID or name of the key
 	pub key_pattern: String,
@@ -398,7 +493,7 @@ pub struct KeyDeleteOpt {
 	pub yes: bool,
 }
 
-#[derive(Serialize, Deserialize, StructOpt, Debug)]
+#[derive(StructOpt, Debug)]
 pub struct KeyPermOpt {
 	/// ID or name of the key
 	pub key_pattern: String,
@@ -408,7 +503,7 @@ pub struct KeyPermOpt {
 	pub create_bucket: bool,
 }
 
-#[derive(Serialize, Deserialize, StructOpt, Debug)]
+#[derive(StructOpt, Debug)]
 pub struct KeyImportOpt {
 	/// Access key ID
 	pub key_id: String,
@@ -425,24 +520,110 @@ pub struct KeyImportOpt {
 	pub yes: bool,
 }
 
-#[derive(Serialize, Deserialize, StructOpt, Debug, Clone)]
-pub struct MigrateOpt {
-	/// Confirm the launch of the migrate operation
-	#[structopt(long = "yes")]
-	pub yes: bool,
+// --------------------------------
+// ---- garage admin-token ... ----
+// --------------------------------
 
-	#[structopt(subcommand)]
-	pub what: MigrateWhat,
+#[derive(StructOpt, Debug)]
+pub enum AdminTokenOperation {
+	/// List all admin API tokens
+	#[structopt(name = "list", version = garage_version())]
+	List,
+
+	/// Fetch info about a specific admin API token
+	#[structopt(name = "info", version = garage_version())]
+	Info {
+		/// Name or prefix of the ID of the token to look up
+		api_token: String,
+	},
+
+	/// Create new admin API token
+	#[structopt(name = "create", version = garage_version())]
+	Create(AdminTokenCreateOp),
+
+	/// Rename an admin API token
+	#[structopt(name = "rename", version = garage_version())]
+	Rename {
+		/// Name or prefix of the ID of the token to rename
+		api_token: String,
+		/// New name of the admintoken
+		new_name: String,
+	},
+
+	/// Set parameters for an admin API token
+	#[structopt(name = "set", version = garage_version())]
+	Set(AdminTokenSetOp),
+
+	/// Delete an admin API token
+	#[structopt(name = "delete", version = garage_version())]
+	Delete {
+		/// Name or prefix of the ID of the token to delete
+		api_token: String,
+		/// Confirm deletion
+		#[structopt(long = "yes")]
+		yes: bool,
+	},
+
+	/// Delete all expired admin API tokens
+	#[structopt(name = "delete-expired", version = garage_version())]
+	DeleteExpired {
+		/// Confirm deletion
+		#[structopt(long = "yes")]
+		yes: bool,
+	},
 }
 
-#[derive(Serialize, Deserialize, StructOpt, Debug, Eq, PartialEq, Clone)]
-pub enum MigrateWhat {
-	/// Migrate buckets and permissions from v0.5.0
-	#[structopt(name = "buckets050", version = garage_version())]
-	Buckets050,
+#[derive(StructOpt, Debug, Clone)]
+pub struct AdminTokenCreateOp {
+	/// Set a name for the token
+	pub name: Option<String>,
+	/// Set an expiration time for the token (see docs.rs/parse_duration for date
+	/// format)
+	#[structopt(long = "expires-in")]
+	pub expires_in: Option<String>,
+	/// Set a limited scope for the token, as a comma-separated list of
+	/// admin API functions (e.g. GetClusterStatus, etc.). The default scope
+	/// is `*`, which allows access to all admin API functions.
+	/// Note that granting a scope that allows `CreateAdminToken` or
+	/// `UpdateAdminToken` allows for privilege escalation, and is therefore
+	/// equivalent to `*`.
+	#[structopt(long = "scope")]
+	pub scope: Option<String>,
+	/// Print only the newly generated API token to stdout
+	#[structopt(short = "q", long = "quiet")]
+	pub quiet: bool,
 }
 
-#[derive(Serialize, Deserialize, StructOpt, Debug, Clone)]
+#[derive(StructOpt, Debug, Clone)]
+pub struct AdminTokenSetOp {
+	/// Name or prefix of the ID of the token to modify
+	pub api_token: String,
+
+	/// Set an expiration time for the token (see docs.rs/parse_duration for date
+	/// format)
+	#[structopt(long = "expires-in")]
+	pub expires_in: Option<String>,
+	/// Set the token to never expire
+	#[structopt(long = "never-expires")]
+	pub never_expires: bool,
+
+	/// Set a limited scope for the token, as a comma-separated list of
+	/// admin API functions (e.g. GetClusterStatus, etc.), or `*` to allow
+	/// all admin API functions.
+	/// Use `--scope=+Scope1,Scope2` to add scopes to the existing list,
+	/// and `--scope=-Scope1,Scope2` to remove scopes from the existing list.
+	/// Note that granting a scope that allows `CreateAdminToken` or
+	/// `UpdateAdminToken` allows for privilege escalation, and is therefore
+	/// equivalent to `*`.
+	#[structopt(long = "scope")]
+	pub scope: Option<String>,
+}
+
+// ---------------------------
+// ---- garage repair ... ----
+// ---------------------------
+
+#[derive(StructOpt, Debug, Clone)]
 pub struct RepairOpt {
 	/// Launch repair operation on all nodes
 	#[structopt(short = "a", long = "all-nodes")]
@@ -456,7 +637,7 @@ pub struct RepairOpt {
 	pub what: RepairWhat,
 }
 
-#[derive(Serialize, Deserialize, StructOpt, Debug, Eq, PartialEq, Clone)]
+#[derive(StructOpt, Debug, Eq, PartialEq, Clone)]
 pub enum RepairWhat {
 	/// Do a full sync of metadata tables
 	#[structopt(name = "tables", version = garage_version())]
@@ -464,6 +645,10 @@ pub enum RepairWhat {
 	/// Repair (resync/rebalance) the set of stored blocks in the cluster
 	#[structopt(name = "blocks", version = garage_version())]
 	Blocks,
+	/// Clear the block resync queue. The list of blocks in errored state
+	/// is cleared as well. You MUST run `garage repair blocks` after invoking this.
+	#[structopt(name = "clear-resync-queue", version = garage_version())]
+	ClearResyncQueue,
 	/// Repropagate object deletions to the version table
 	#[structopt(name = "versions", version = garage_version())]
 	Versions,
@@ -471,8 +656,14 @@ pub enum RepairWhat {
 	#[structopt(name = "mpu", version = garage_version())]
 	MultipartUploads,
 	/// Repropagate version deletions to the block ref table
-	#[structopt(name = "block_refs", version = garage_version())]
+	#[structopt(name = "block-refs", version = garage_version())]
 	BlockRefs,
+	/// Recalculate block reference counters
+	#[structopt(name = "block-rc", version = garage_version())]
+	BlockRc,
+	/// Fix inconsistency in bucket aliases (WARNING: EXPERIMENTAL)
+	#[structopt(name = "aliases", version = garage_version())]
+	Aliases,
 	/// Verify integrity of all blocks on disc
 	#[structopt(name = "scrub", version = garage_version())]
 	Scrub {
@@ -484,7 +675,7 @@ pub enum RepairWhat {
 	Rebalance,
 }
 
-#[derive(Serialize, Deserialize, StructOpt, Debug, Eq, PartialEq, Clone)]
+#[derive(StructOpt, Debug, Eq, PartialEq, Clone)]
 pub enum ScrubCmd {
 	/// Start scrub
 	#[structopt(name = "start", version = garage_version())]
@@ -498,15 +689,13 @@ pub enum ScrubCmd {
 	/// Cancel scrub in progress
 	#[structopt(name = "cancel", version = garage_version())]
 	Cancel,
-	/// Set tranquility level for in-progress and future scrubs
-	#[structopt(name = "set-tranquility", version = garage_version())]
-	SetTranquility {
-		#[structopt()]
-		tranquility: u32,
-	},
 }
 
-#[derive(Serialize, Deserialize, StructOpt, Debug, Clone)]
+// -----------------------------------
+// ---- garage offline-repair ... ----
+// -----------------------------------
+
+#[derive(StructOpt, Debug, Clone)]
 pub struct OfflineRepairOpt {
 	/// Confirm the launch of the repair operation
 	#[structopt(long = "yes")]
@@ -516,7 +705,7 @@ pub struct OfflineRepairOpt {
 	pub what: OfflineRepairWhat,
 }
 
-#[derive(Serialize, Deserialize, StructOpt, Debug, Eq, PartialEq, Clone)]
+#[derive(StructOpt, Debug, Eq, PartialEq, Clone)]
 pub enum OfflineRepairWhat {
 	/// Repair K2V item counters
 	#[cfg(feature = "k2v")]
@@ -527,23 +716,22 @@ pub enum OfflineRepairWhat {
 	ObjectCounters,
 }
 
-#[derive(Serialize, Deserialize, StructOpt, Debug, Clone)]
+// --------------------------
+// ---- garage stats ... ----
+// --------------------------
+
+#[derive(StructOpt, Debug, Clone)]
 pub struct StatsOpt {
 	/// Gather statistics from all nodes
 	#[structopt(short = "a", long = "all-nodes")]
 	pub all_nodes: bool,
-
-	/// Gather detailed statistics (this can be long)
-	#[structopt(short = "d", long = "detailed")]
-	pub detailed: bool,
-
-	/// Don't show global cluster stats (internal use in RPC)
-	#[structopt(skip)]
-	#[serde(default)]
-	pub skip_global: bool,
 }
 
-#[derive(Serialize, Deserialize, StructOpt, Debug, Eq, PartialEq, Clone)]
+// ---------------------------
+// ---- garage worker ... ----
+// ---------------------------
+
+#[derive(StructOpt, Debug, Eq, PartialEq, Clone)]
 pub enum WorkerOperation {
 	/// List all workers on Garage node
 	#[structopt(name = "list", version = garage_version())]
@@ -576,7 +764,7 @@ pub enum WorkerOperation {
 	},
 }
 
-#[derive(Serialize, Deserialize, StructOpt, Debug, Eq, PartialEq, Clone, Copy)]
+#[derive(StructOpt, Debug, Eq, PartialEq, Clone, Copy)]
 pub struct WorkerListOpt {
 	/// Show only busy workers
 	#[structopt(short = "b", long = "busy")]
@@ -586,7 +774,11 @@ pub struct WorkerListOpt {
 	pub errors: bool,
 }
 
-#[derive(Serialize, Deserialize, StructOpt, Debug, Eq, PartialEq, Clone)]
+// --------------------------
+// ---- garage block ... ----
+// --------------------------
+
+#[derive(StructOpt, Debug, Eq, PartialEq, Clone)]
 pub enum BlockOperation {
 	/// List all blocks that currently have a resync error
 	#[structopt(name = "list-errors", version = garage_version())]
@@ -615,5 +807,20 @@ pub enum BlockOperation {
 		/// Hashes of the block to purge
 		#[structopt(required = true)]
 		blocks: Vec<String>,
+	},
+}
+
+// -------------------------
+// ---- garage meta ... ----
+// -------------------------
+
+#[derive(StructOpt, Debug, Eq, PartialEq, Clone, Copy)]
+pub enum MetaOperation {
+	/// Save a snapshot of the metadata db file
+	#[structopt(name = "snapshot", version = garage_version())]
+	Snapshot {
+		/// Run on all nodes instead of only local node
+		#[structopt(long = "all")]
+		all: bool,
 	},
 }

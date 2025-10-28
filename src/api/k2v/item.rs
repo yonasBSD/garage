@@ -1,19 +1,15 @@
-use std::sync::Arc;
-
 use base64::prelude::*;
 use http::header;
 
 use hyper::{Request, Response, StatusCode};
 
-use garage_util::data::*;
-
-use garage_model::garage::Garage;
 use garage_model::k2v::causality::*;
 use garage_model::k2v::item_table::*;
 
-use crate::helpers::*;
-use crate::k2v::api_server::{ReqBody, ResBody};
-use crate::k2v::error::*;
+use garage_api_common::helpers::*;
+
+use crate::api_server::{ReqBody, ResBody};
+use crate::error::*;
 
 pub const X_GARAGE_CAUSALITY_TOKEN: &str = "X-Garage-Causality-Token";
 
@@ -21,6 +17,10 @@ pub enum ReturnFormat {
 	Json,
 	Binary,
 	Either,
+}
+
+pub(crate) fn parse_causality_token(s: &str) -> Result<CausalContext, Error> {
+	CausalContext::parse(s).ok_or(Error::InvalidCausalityToken)
 }
 
 impl ReturnFormat {
@@ -100,12 +100,15 @@ impl ReturnFormat {
 /// Handle ReadItem request
 #[allow(clippy::ptr_arg)]
 pub async fn handle_read_item(
-	garage: Arc<Garage>,
+	ctx: ReqCtx,
 	req: &Request<ReqBody>,
-	bucket_id: Uuid,
 	partition_key: &str,
 	sort_key: &String,
 ) -> Result<Response<ResBody>, Error> {
+	let ReqCtx {
+		garage, bucket_id, ..
+	} = &ctx;
+
 	let format = ReturnFormat::from(req)?;
 
 	let item = garage
@@ -113,7 +116,7 @@ pub async fn handle_read_item(
 		.item_table
 		.get(
 			&K2VItemPartition {
-				bucket_id,
+				bucket_id: *bucket_id,
 				partition_key: partition_key.to_string(),
 			},
 			sort_key,
@@ -125,23 +128,23 @@ pub async fn handle_read_item(
 }
 
 pub async fn handle_insert_item(
-	garage: Arc<Garage>,
+	ctx: ReqCtx,
 	req: Request<ReqBody>,
-	bucket_id: Uuid,
 	partition_key: &str,
 	sort_key: &str,
 ) -> Result<Response<ResBody>, Error> {
+	let ReqCtx {
+		garage, bucket_id, ..
+	} = &ctx;
 	let causal_context = req
 		.headers()
 		.get(X_GARAGE_CAUSALITY_TOKEN)
 		.map(|s| s.to_str())
 		.transpose()?
-		.map(CausalContext::parse_helper)
+		.map(parse_causality_token)
 		.transpose()?;
 
-	let body = http_body_util::BodyExt::collect(req.into_body())
-		.await?
-		.to_bytes();
+	let body = req.into_body().collect().await?;
 
 	let value = DvvsValue::Value(body.to_vec());
 
@@ -149,7 +152,7 @@ pub async fn handle_insert_item(
 		.k2v
 		.rpc
 		.insert(
-			bucket_id,
+			*bucket_id,
 			partition_key.to_string(),
 			sort_key.to_string(),
 			causal_context,
@@ -163,18 +166,20 @@ pub async fn handle_insert_item(
 }
 
 pub async fn handle_delete_item(
-	garage: Arc<Garage>,
+	ctx: ReqCtx,
 	req: Request<ReqBody>,
-	bucket_id: Uuid,
 	partition_key: &str,
 	sort_key: &str,
 ) -> Result<Response<ResBody>, Error> {
+	let ReqCtx {
+		garage, bucket_id, ..
+	} = &ctx;
 	let causal_context = req
 		.headers()
 		.get(X_GARAGE_CAUSALITY_TOKEN)
 		.map(|s| s.to_str())
 		.transpose()?
-		.map(CausalContext::parse_helper)
+		.map(parse_causality_token)
 		.transpose()?;
 
 	let value = DvvsValue::Deleted;
@@ -183,7 +188,7 @@ pub async fn handle_delete_item(
 		.k2v
 		.rpc
 		.insert(
-			bucket_id,
+			*bucket_id,
 			partition_key.to_string(),
 			sort_key.to_string(),
 			causal_context,
@@ -199,14 +204,16 @@ pub async fn handle_delete_item(
 /// Handle ReadItem request
 #[allow(clippy::ptr_arg)]
 pub async fn handle_poll_item(
-	garage: Arc<Garage>,
+	ctx: ReqCtx,
 	req: &Request<ReqBody>,
-	bucket_id: Uuid,
 	partition_key: String,
 	sort_key: String,
 	causality_token: String,
 	timeout_secs: Option<u64>,
 ) -> Result<Response<ResBody>, Error> {
+	let ReqCtx {
+		garage, bucket_id, ..
+	} = &ctx;
 	let format = ReturnFormat::from(req)?;
 
 	let causal_context =
@@ -218,7 +225,7 @@ pub async fn handle_poll_item(
 		.k2v
 		.rpc
 		.poll_item(
-			bucket_id,
+			*bucket_id,
 			partition_key,
 			sort_key,
 			causal_context,

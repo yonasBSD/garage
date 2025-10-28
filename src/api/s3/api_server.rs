@@ -1,6 +1,5 @@
+use std::borrow::Cow;
 use std::sync::Arc;
-
-use async_trait::async_trait;
 
 use hyper::header;
 use hyper::{body::Incoming as IncomingBody, Request, Response};
@@ -14,34 +13,33 @@ use garage_util::socket_address::UnixOrTCPSocketAddress;
 use garage_model::garage::Garage;
 use garage_model::key_table::Key;
 
-use crate::generic_server::*;
-use crate::s3::error::*;
+use garage_api_common::cors::*;
+use garage_api_common::generic_server::*;
+use garage_api_common::helpers::*;
+use garage_api_common::signature::verify_request;
 
-use crate::signature::payload::check_payload_signature;
-use crate::signature::streaming::*;
+use crate::bucket::*;
+use crate::copy::*;
+use crate::cors::*;
+use crate::delete::*;
+use crate::error::*;
+use crate::get::*;
+use crate::lifecycle::*;
+use crate::list::*;
+use crate::multipart::*;
+use crate::post_object::handle_post_object;
+use crate::put::*;
+use crate::router::Endpoint;
+use crate::website::*;
 
-use crate::helpers::*;
-use crate::s3::bucket::*;
-use crate::s3::copy::*;
-use crate::s3::cors::*;
-use crate::s3::delete::*;
-use crate::s3::get::*;
-use crate::s3::lifecycle::*;
-use crate::s3::list::*;
-use crate::s3::multipart::*;
-use crate::s3::post_object::handle_post_object;
-use crate::s3::put::*;
-use crate::s3::router::Endpoint;
-use crate::s3::website::*;
-
-pub use crate::signature::streaming::ReqBody;
+pub use garage_api_common::signature::streaming::ReqBody;
 pub type ResBody = BoxBody<Error>;
 
 pub struct S3ApiServer {
 	garage: Arc<Garage>,
 }
 
-pub(crate) struct S3ApiEndpoint {
+pub struct S3ApiEndpoint {
 	bucket_name: Option<String>,
 	endpoint: Endpoint,
 }
@@ -71,7 +69,6 @@ impl S3ApiServer {
 	}
 }
 
-#[async_trait]
 impl ApiHandler for S3ApiServer {
 	const API_NAME: &'static str = "s3";
 	const API_NAME_DISPLAY: &'static str = "S3";
@@ -121,21 +118,13 @@ impl ApiHandler for S3ApiServer {
 			return handle_post_object(garage, req, bucket_name.unwrap()).await;
 		}
 		if let Endpoint::Options = endpoint {
-			let options_res = handle_options_api(garage, &req, bucket_name).await?;
+			let options_res = handle_options_api(garage, &req, bucket_name)?;
 			return Ok(options_res.map(|_empty_body: EmptyBody| empty_body()));
 		}
 
-		let (api_key, mut content_sha256) = check_payload_signature(&garage, "s3", &req).await?;
-		let api_key = api_key
-			.ok_or_else(|| Error::forbidden("Garage does not support anonymous access yet"))?;
-
-		let req = parse_streaming_body(
-			&api_key,
-			req,
-			&mut content_sha256,
-			&garage.config.s3_api.s3_region,
-			"s3",
-		)?;
+		let verified_request = verify_request(&garage, req, "s3")?;
+		let req = verified_request.request;
+		let api_key = verified_request.access_key;
 
 		let bucket_name = match bucket_name {
 			None => {
@@ -148,24 +137,15 @@ impl ApiHandler for S3ApiServer {
 
 		// Special code path for CreateBucket API endpoint
 		if let Endpoint::CreateBucket {} = endpoint {
-			return handle_create_bucket(
-				&garage,
-				req,
-				content_sha256,
-				&api_key.key_id,
-				bucket_name,
-			)
-			.await;
+			return handle_create_bucket(&garage, req, &api_key.key_id, bucket_name).await;
 		}
 
-		let bucket_id = garage
-			.bucket_helper()
-			.resolve_bucket(&bucket_name, &api_key)
-			.await?;
 		let bucket = garage
 			.bucket_helper()
-			.get_existing_bucket(bucket_id)
-			.await?;
+			.resolve_bucket_fast(&bucket_name, &api_key)
+			.map_err(pass_helper_error)?;
+		let bucket_id = bucket.id;
+		let bucket_params = bucket.state.into_option().unwrap();
 
 		let allowed = match endpoint.authorization_type() {
 			Authorization::Read => api_key.allow_read(&bucket_id),
@@ -178,12 +158,20 @@ impl ApiHandler for S3ApiServer {
 			return Err(Error::forbidden("Operation is not allowed for this key."));
 		}
 
-		let matching_cors_rule = find_matching_cors_rule(&bucket, &req)?;
+		let matching_cors_rule = find_matching_cors_rule(&bucket_params, &req)?.cloned();
+
+		let ctx = ReqCtx {
+			garage,
+			bucket_id,
+			bucket_name,
+			bucket_params,
+			api_key,
+		};
 
 		let resp = match endpoint {
 			Endpoint::HeadObject {
 				key, part_number, ..
-			} => handle_head(garage, &req, bucket_id, &key, part_number).await,
+			} => handle_head(ctx, &req.map(|_| ()), &key, part_number).await,
 			Endpoint::GetObject {
 				key,
 				part_number,
@@ -203,75 +191,39 @@ impl ApiHandler for S3ApiServer {
 					response_content_type,
 					response_expires,
 				};
-				handle_get(garage, &req, bucket_id, &key, part_number, overrides).await
+				handle_get(ctx, &req.map(|_| ()), &key, part_number, overrides).await
 			}
 			Endpoint::UploadPart {
 				key,
 				part_number,
 				upload_id,
-			} => {
-				handle_put_part(
-					garage,
-					req,
-					bucket_id,
-					&key,
-					part_number,
-					&upload_id,
-					content_sha256,
-				)
-				.await
-			}
-			Endpoint::CopyObject { key } => {
-				handle_copy(garage, &api_key, &req, bucket_id, &key).await
-			}
+			} => handle_put_part(ctx, req, &key, part_number, &upload_id).await,
+			Endpoint::CopyObject { key } => handle_copy(ctx, &req, &key).await,
 			Endpoint::UploadPartCopy {
 				key,
 				part_number,
 				upload_id,
-			} => {
-				handle_upload_part_copy(
-					garage,
-					&api_key,
-					&req,
-					bucket_id,
-					&key,
-					part_number,
-					&upload_id,
-				)
-				.await
-			}
-			Endpoint::PutObject { key } => {
-				handle_put(garage, req, &bucket, &key, content_sha256).await
-			}
+			} => handle_upload_part_copy(ctx, &req, &key, part_number, &upload_id).await,
+			Endpoint::PutObject { key } => handle_put(ctx, req, &key).await,
 			Endpoint::AbortMultipartUpload { key, upload_id } => {
-				handle_abort_multipart_upload(garage, bucket_id, &key, &upload_id).await
+				handle_abort_multipart_upload(ctx, &key, &upload_id).await
 			}
-			Endpoint::DeleteObject { key, .. } => handle_delete(garage, bucket_id, &key).await,
+			Endpoint::DeleteObject { key, .. } => handle_delete(ctx, &key).await,
 			Endpoint::CreateMultipartUpload { key } => {
-				handle_create_multipart_upload(garage, &req, &bucket_name, bucket_id, &key).await
+				handle_create_multipart_upload(ctx, &req, &key).await
 			}
 			Endpoint::CompleteMultipartUpload { key, upload_id } => {
-				handle_complete_multipart_upload(
-					garage,
-					req,
-					&bucket_name,
-					&bucket,
-					&key,
-					&upload_id,
-					content_sha256,
-				)
-				.await
+				handle_complete_multipart_upload(ctx, req, &key, &upload_id).await
 			}
 			Endpoint::CreateBucket {} => unreachable!(),
 			Endpoint::HeadBucket {} => {
 				let response = Response::builder().body(empty_body()).unwrap();
 				Ok(response)
 			}
-			Endpoint::DeleteBucket {} => {
-				handle_delete_bucket(&garage, bucket_id, bucket_name, &api_key.key_id).await
-			}
-			Endpoint::GetBucketLocation {} => handle_get_bucket_location(garage),
+			Endpoint::DeleteBucket {} => handle_delete_bucket(ctx).await,
+			Endpoint::GetBucketLocation {} => handle_get_bucket_location(ctx),
 			Endpoint::GetBucketVersioning {} => handle_get_bucket_versioning(),
+			Endpoint::GetBucketAcl {} => handle_get_bucket_acl(ctx),
 			Endpoint::ListObjects {
 				delimiter,
 				encoding_type,
@@ -279,24 +231,21 @@ impl ApiHandler for S3ApiServer {
 				max_keys,
 				prefix,
 			} => {
-				handle_list(
-					garage,
-					&ListObjectsQuery {
-						common: ListQueryCommon {
-							bucket_name,
-							bucket_id,
-							delimiter,
-							page_size: max_keys.unwrap_or(1000).clamp(1, 1000),
-							prefix: prefix.unwrap_or_default(),
-							urlencode_resp: encoding_type.map(|e| e == "url").unwrap_or(false),
-						},
-						is_v2: false,
-						marker,
-						continuation_token: None,
-						start_after: None,
+				let query = ListObjectsQuery {
+					common: ListQueryCommon {
+						bucket_name: ctx.bucket_name.clone(),
+						bucket_id,
+						delimiter,
+						page_size: max_keys.unwrap_or(1000).clamp(1, 1000),
+						prefix: prefix.unwrap_or_default(),
+						urlencode_resp: encoding_type.map(|e| e == "url").unwrap_or(false),
 					},
-				)
-				.await
+					is_v2: false,
+					marker,
+					continuation_token: None,
+					start_after: None,
+				};
+				handle_list(ctx, &query).await
 			}
 			Endpoint::ListObjectsV2 {
 				delimiter,
@@ -309,24 +258,21 @@ impl ApiHandler for S3ApiServer {
 				..
 			} => {
 				if list_type == "2" {
-					handle_list(
-						garage,
-						&ListObjectsQuery {
-							common: ListQueryCommon {
-								bucket_name,
-								bucket_id,
-								delimiter,
-								page_size: max_keys.unwrap_or(1000).clamp(1, 1000),
-								urlencode_resp: encoding_type.map(|e| e == "url").unwrap_or(false),
-								prefix: prefix.unwrap_or_default(),
-							},
-							is_v2: true,
-							marker: None,
-							continuation_token,
-							start_after,
+					let query = ListObjectsQuery {
+						common: ListQueryCommon {
+							bucket_name: ctx.bucket_name.clone(),
+							bucket_id,
+							delimiter,
+							page_size: max_keys.unwrap_or(1000).clamp(1, 1000),
+							urlencode_resp: encoding_type.map(|e| e == "url").unwrap_or(false),
+							prefix: prefix.unwrap_or_default(),
 						},
-					)
-					.await
+						is_v2: true,
+						marker: None,
+						continuation_token,
+						start_after,
+					};
+					handle_list(ctx, &query).await
 				} else {
 					Err(Error::bad_request(format!(
 						"Invalid endpoint: list-type={}",
@@ -342,22 +288,19 @@ impl ApiHandler for S3ApiServer {
 				prefix,
 				upload_id_marker,
 			} => {
-				handle_list_multipart_upload(
-					garage,
-					&ListMultipartUploadsQuery {
-						common: ListQueryCommon {
-							bucket_name,
-							bucket_id,
-							delimiter,
-							page_size: max_uploads.unwrap_or(1000).clamp(1, 1000),
-							prefix: prefix.unwrap_or_default(),
-							urlencode_resp: encoding_type.map(|e| e == "url").unwrap_or(false),
-						},
-						key_marker,
-						upload_id_marker,
+				let query = ListMultipartUploadsQuery {
+					common: ListQueryCommon {
+						bucket_name: ctx.bucket_name.clone(),
+						bucket_id,
+						delimiter,
+						page_size: max_uploads.unwrap_or(1000).clamp(1, 1000),
+						prefix: prefix.unwrap_or_default(),
+						urlencode_resp: encoding_type.map(|e| e == "url").unwrap_or(false),
 					},
-				)
-				.await
+					key_marker,
+					upload_id_marker,
+				};
+				handle_list_multipart_upload(ctx, &query).await
 			}
 			Endpoint::ListParts {
 				key,
@@ -365,39 +308,25 @@ impl ApiHandler for S3ApiServer {
 				part_number_marker,
 				upload_id,
 			} => {
-				handle_list_parts(
-					garage,
-					&ListPartsQuery {
-						bucket_name,
-						bucket_id,
-						key,
-						upload_id,
-						part_number_marker: part_number_marker.map(|p| p.min(10000)),
-						max_parts: max_parts.unwrap_or(1000).clamp(1, 1000),
-					},
-				)
-				.await
+				let query = ListPartsQuery {
+					bucket_name: ctx.bucket_name.clone(),
+					key,
+					upload_id,
+					part_number_marker: part_number_marker.map(|p| p.min(10000)),
+					max_parts: max_parts.unwrap_or(1000).clamp(1, 1000),
+				};
+				handle_list_parts(ctx, req, &query).await
 			}
-			Endpoint::DeleteObjects {} => {
-				handle_delete_objects(garage, bucket_id, req, content_sha256).await
-			}
-			Endpoint::GetBucketWebsite {} => handle_get_website(&bucket).await,
-			Endpoint::PutBucketWebsite {} => {
-				handle_put_website(garage, bucket.clone(), req, content_sha256).await
-			}
-			Endpoint::DeleteBucketWebsite {} => handle_delete_website(garage, bucket.clone()).await,
-			Endpoint::GetBucketCors {} => handle_get_cors(&bucket).await,
-			Endpoint::PutBucketCors {} => {
-				handle_put_cors(garage, bucket.clone(), req, content_sha256).await
-			}
-			Endpoint::DeleteBucketCors {} => handle_delete_cors(garage, bucket.clone()).await,
-			Endpoint::GetBucketLifecycleConfiguration {} => handle_get_lifecycle(&bucket).await,
-			Endpoint::PutBucketLifecycleConfiguration {} => {
-				handle_put_lifecycle(garage, bucket.clone(), req, content_sha256).await
-			}
-			Endpoint::DeleteBucketLifecycle {} => {
-				handle_delete_lifecycle(garage, bucket.clone()).await
-			}
+			Endpoint::DeleteObjects {} => handle_delete_objects(ctx, req).await,
+			Endpoint::GetBucketWebsite {} => handle_get_website(ctx).await,
+			Endpoint::PutBucketWebsite {} => handle_put_website(ctx, req).await,
+			Endpoint::DeleteBucketWebsite {} => handle_delete_website(ctx).await,
+			Endpoint::GetBucketCors {} => handle_get_cors(ctx).await,
+			Endpoint::PutBucketCors {} => handle_put_cors(ctx, req).await,
+			Endpoint::DeleteBucketCors {} => handle_delete_cors(ctx).await,
+			Endpoint::GetBucketLifecycleConfiguration {} => handle_get_lifecycle(ctx).await,
+			Endpoint::PutBucketLifecycleConfiguration {} => handle_put_lifecycle(ctx, req).await,
+			Endpoint::DeleteBucketLifecycle {} => handle_delete_lifecycle(ctx).await,
 			endpoint => Err(Error::NotImplemented(endpoint.name().to_owned())),
 		};
 
@@ -405,17 +334,23 @@ impl ApiHandler for S3ApiServer {
 		// add the corresponding CORS headers to the response
 		let mut resp_ok = resp?;
 		if let Some(rule) = matching_cors_rule {
-			add_cors_headers(&mut resp_ok, rule)
+			add_cors_headers(&mut resp_ok, &rule)
 				.ok_or_internal_error("Invalid bucket CORS configuration")?;
 		}
 
 		Ok(resp_ok)
 	}
+
+	fn key_id_from_request(&self, req: &Request<IncomingBody>) -> Option<String> {
+		garage_api_common::signature::payload::Authorization::parse_header(req.headers())
+			.map(|auth| auth.key_id)
+			.ok()
+	}
 }
 
 impl ApiEndpoint for S3ApiEndpoint {
-	fn name(&self) -> &'static str {
-		self.endpoint.name()
+	fn name(&self) -> Cow<'static, str> {
+		Cow::Borrowed(self.endpoint.name())
 	}
 
 	fn add_span_attributes(&self, span: SpanRef<'_>) {

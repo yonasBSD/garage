@@ -1,43 +1,76 @@
 use std::collections::HashMap;
+use std::convert::TryInto;
 use std::sync::Arc;
 
+use base64::prelude::*;
+use crc_fast::{CrcAlgorithm, Digest as CrcDigest};
 use futures::prelude::*;
-use hyper::{Request, Response};
-use md5::{Digest as Md5Digest, Md5};
+use http::StatusCode;
+use hyper::{header::HeaderValue, HeaderMap, Request, Response};
+use md5::{Digest, Md5};
+use sha1::Sha1;
+use sha2::Sha256;
 
 use garage_table::*;
-use garage_util::async_hash::*;
 use garage_util::data::*;
+use garage_util::error::OkOrMessage;
 
-use garage_model::bucket_table::Bucket;
 use garage_model::garage::Garage;
 use garage_model::s3::block_ref_table::*;
 use garage_model::s3::mpu_table::*;
 use garage_model::s3::object_table::*;
 use garage_model::s3::version_table::*;
 
-use crate::helpers::*;
-use crate::s3::api_server::{ReqBody, ResBody};
-use crate::s3::error::*;
-use crate::s3::put::*;
-use crate::s3::xml as s3_xml;
-use crate::signature::verify_signed_content;
+use garage_api_common::helpers::*;
+use garage_api_common::signature::checksum::*;
+
+use crate::api_server::{ReqBody, ResBody};
+use crate::encryption::{has_encryption_header, EncryptionParams, OekDerivationInfo};
+use crate::error::*;
+use crate::put::*;
+use crate::xml as s3_xml;
 
 // ----
 
 pub async fn handle_create_multipart_upload(
-	garage: Arc<Garage>,
+	ctx: ReqCtx,
 	req: &Request<ReqBody>,
-	bucket_name: &str,
-	bucket_id: Uuid,
 	key: &String,
 ) -> Result<Response<ResBody>, Error> {
+	let ReqCtx {
+		garage,
+		bucket_id,
+		bucket_name,
+		..
+	} = &ctx;
 	let existing_object = garage.object_table.get(&bucket_id, &key).await?;
 
 	let upload_id = gen_uuid();
 	let timestamp = next_timestamp(existing_object.as_ref());
 
-	let headers = get_headers(req.headers())?;
+	let headers = extract_metadata_headers(req.headers())?;
+	let meta = ObjectVersionMetaInner {
+		headers,
+		checksum: None,
+		checksum_type: None,
+	};
+
+	// Determine whether object should be encrypted, and if so the key
+	let encryption = EncryptionParams::new_from_headers(
+		&garage,
+		req.headers(),
+		OekDerivationInfo {
+			bucket_id: *bucket_id,
+			version_id: upload_id,
+			object_key: &key,
+		},
+	)?;
+	let object_encryption = encryption.encrypt_meta(meta)?;
+
+	let checksum_algorithm = request_checksum_algorithm_and_type(
+		req.headers(),
+		request_checksum_algorithm(req.headers())?,
+	)?;
 
 	// Create object in object table
 	let object_version = ObjectVersion {
@@ -45,16 +78,17 @@ pub async fn handle_create_multipart_upload(
 		timestamp,
 		state: ObjectVersionState::Uploading {
 			multipart: true,
-			headers,
+			encryption: object_encryption,
+			checksum_algorithm,
 		},
 	};
-	let object = Object::new(bucket_id, key.to_string(), vec![object_version]);
+	let object = Object::new(*bucket_id, key.to_string(), vec![object_version]);
 	garage.object_table.insert(&object).await?;
 
 	// Create multipart upload in mpu table
 	// This multipart upload will hold references to uploaded parts
 	// (which are entries in the Version table)
-	let mpu = MultipartUpload::new(upload_id, timestamp, bucket_id, key.into(), false);
+	let mpu = MultipartUpload::new(upload_id, timestamp, *bucket_id, key.into(), false);
 	garage.mpu_table.insert(&mpu).await?;
 
 	// Send success response
@@ -66,34 +100,68 @@ pub async fn handle_create_multipart_upload(
 	};
 	let xml = s3_xml::to_xml_with_header(&result)?;
 
-	Ok(Response::new(string_body(xml)))
+	let mut resp = Response::builder();
+	encryption.add_response_headers(&mut resp);
+	Ok(resp.body(string_body(xml))?)
 }
 
 pub async fn handle_put_part(
-	garage: Arc<Garage>,
+	ctx: ReqCtx,
 	req: Request<ReqBody>,
-	bucket_id: Uuid,
 	key: &str,
 	part_number: u64,
 	upload_id: &str,
-	content_sha256: Option<Hash>,
 ) -> Result<Response<ResBody>, Error> {
+	let ReqCtx { garage, .. } = &ctx;
+
 	let upload_id = decode_upload_id(upload_id)?;
 
-	let content_md5 = match req.headers().get("content-md5") {
-		Some(x) => Some(x.to_str()?.to_string()),
-		None => None,
+	let expected_checksums = ExpectedChecksums {
+		md5: match req.headers().get("content-md5") {
+			Some(x) => Some(x.to_str()?.to_string()),
+			None => None,
+		},
+		sha256: None,
+		extra: request_checksum_value(req.headers())?,
 	};
 
-	// Read first chuck, and at the same time try to get object to see if it exists
 	let key = key.to_string();
 
-	let stream = body_stream(req.into_body());
+	let (req_head, mut req_body) = req.into_parts();
+
+	// Before we stream the body, configure the needed checksums.
+	req_body.add_expected_checksums(expected_checksums.clone());
+	if !has_encryption_header(&req_head.headers) {
+		// For non-encrypted objects, we need to compute the md5sum in all cases
+		// (even if content-md5 is not set), because it is used as an etag of the
+		// part, which is in turn used in the etag computation of the whole object
+		req_body.add_md5();
+	}
+
+	let (stream, stream_checksums) = req_body.streaming_with_checksums();
+	let stream = stream.map_err(Error::from);
+
 	let mut chunker = StreamChunker::new(stream, garage.config.block_size);
 
-	let ((_, _, mut mpu), first_block) = futures::try_join!(
-		get_upload(&garage, &bucket_id, &key, &upload_id),
-		chunker.next(),
+	// Read first chuck, and at the same time try to get object to see if it exists
+	let ((object, object_version, mut mpu), first_block) =
+		futures::try_join!(get_upload(&ctx, &key, &upload_id), chunker.next(),)?;
+
+	// Check encryption params
+	let oek_params = OekDerivationInfo::for_object(&object, &object_version);
+	let (object_encryption, checksum_algorithm) = match object_version.state {
+		ObjectVersionState::Uploading {
+			encryption,
+			checksum_algorithm,
+			..
+		} => (encryption, checksum_algorithm),
+		_ => unreachable!(),
+	};
+	let (encryption, _) = EncryptionParams::check_decrypt(
+		&garage,
+		&req_head.headers,
+		&object_encryption,
+		oek_params,
 	)?;
 
 	// Check object is valid and part can be accepted
@@ -121,7 +189,9 @@ pub async fn handle_put_part(
 		mpu_part_key,
 		MpuPart {
 			version: version_uuid,
+			// all these are filled in later, at the end of this function
 			etag: None,
+			checksum: None,
 			size: None,
 		},
 	);
@@ -135,33 +205,31 @@ pub async fn handle_put_part(
 	garage.version_table.insert(&version).await?;
 
 	// Copy data to version
-	let first_block_hash = async_blake2sum(first_block.clone()).await;
-
-	let (total_size, data_md5sum, data_sha256sum) = read_and_put_blocks(
-		&garage,
+	let (total_size, _, _) = read_and_put_blocks(
+		&ctx,
 		&version,
+		encryption,
 		part_number,
 		first_block,
-		first_block_hash,
-		&mut chunker,
+		chunker,
+		Checksummer::new(),
 	)
 	.await?;
 
-	// Verify that checksums map
-	ensure_checksum_matches(
-		data_md5sum.as_slice(),
-		data_sha256sum,
-		content_md5.as_deref(),
-		content_sha256,
-	)?;
+	// Verify that checksums match
+	let checksums = stream_checksums
+		.await
+		.ok_or_internal_error("checksum calculation")??;
 
 	// Store part etag in version
-	let data_md5sum_hex = hex::encode(data_md5sum);
+	let etag = encryption.etag_from_md5(&checksums.md5);
+
 	mpu.parts.put(
 		mpu_part_key,
 		MpuPart {
 			version: version_uuid,
-			etag: Some(data_md5sum_hex.clone()),
+			etag: Some(etag.clone()),
+			checksum: checksums.extract(checksum_algorithm.map(|(algo, _)| algo)),
 			size: Some(total_size),
 		},
 	);
@@ -171,11 +239,10 @@ pub async fn handle_put_part(
 	// We won't have to clean up on drop.
 	interrupted_cleanup.cancel();
 
-	let response = Response::builder()
-		.header("ETag", format!("\"{}\"", data_md5sum_hex))
-		.body(empty_body())
-		.unwrap();
-	Ok(response)
+	let mut resp = Response::builder().header("ETag", format!("\"{}\"", etag));
+	encryption.add_response_headers(&mut resp);
+	let resp = add_checksum_response_headers(&expected_checksums.extra, resp);
+	Ok(resp.body(empty_body())?)
 }
 
 struct InterruptedCleanup(Option<InterruptedCleanupInner>);
@@ -210,25 +277,37 @@ impl Drop for InterruptedCleanup {
 }
 
 pub async fn handle_complete_multipart_upload(
-	garage: Arc<Garage>,
+	ctx: ReqCtx,
 	req: Request<ReqBody>,
-	bucket_name: &str,
-	bucket: &Bucket,
 	key: &str,
 	upload_id: &str,
-	content_sha256: Option<Hash>,
 ) -> Result<Response<ResBody>, Error> {
-	let body = http_body_util::BodyExt::collect(req.into_body())
-		.await?
-		.to_bytes();
+	let ReqCtx {
+		garage,
+		bucket_id,
+		bucket_name,
+		..
+	} = &ctx;
+	let (req_head, req_body) = req.into_parts();
 
-	if let Some(content_sha256) = content_sha256 {
-		verify_signed_content(content_sha256, &body[..])?;
-	}
+	let expected_checksum = request_checksum_value(&req_head.headers)?;
+	let req_checksum_algorithm = request_checksum_algorithm_and_type(
+		&req_head.headers,
+		expected_checksum.map(|x| x.algorithm()),
+	)?;
+	debug!(
+		"CompleteMultipartUpload expected checksum: {:?}, request checksum type: {:?}",
+		expected_checksum, req_checksum_algorithm
+	);
+
+	let body = req_body.collect().await?;
 
 	let body_xml = roxmltree::Document::parse(std::str::from_utf8(&body)?)?;
-	let body_list_of_parts = parse_complete_multipart_upload_body(&body_xml)
-		.ok_or_bad_request("Invalid CompleteMultipartUpload XML")?;
+	let body_list_of_parts =
+		parse_complete_multipart_upload_body(&body_xml).ok_or_bad_request(format!(
+			"Invalid CompleteMultipartUpload XML:\n{}",
+			String::from_utf8_lossy(&body)
+		))?;
 	debug!(
 		"CompleteMultipartUpload list of parts: {:?}",
 		body_list_of_parts
@@ -238,17 +317,32 @@ pub async fn handle_complete_multipart_upload(
 
 	// Get object and multipart upload
 	let key = key.to_string();
-	let (object, mut object_version, mpu) =
-		get_upload(&garage, &bucket.id, &key, &upload_id).await?;
+	let (object, mut object_version, mpu) = get_upload(&ctx, &key, &upload_id).await?;
 
 	if mpu.parts.is_empty() {
 		return Err(Error::bad_request("No data was uploaded"));
 	}
 
-	let headers = match object_version.state {
-		ObjectVersionState::Uploading { headers, .. } => headers,
+	let oek_params = OekDerivationInfo::for_object(&object, &object_version);
+	let (object_encryption, checksum_algorithm) = match object_version.state {
+		ObjectVersionState::Uploading {
+			encryption,
+			checksum_algorithm,
+			..
+		} => (encryption, checksum_algorithm),
 		_ => unreachable!(),
 	};
+	debug!(
+		"CompleteMultipartUpload object checksum_algorithm: {:?}",
+		checksum_algorithm
+	);
+	if req_checksum_algorithm.is_some() && req_checksum_algorithm != checksum_algorithm {
+		return Err(Error::InvalidDigest(format!(
+            "checksum algorithm {:?} does not correspond to algorithm specified in CreateMultipartUpload {:?}",
+            req_checksum_algorithm,
+            checksum_algorithm
+        )));
+	}
 
 	// Check that part numbers are an increasing sequence.
 	// (it doesn't need to start at 1 nor to be a continuous sequence,
@@ -274,6 +368,12 @@ pub async fn handle_complete_multipart_upload(
 	for req_part in body_list_of_parts.iter() {
 		match have_parts.get(&req_part.part_number) {
 			Some(part) if part.etag.as_ref() == Some(&req_part.etag) && part.size.is_some() => {
+				if req_part.checksum.is_some() && part.checksum != req_part.checksum {
+					return Err(Error::InvalidDigest(format!(
+						"Invalid checksum for part {}: in request = {:?}, uploaded part = {:?}",
+						req_part.part_number, req_part.checksum, part.checksum
+					)));
+				}
 				parts.push(*part)
 			}
 			_ => return Err(Error::InvalidPart),
@@ -293,7 +393,7 @@ pub async fn handle_complete_multipart_upload(
 	let mut final_version = Version::new(
 		upload_id,
 		VersionBacklink::Object {
-			bucket_id: bucket.id,
+			bucket_id: *bucket_id,
 			key: key.to_string(),
 		},
 		false,
@@ -321,83 +421,153 @@ pub async fn handle_complete_multipart_upload(
 	});
 	garage.block_ref_table.insert_many(block_refs).await?;
 
-	// Calculate etag of final object
+	// Calculate checksum and etag of final object
 	// To understand how etags are calculated, read more here:
+	// https://docs.aws.amazon.com/AmazonS3/latest/userguide/checking-object-integrity.html
 	// https://teppen.io/2018/06/23/aws_s3_etags/
-	let mut etag_md5_hasher = Md5::new();
+	let mut checksummer = MultipartChecksummer::init(checksum_algorithm);
 	for part in parts.iter() {
-		etag_md5_hasher.update(part.etag.as_ref().unwrap().as_bytes());
+		checksummer.update(
+			part.etag.as_ref().unwrap(),
+			part.checksum,
+			part.size.unwrap(),
+		)?;
 	}
-	let etag = format!(
-		"{}-{}",
-		hex::encode(etag_md5_hasher.finalize()),
-		parts.len()
-	);
+	let (checksum_md5, checksum_extra) = checksummer.finalize();
+
+	if expected_checksum.is_some() && checksum_extra != expected_checksum {
+		return Err(Error::InvalidDigest(
+			"Failed to validate x-amz-checksum-*".into(),
+		));
+	}
+
+	let etag = format!("{}-{}", hex::encode(&checksum_md5[..]), parts.len());
 
 	// Calculate total size of final object
 	let total_size = parts.iter().map(|x| x.size.unwrap()).sum();
 
-	if let Err(e) = check_quotas(&garage, bucket, total_size, Some(&object)).await {
+	if let Err(e) = check_quotas(&ctx, total_size, Some(&object)).await {
 		object_version.state = ObjectVersionState::Aborted;
-		let final_object = Object::new(bucket.id, key.clone(), vec![object_version]);
+		let final_object = Object::new(*bucket_id, key.clone(), vec![object_version]);
 		garage.object_table.insert(&final_object).await?;
 
 		return Err(e);
 	}
 
+	// If there is a checksum algorithm, update metadata with checksum
+	let object_encryption = match checksum_algorithm {
+		None => object_encryption,
+		Some(_) => {
+			let (encryption, meta) = EncryptionParams::check_decrypt(
+				&garage,
+				&req_head.headers,
+				&object_encryption,
+				oek_params,
+			)?;
+			let new_meta = ObjectVersionMetaInner {
+				headers: meta.into_owned().headers,
+				checksum: checksum_extra,
+				checksum_type: checksum_algorithm.map(|(_, ty)| ty),
+			};
+			encryption.encrypt_meta(new_meta)?
+		}
+	};
+
 	// Write final object version
 	object_version.state = ObjectVersionState::Complete(ObjectVersionData::FirstBlock(
 		ObjectVersionMeta {
-			headers,
+			encryption: object_encryption,
 			size: total_size,
 			etag: etag.clone(),
 		},
 		final_version.blocks.items()[0].1.hash,
 	));
 
-	let final_object = Object::new(bucket.id, key.clone(), vec![object_version]);
+	let final_object = Object::new(*bucket_id, key.clone(), vec![object_version]);
 	garage.object_table.insert(&final_object).await?;
 
 	// Send response saying ok we're done
 	let result = s3_xml::CompleteMultipartUploadResult {
 		xmlns: (),
-		location: None,
+		// FIXME: the location returned is not always correct:
+		// - we always return https, but maybe some people do http
+		// - if root_domain is not specified, a full URL is not returned
+		location: garage
+			.config
+			.s3_api
+			.root_domain
+			.as_ref()
+			.map(|rd| s3_xml::Value(format!("https://{}.{}/{}", bucket_name, rd, key)))
+			.or(Some(s3_xml::Value(format!("/{}/{}", bucket_name, key)))),
 		bucket: s3_xml::Value(bucket_name.to_string()),
 		key: s3_xml::Value(key),
 		etag: s3_xml::Value(format!("\"{}\"", etag)),
+		checksum_crc32: match &checksum_extra {
+			Some(ChecksumValue::Crc32(x)) => Some(s3_xml::Value(BASE64_STANDARD.encode(&x))),
+			_ => None,
+		},
+		checksum_crc32c: match &checksum_extra {
+			Some(ChecksumValue::Crc32c(x)) => Some(s3_xml::Value(BASE64_STANDARD.encode(&x))),
+			_ => None,
+		},
+		checksum_crc64nvme: match &checksum_extra {
+			Some(ChecksumValue::Crc64Nvme(x)) => Some(s3_xml::Value(BASE64_STANDARD.encode(&x))),
+			_ => None,
+		},
+		checksum_sha1: match &checksum_extra {
+			Some(ChecksumValue::Sha1(x)) => Some(s3_xml::Value(BASE64_STANDARD.encode(&x))),
+			_ => None,
+		},
+		checksum_sha256: match &checksum_extra {
+			Some(ChecksumValue::Sha256(x)) => Some(s3_xml::Value(BASE64_STANDARD.encode(&x))),
+			_ => None,
+		},
+		checksum_type: match checksum_algorithm {
+			Some((_, ChecksumType::Composite)) => Some(s3_xml::Value(COMPOSITE.into())),
+			Some((_, ChecksumType::FullObject)) => Some(s3_xml::Value(FULL_OBJECT.into())),
+			None => None,
+		},
 	};
 	let xml = s3_xml::to_xml_with_header(&result)?;
 
-	Ok(Response::new(string_body(xml)))
+	let resp = Response::builder();
+	let resp = add_checksum_response_headers(&expected_checksum, resp);
+	Ok(resp.body(string_body(xml))?)
 }
 
 pub async fn handle_abort_multipart_upload(
-	garage: Arc<Garage>,
-	bucket_id: Uuid,
+	ctx: ReqCtx,
 	key: &str,
 	upload_id: &str,
 ) -> Result<Response<ResBody>, Error> {
+	let ReqCtx {
+		garage, bucket_id, ..
+	} = &ctx;
+
 	let upload_id = decode_upload_id(upload_id)?;
 
-	let (_, mut object_version, _) =
-		get_upload(&garage, &bucket_id, &key.to_string(), &upload_id).await?;
+	let (_, mut object_version, _) = get_upload(&ctx, &key.to_string(), &upload_id).await?;
 
 	object_version.state = ObjectVersionState::Aborted;
-	let final_object = Object::new(bucket_id, key.to_string(), vec![object_version]);
+	let final_object = Object::new(*bucket_id, key.to_string(), vec![object_version]);
 	garage.object_table.insert(&final_object).await?;
 
-	Ok(Response::new(empty_body()))
+	Ok(Response::builder()
+		.status(StatusCode::NO_CONTENT)
+		.body(empty_body())?)
 }
 
 // ======== helpers ============
 
 #[allow(clippy::ptr_arg)]
 pub(crate) async fn get_upload(
-	garage: &Garage,
-	bucket_id: &Uuid,
+	ctx: &ReqCtx,
 	key: &String,
 	upload_id: &Uuid,
 ) -> Result<(Object, ObjectVersion, MultipartUpload), Error> {
+	let ReqCtx {
+		garage, bucket_id, ..
+	} = ctx;
 	let (object, mpu) = futures::try_join!(
 		garage.object_table.get(bucket_id, key).map_err(Error::from),
 		garage
@@ -433,6 +603,33 @@ pub fn decode_upload_id(id: &str) -> Result<Uuid, Error> {
 struct CompleteMultipartUploadPart {
 	etag: String,
 	part_number: u64,
+	checksum: Option<ChecksumValue>,
+}
+
+macro_rules! extract_checksum_from {
+	($node:ident { $($name:expr => $variant:ident),* $(,)? }) => {
+		if false { None }
+		$(
+			else if let Some(node) = $node.children().find(|e| e.has_tag_name($name)) {
+				match node.last_child().map(|x| x.text()) {
+					// Child is text but empty post-trim, ignore it.
+					Some(Some(text)) if text.trim().is_empty() => None,
+
+					// Child is non-empty text, parse it.
+					Some(Some(text)) => Some(ChecksumValue::$variant(
+						BASE64_STANDARD.decode(text).ok()?[..].try_into().ok()?
+					)),
+
+					// Child is not text, reject it.
+					Some(None) => return None,
+
+					// No child, ignore it.
+					None => None,
+				}
+			}
+		)*
+		else { None }
+	}
 }
 
 fn parse_complete_multipart_upload_body(
@@ -458,9 +655,19 @@ fn parse_complete_multipart_upload_body(
 				.children()
 				.find(|e| e.has_tag_name("PartNumber"))?
 				.text()?;
+
+			let checksum = extract_checksum_from!(item {
+				"ChecksumCRC32" => Crc32,
+				"ChecksumCRC32C" => Crc32c,
+				"ChecksumCRC64NVME" => Crc64Nvme,
+				"ChecksumSHA1" => Sha1,
+				"ChecksumSHA256" => Sha256,
+			});
+
 			parts.push(CompleteMultipartUploadPart {
 				etag: etag.trim_matches('"').to_string(),
 				part_number: part_number.parse().ok()?,
+				checksum,
 			});
 		} else {
 			return None;
@@ -468,4 +675,187 @@ fn parse_complete_multipart_upload_body(
 	}
 
 	Some(parts)
+}
+
+// ====== checksummer ====
+
+pub fn request_checksum_algorithm_and_type(
+	headers: &HeaderMap<HeaderValue>,
+	algo: Option<ChecksumAlgorithm>,
+) -> Result<Option<(ChecksumAlgorithm, ChecksumType)>, Error> {
+	match (headers.get(X_AMZ_CHECKSUM_TYPE), algo) {
+		(None, None) => Ok(None),
+		(None, Some(algo)) => {
+			let ty = match algo {
+				ChecksumAlgorithm::Crc64Nvme => ChecksumType::FullObject,
+				_ => ChecksumType::Composite,
+			};
+			Ok(Some((algo, ty)))
+		}
+		(Some(_), None) => Err(Error::bad_request(
+			"Cannot specify x-amz-checksum-type when no checksum algorithm is in use.",
+		)),
+		(Some(x), Some(algo)) => {
+			let checksum_type = match x.as_bytes() {
+				x if x == COMPOSITE.as_bytes() => ChecksumType::Composite,
+				x if x == FULL_OBJECT.as_bytes() => ChecksumType::FullObject,
+				_ => return Err(Error::bad_request("Invalid x-amz-checksum-type value")),
+			};
+			match (checksum_type, algo) {
+				(ChecksumType::Composite, ChecksumAlgorithm::Crc64Nvme)
+				| (ChecksumType::FullObject, ChecksumAlgorithm::Sha1)
+				| (ChecksumType::FullObject, ChecksumAlgorithm::Sha256) => Err(Error::bad_request(format!(
+					"checksum type {:?} is not supported for algorithm {:?}",
+					checksum_type, algo
+				))),
+				(ty, algo) => Ok(Some((algo, ty))),
+			}
+		}
+	}
+}
+
+#[derive(Default)]
+pub(crate) struct MultipartChecksummer {
+	pub md5: Md5,
+	pub extra: Option<MultipartExtraChecksummer>,
+}
+
+impl MultipartChecksummer {
+	pub(crate) fn init(algo: Option<(ChecksumAlgorithm, ChecksumType)>) -> Self {
+		Self {
+			md5: Md5::new(),
+			extra: algo.map(|(algo, cktype)| MultipartExtraChecksummer::init(algo, cktype)),
+		}
+	}
+
+	pub(crate) fn update(
+		&mut self,
+		etag: &str,
+		checksum: Option<ChecksumValue>,
+		part_len: u64,
+	) -> Result<(), Error> {
+		self.md5
+			.update(&hex::decode(&etag).ok_or_message("invalid etag hex")?);
+		if let Some(extra) = &mut self.extra {
+			extra.update(checksum, part_len)?;
+		}
+		Ok(())
+	}
+
+	pub(crate) fn finalize(self) -> (Md5Checksum, Option<ChecksumValue>) {
+		let md5 = self.md5.finalize()[..].try_into().unwrap();
+		let extra = self.extra.map(|c| c.finalize());
+		(md5, extra)
+	}
+}
+
+pub(crate) enum MultipartExtraChecksummer {
+	FullObjectCrc(CrcAlgorithm, Option<u64>),
+	CompositeCrc(ChecksumAlgorithm, CrcDigest),
+	CompositeSha1(Sha1),
+	CompositeSha256(Sha256),
+}
+
+impl MultipartExtraChecksummer {
+	fn init(algo: ChecksumAlgorithm, cktype: ChecksumType) -> Self {
+		match (algo, cktype) {
+			(algo, ChecksumType::FullObject) => {
+				let crc_type = match algo {
+					ChecksumAlgorithm::Crc32 => CrcAlgorithm::Crc32IsoHdlc,
+					ChecksumAlgorithm::Crc32c => CrcAlgorithm::Crc32Iscsi,
+					ChecksumAlgorithm::Crc64Nvme => CrcAlgorithm::Crc64Nvme,
+					_ => unreachable!(),
+				};
+				Self::FullObjectCrc(crc_type, None)
+			}
+			(ChecksumAlgorithm::Crc32, ChecksumType::Composite) => {
+				Self::CompositeCrc(ChecksumAlgorithm::Crc32, new_crc32())
+			}
+			(ChecksumAlgorithm::Crc32c, ChecksumType::Composite) => {
+				Self::CompositeCrc(ChecksumAlgorithm::Crc32c, new_crc32c())
+			}
+			(ChecksumAlgorithm::Sha1, ChecksumType::Composite) => Self::CompositeSha1(Sha1::new()),
+			(ChecksumAlgorithm::Sha256, ChecksumType::Composite) => {
+				Self::CompositeSha256(Sha256::new())
+			}
+			_ => unreachable!(),
+		}
+	}
+
+	fn update(&mut self, checksum: Option<ChecksumValue>, part_len: u64) -> Result<(), Error> {
+		match (self, checksum) {
+			(Self::FullObjectCrc(crc_algo, crc_value), Some(ck)) => {
+				let ck_u64 = match ck {
+					ChecksumValue::Crc32(x) => u32::from_be_bytes(x) as u64,
+					ChecksumValue::Crc32c(x) => u32::from_be_bytes(x) as u64,
+					ChecksumValue::Crc64Nvme(x) => u64::from_be_bytes(x),
+					_ => {
+						return Err(Error::internal_error(format!(
+							"part checksum was not computed correctly, got: {:?}",
+							ck
+						)))
+					}
+				};
+				*crc_value = match *crc_value {
+					None => Some(ck_u64),
+					Some(prev) => Some(crc_fast::checksum_combine(
+						*crc_algo, prev, ck_u64, part_len,
+					)),
+				};
+			}
+			(Self::CompositeCrc(_, digest), Some(ck)) => match ck {
+				ChecksumValue::Crc32(x) => digest.update(&x),
+				ChecksumValue::Crc32c(x) => digest.update(&x),
+				ChecksumValue::Crc64Nvme(x) => digest.update(&x),
+				_ => {
+					return Err(Error::internal_error(format!(
+						"part checksum was not computed correctly, got: {:?}",
+						ck
+					)))
+				}
+			},
+			(Self::CompositeSha1(sha1), Some(ChecksumValue::Sha1(x))) => {
+				sha1.update(&x);
+			}
+			(Self::CompositeSha256(sha256), Some(ChecksumValue::Sha256(x))) => {
+				sha256.update(&x);
+			}
+			_ => {
+				return Err(Error::internal_error(format!(
+					"part checksum was not computed correctly, got: {:?}",
+					checksum
+				)))
+			}
+		}
+		Ok(())
+	}
+	fn finalize(self) -> ChecksumValue {
+		match self {
+			Self::FullObjectCrc(algo, value) => match (algo, value) {
+				(CrcAlgorithm::Crc32IsoHdlc, Some(v)) => {
+					ChecksumValue::Crc32(u32::to_be_bytes(v as u32))
+				}
+				(CrcAlgorithm::Crc32Iscsi, Some(v)) => {
+					ChecksumValue::Crc32c(u32::to_be_bytes(v as u32))
+				}
+				(CrcAlgorithm::Crc64Nvme, Some(v)) => ChecksumValue::Crc64Nvme(u64::to_be_bytes(v)),
+				_ => unreachable!(),
+			},
+			Self::CompositeCrc(algo, crc) => match algo {
+				ChecksumAlgorithm::Crc32 => {
+					ChecksumValue::Crc32(u32::to_be_bytes(crc.finalize() as u32))
+				}
+				ChecksumAlgorithm::Crc32c => {
+					ChecksumValue::Crc32c(u32::to_be_bytes(crc.finalize() as u32))
+				}
+				_ => unreachable!(),
+			},
+			Self::CompositeSha1(sha1) => {
+				ChecksumValue::Sha1(sha1.finalize()[..].try_into().unwrap())
+			}
+			Self::CompositeSha256(sha256) => {
+				ChecksumValue::Sha256(sha256.finalize()[..].try_into().unwrap())
+			}
+		}
+	}
 }

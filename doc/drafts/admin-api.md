@@ -13,8 +13,12 @@ We will bump the version numbers prefixed to each API endpoint each time the syn
 or semantics change, meaning that code that relies on these endpoints will break
 when changes are introduced.
 
-The Garage administration API was introduced in version 0.7.2, this document
-does not apply to older versions of Garage.
+The Garage administration API was introduced in version 0.7.2, and was
+changed several times.
+
+**THIS DOCUMENT IS DEPRECATED.** We now have an OpenAPI spec which is automatically generated
+from Garage's source code and is always up-to-date. See `doc/api/garage-admin-v2.html`.
+Text in this document is no longer kept in sync with the admin API's actual behavior.
 
 
 ## Access control
@@ -52,116 +56,118 @@ Returns an HTTP status 200 if the node is ready to answer user's requests,
 and an HTTP status 503 (Service Unavailable) if there are some partitions
 for which a quorum of nodes is not available.
 A simple textual message is also returned in a body with content-type `text/plain`.
-See `/v1/health` for an API that also returns JSON output.
+See `/v2/GetClusterHealth` for an API that also returns JSON output.
+
+### Other special endpoints
+
+#### CheckDomain `GET /check?domain=<domain>`
+
+Checks whether this Garage cluster serves a website for domain `<domain>`.
+Returns HTTP 200 Ok if yes, or HTTP 4xx if no website is available for this domain.
 
 ### Cluster operations
 
-#### GetClusterStatus `GET /v1/status`
+#### GetClusterStatus `GET /v2/GetClusterStatus`
 
 Returns the cluster's current status in JSON, including:
 
-- ID of the node being queried and its version of the Garage daemon
 - Live nodes
 - Currently configured cluster layout
-- Staged changes to the cluster layout
 
 Example response body:
 
 ```json
 {
-  "node": "ec79480e0ce52ae26fd00c9da684e4fa56658d9c64cdcecb094e936de0bfe71f",
-  "garageVersion": "git:v0.9.0-dev",
-  "garageFeatures": [
-    "k2v",
-    "sled",
-    "lmdb",
-    "sqlite",
-    "metrics",
-    "bundled-libs"
-  ],
-  "rustVersion": "1.68.0",
-  "dbEngine": "LMDB (using Heed crate)",
-  "knownNodes": [
+  "layoutVersion": 5,
+  "nodes": [
     {
-      "id": "ec79480e0ce52ae26fd00c9da684e4fa56658d9c64cdcecb094e936de0bfe71f",
-      "addr": "10.0.0.11:3901",
+      "id": "62b218d848e86a64f7fe1909735f29a4350547b54c4b204f91246a14eb0a1a8c",
+      "role": {
+        "id": "62b218d848e86a64f7fe1909735f29a4350547b54c4b204f91246a14eb0a1a8c",
+        "zone": "dc1",
+        "capacity": 100000000000,
+        "tags": []
+      },
+      "addr": "10.0.0.3:3901",
+      "hostname": "node3",
       "isUp": true,
-      "lastSeenSecsAgo": 9,
-      "hostname": "node1"
+      "lastSeenSecsAgo": 12,
+      "draining": false,
+      "dataPartition": {
+        "available": 660270088192,
+        "total": 873862266880
+      },
+      "metadataPartition": {
+        "available": 660270088192,
+        "total": 873862266880
+      }
     },
     {
-      "id": "4a6ae5a1d0d33bf895f5bb4f0a418b7dc94c47c0dd2eb108d1158f3c8f60b0ff",
-      "addr": "10.0.0.12:3901",
+      "id": "a11c7cf18af297379eff8688360155fe68d9061654449ba0ce239252f5a7487f",
+      "role": null,
+      "addr": "10.0.0.2:3901",
+      "hostname": "node2",
       "isUp": true,
-      "lastSeenSecsAgo": 1,
-      "hostname": "node2"
+      "lastSeenSecsAgo": 11,
+      "draining": true,
+      "dataPartition": {
+        "available": 660270088192,
+        "total": 873862266880
+      },
+      "metadataPartition": {
+        "available": 660270088192,
+        "total": 873862266880
+      }
     },
     {
-      "id": "23ffd0cdd375ebff573b20cc5cef38996b51c1a7d6dbcf2c6e619876e507cf27",
-      "addr": "10.0.0.21:3901",
+      "id": "a235ac7695e0c54d7b403943025f57504d500fdcc5c3e42c71c5212faca040a2",
+      "role": {
+        "id": "a235ac7695e0c54d7b403943025f57504d500fdcc5c3e42c71c5212faca040a2",
+        "zone": "dc1",
+        "capacity": 100000000000,
+        "tags": []
+      },
+      "addr": "127.0.0.1:3904",
+      "hostname": "lindy",
       "isUp": true,
-      "lastSeenSecsAgo": 7,
-      "hostname": "node3"
+      "lastSeenSecsAgo": 2,
+      "draining": false,
+      "dataPartition": {
+        "available": 660270088192,
+        "total": 873862266880
+      },
+      "metadataPartition": {
+        "available": 660270088192,
+        "total": 873862266880
+      }
     },
     {
-      "id": "e2ee7984ee65b260682086ec70026165903c86e601a4a5a501c1900afe28d84b",
-      "addr": "10.0.0.22:3901",
+      "id": "b10c110e4e854e5aa3f4637681befac755154b20059ec163254ddbfae86b09df",
+      "role": {
+        "id": "b10c110e4e854e5aa3f4637681befac755154b20059ec163254ddbfae86b09df",
+        "zone": "dc1",
+        "capacity": 100000000000,
+        "tags": []
+      },
+      "addr": "10.0.0.1:3901",
+      "hostname": "node1",
       "isUp": true,
-      "lastSeenSecsAgo": 1,
-      "hostname": "node4"
+      "lastSeenSecsAgo": 3,
+      "draining": false,
+      "dataPartition": {
+        "available": 660270088192,
+        "total": 873862266880
+      },
+      "metadataPartition": {
+        "available": 660270088192,
+        "total": 873862266880
+      }
     }
-  ],
-  "layout": {
-    "version": 12,
-    "roles": [
-      {
-        "id": "ec79480e0ce52ae26fd00c9da684e4fa56658d9c64cdcecb094e936de0bfe71f",
-        "zone": "dc1",
-        "capacity": 10737418240,
-        "tags": [
-          "node1"
-        ]
-      },
-      {
-        "id": "4a6ae5a1d0d33bf895f5bb4f0a418b7dc94c47c0dd2eb108d1158f3c8f60b0ff",
-        "zone": "dc1",
-        "capacity": 10737418240,
-        "tags": [
-          "node2"
-        ]
-      },
-      {
-        "id": "23ffd0cdd375ebff573b20cc5cef38996b51c1a7d6dbcf2c6e619876e507cf27",
-        "zone": "dc2",
-        "capacity": 10737418240,
-        "tags": [
-          "node3"
-        ]
-      }
-    ],
-    "stagedRoleChanges": [
-      {
-        "id": "e2ee7984ee65b260682086ec70026165903c86e601a4a5a501c1900afe28d84b",
-        "remove": false,
-        "zone": "dc2",
-        "capacity": 10737418240,
-        "tags": [
-          "node4"
-        ]
-      }
-      {
-        "id": "23ffd0cdd375ebff573b20cc5cef38996b51c1a7d6dbcf2c6e619876e507cf27",
-        "remove": true,
-        "zone": null,
-        "capacity": null,
-        "tags": null,
-      }
-    ]
-  }
+  ]
 }
 ```
 
-#### GetClusterHealth `GET /v1/health`
+#### GetClusterHealth `GET /v2/GetClusterHealth`
 
 Returns the cluster's current health in JSON format, with the following variables:
 
@@ -194,7 +200,7 @@ Example response body:
 }
 ```
 
-#### ConnectClusterNodes `POST /v1/connect`
+#### ConnectClusterNodes `POST /v2/ConnectClusterNodes`
 
 Instructs this Garage node to connect to other Garage nodes at specified addresses.
 
@@ -224,7 +230,7 @@ Example response:
 ]
 ```
 
-#### GetClusterLayout `GET /v1/layout`
+#### GetClusterLayout `GET /v2/GetClusterLayout`
 
 Returns the cluster's current layout in JSON, including:
 
@@ -285,7 +291,7 @@ Example response body:
 }
 ```
 
-#### UpdateClusterLayout `POST /v1/layout`
+#### UpdateClusterLayout `POST /v2/UpdateClusterLayout`
 
 Send modifications to the cluster layout. These modifications will
 be included in the staged role changes, visible in subsequent calls
@@ -322,7 +328,7 @@ This returns the new cluster layout with the proposed staged changes,
 as returned by GetClusterLayout.
 
 
-#### ApplyClusterLayout `POST /v1/layout/apply`
+#### ApplyClusterLayout `POST /v2/ApplyClusterLayout`
 
 Applies to the cluster the layout changes currently registered as
 staged layout changes.
@@ -342,23 +348,11 @@ existing layout in the cluster.
 This returns the message describing all the calculations done to compute the new
 layout, as well as the description of the layout as returned by GetClusterLayout.
 
-#### RevertClusterLayout `POST /v1/layout/revert`
+#### RevertClusterLayout `POST /v2/RevertClusterLayout`
 
 Clears all of the staged layout changes.
 
-Request body format:
-
-```json
-{
-  "version": 13
-}
-```
-
-Reverting the staged changes is done by incrementing the version number
-and clearing the contents of the staged change list.
-Similarly to the CLI, the body must include the incremented
-version number, which MUST be 1 + the value of the currently
-existing layout in the cluster.
+This requests contains an empty body.
 
 This returns the new cluster layout with all changes reverted,
 as returned by GetClusterLayout.
@@ -366,7 +360,7 @@ as returned by GetClusterLayout.
 
 ### Access key operations
 
-#### ListKeys `GET /v1/key`
+#### ListKeys `GET /v2/ListKeys`
 
 Returns all API access keys in the cluster.
 
@@ -385,8 +379,8 @@ Example response:
 ]
 ```
 
-#### GetKeyInfo `GET /v1/key?id=<acces key id>`
-#### GetKeyInfo `GET /v1/key?search=<pattern>`
+#### GetKeyInfo `GET /v2/GetKeyInfo?id=<acces key id>`
+#### GetKeyInfo `GET /v2/GetKeyInfo?search=<pattern>`
 
 Returns information about the requested API access key.
 
@@ -460,7 +454,7 @@ Example response:
 }
 ```
 
-#### CreateKey `POST /v1/key`
+#### CreateKey `POST /v2/CreateKey`
 
 Creates a new API access key.
 
@@ -475,7 +469,7 @@ Request body format:
 This returns the key info, including the created secret key,
 in the same format as the result of GetKeyInfo.
 
-#### ImportKey `POST /v1/key/import`
+#### ImportKey `POST /v2/ImportKey`
 
 Imports an existing API key.
 This will check that the imported key is in the valid format, i.e.
@@ -493,7 +487,7 @@ Request body format:
 
 This returns the key info in the same format as the result of GetKeyInfo.
 
-#### UpdateKey `POST /v1/key?id=<acces key id>`
+#### UpdateKey `POST /v2/UpdateKey?id=<acces key id>`
 
 Updates information about the specified API access key.
 
@@ -515,14 +509,14 @@ The possible flags in `allow` and `deny` are: `createBucket`.
 
 This returns the key info in the same format as the result of GetKeyInfo.
 
-#### DeleteKey `DELETE /v1/key?id=<acces key id>`
+#### DeleteKey `POST /v2/DeleteKey?id=<acces key id>`
 
 Deletes an API access key.
 
 
 ### Bucket operations
 
-#### ListBuckets `GET /v1/bucket`
+#### ListBuckets `GET /v2/ListBuckets`
 
 Returns all storage buckets in the cluster.
 
@@ -564,8 +558,8 @@ Example response:
 ]
 ```
 
-#### GetBucketInfo `GET /v1/bucket?id=<bucket id>`
-#### GetBucketInfo `GET /v1/bucket?globalAlias=<alias>`
+#### GetBucketInfo `GET /v2/GetBucketInfo?id=<bucket id>`
+#### GetBucketInfo `GET /v2/GetBucketInfo?globalAlias=<alias>`
 
 Returns information about the requested storage bucket.
 
@@ -608,7 +602,7 @@ Example response:
 }
 ```
 
-#### CreateBucket `POST /v1/bucket`
+#### CreateBucket `POST /v2/CreateBucket`
 
 Creates a new storage bucket.
 
@@ -648,7 +642,7 @@ or no alias at all.
 Technically, you can also specify both `globalAlias` and `localAlias` and that would create
 two aliases, but I don't see why you would want to do that.
 
-#### UpdateBucket `PUT /v1/bucket?id=<bucket id>`
+#### UpdateBucket `POST /v2/UpdateBucket?id=<bucket id>`
 
 Updates configuration of the given bucket.
 
@@ -680,16 +674,38 @@ In `quotas`: new values of `maxSize` and `maxObjects` must both be specified, or
 to remove the quotas. An absent value will be considered the same as a `null`. It is not possible
 to change only one of the two quotas.
 
-#### DeleteBucket `DELETE /v1/bucket?id=<bucket id>`
+#### DeleteBucket `POST /v2/DeleteBucket?id=<bucket id>`
 
 Deletes a storage bucket. A bucket cannot be deleted if it is not empty.
 
 Warning: this will delete all aliases associated with the bucket!
 
+#### CleanupIncompleteUploads `POST /v2/CleanupIncompleteUploads`
+
+Cleanup all incomplete uploads in a bucket that are older than a specified number
+of seconds.
+
+Request body format:
+
+```json
+{
+    "bucketId": "e6a14cd6a27f48684579ec6b381c078ab11697e6bc8513b72b2f5307e25fff9b",
+    "olderThanSecs": 3600
+}
+```
+
+Response format
+
+```json
+{
+    "uploadsDeleted": 12
+}
+```
+
 
 ### Operations on permissions for keys on buckets
 
-#### BucketAllowKey `POST /v1/bucket/allow`
+#### AllowBucketKey `POST /v2/AllowBucketKey`
 
 Allows a key to do read/write/owner operations on a bucket.
 
@@ -710,7 +726,7 @@ Request body format:
 Flags in `permissions` which have the value `true` will be activated.
 Other flags will remain unchanged.
 
-#### BucketDenyKey `POST /v1/bucket/deny`
+#### DenyBucketKey `POST /v2/DenyBucketKey`
 
 Denies a key from doing read/write/owner operations on a bucket.
 
@@ -734,19 +750,35 @@ Other flags will remain unchanged.
 
 ### Operations on bucket aliases
 
-#### GlobalAliasBucket `PUT /v1/bucket/alias/global?id=<bucket id>&alias=<global alias>`
+#### AddBucketAlias `POST /v2/AddBucketAlias`
 
-Empty body. Creates a global alias for a bucket.
+Creates an alias for a bucket in the namespace of a specific access key.
+To create a global alias, specify the `globalAlias` field.
+To create a local alias, specify the `localAlias` and `accessKeyId` fields.
 
-#### GlobalUnaliasBucket `DELETE /v1/bucket/alias/global?id=<bucket id>&alias=<global alias>`
+Request body format:
 
-Removes a global alias for a bucket.
+```json
+{
+    "bucketId": "e6a14cd6a27f48684579ec6b381c078ab11697e6bc8513b72b2f5307e25fff9b",
+    "globalAlias": "my-bucket"
+}
+```
 
-#### LocalAliasBucket `PUT /v1/bucket/alias/local?id=<bucket id>&accessKeyId=<access key ID>&alias=<local alias>`
+or:
 
-Empty body. Creates a local alias for a bucket in the namespace of a specific access key.
+```json
+{
+    "bucketId": "e6a14cd6a27f48684579ec6b381c078ab11697e6bc8513b72b2f5307e25fff9b",
+    "accessKeyId": "GK31c2f218a2e44f485b94239e",
+    "localAlias": "my-bucket"
+}
+```
 
-#### LocalUnaliasBucket `DELETE /v1/bucket/alias/local?id=<bucket id>&accessKeyId<access key ID>&alias=<local alias>`
+#### RemoveBucketAlias `POST /v2/RemoveBucketAlias`
 
-Removes a local alias for a bucket in the namespace of a specific access key.
+Removes an alias for a bucket in the namespace of a specific access key.
+To remove a global alias, specify the `globalAlias` field.
+To remove a local alias, specify the `localAlias` and `accessKeyId` fields.
 
+Request body format: same as AddBucketAlias.

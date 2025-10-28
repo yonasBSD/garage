@@ -5,7 +5,6 @@ use std::sync::{Arc, RwLock};
 use log::{debug, error, info, trace, warn};
 
 use arc_swap::ArcSwapOption;
-use async_trait::async_trait;
 
 use serde::{Deserialize, Serialize};
 use sodiumoxide::crypto::auth;
@@ -35,11 +34,13 @@ pub type NetworkKey = sodiumoxide::crypto::auth::Key;
 /// composed of 8 bytes for Netapp version and 8 bytes for client version
 pub(crate) type VersionTag = [u8; 16];
 
-/// Value of the Netapp version used in the version tag
-pub(crate) const NETAPP_VERSION_TAG: u64 = 0x6e65746170700005; // netapp 0x0005
+/// Value of garage_net version used in the version tag
+/// We are no longer using prefix `netapp` as garage_net is forked from the netapp crate.
+/// Since Garage v1.0, we have replaced the prefix by `grgnet` (shorthand for garage_net).
+pub(crate) const NETAPP_VERSION_TAG: u64 = 0x6772676e65740010; // grgnet 0x0010 (1.0)
 
 /// HelloMessage is sent by the client on a Netapp connection to indicate
-/// that they are also a server and ready to recieve incoming connections
+/// that they are also a server and ready to receive incoming connections
 /// at the specified address and port. If the client doesn't know their
 /// public address, they don't need to specify it and we look at the
 /// remote address of the socket is used instead.
@@ -123,7 +124,7 @@ impl NetApp {
 
 		netapp
 			.hello_endpoint
-			.swap(Some(netapp.endpoint("__netapp/netapp.rs/Hello".into())));
+			.swap(Some(netapp.endpoint("garage_net/netapp.rs/Hello".into())));
 		netapp
 			.hello_endpoint
 			.load_full()
@@ -288,17 +289,11 @@ impl NetApp {
 	/// Attempt to connect to a peer, given by its ip:port and its public key.
 	/// The public key will be checked during the secret handshake process.
 	/// This function returns once the connection has been established and a
-	/// successfull handshake was made. At this point we can send messages to
+	/// successful handshake was made. At this point we can send messages to
 	/// the other node with `Netapp::request`
 	pub async fn try_connect(self: Arc<Self>, ip: SocketAddr, id: NodeID) -> Result<(), Error> {
 		// Don't connect to ourself, we don't care
-		// but pretend we did
 		if id == self.id {
-			tokio::spawn(async move {
-				if let Some(h) = self.on_connected_handler.load().as_ref() {
-					h(id, ip, false);
-				}
-			});
 			return Ok(());
 		}
 
@@ -327,31 +322,32 @@ impl NetApp {
 	/// Close the outgoing connection we have to a node specified by its public key,
 	/// if such a connection is currently open.
 	pub fn disconnect(self: &Arc<Self>, id: &NodeID) {
+		let conn = self.client_conns.write().unwrap().remove(id);
+
 		// If id is ourself, we're not supposed to have a connection open
-		if *id != self.id {
-			let conn = self.client_conns.write().unwrap().remove(id);
-			if let Some(c) = conn {
-				debug!(
-					"Closing connection to {} ({})",
-					hex::encode(&c.peer_id[..8]),
-					c.remote_addr
-				);
-				c.close();
-			} else {
-				return;
-			}
+		if *id == self.id {
+			// sanity check
+			assert!(conn.is_none(), "had a connection to local node");
+			return;
 		}
 
-		// call on_disconnected_handler immediately, since the connection
-		// was removed
-		// (if id == self.id, we pretend we disconnected)
-		let id = *id;
-		let self2 = self.clone();
-		tokio::spawn(async move {
-			if let Some(h) = self2.on_disconnected_handler.load().as_ref() {
-				h(id, false);
-			}
-		});
+		if let Some(c) = conn {
+			debug!(
+				"Closing connection to {} ({})",
+				hex::encode(&c.peer_id[..8]),
+				c.remote_addr
+			);
+			c.close();
+
+			// call on_disconnected_handler immediately, since the connection was removed
+			let id = *id;
+			let self2 = self.clone();
+			tokio::spawn(async move {
+				if let Some(h) = self2.on_disconnected_handler.load().as_ref() {
+					h(id, false);
+				}
+			});
+		}
 	}
 
 	// Called from conn.rs when an incoming connection is successfully established
@@ -460,7 +456,6 @@ impl NetApp {
 	}
 }
 
-#[async_trait]
 impl EndpointHandler<HelloMessage> for NetApp {
 	async fn handle(self: &Arc<Self>, msg: &HelloMessage, from: NodeID) {
 		debug!("Hello from {:?}: {:?}", hex::encode(&from[..8]), msg);

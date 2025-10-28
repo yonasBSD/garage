@@ -4,9 +4,7 @@
 #[macro_use]
 extern crate tracing;
 
-mod admin;
 mod cli;
-mod repair;
 mod secrets;
 mod server;
 #[cfg(feature = "telemetry-otlp")]
@@ -18,13 +16,14 @@ compile_error!("Either bundled-libs or system-libs Cargo feature must be enabled
 #[cfg(all(feature = "bundled-libs", feature = "system-libs"))]
 compile_error!("Only one of bundled-libs and system-libs Cargo features must be enabled");
 
-#[cfg(not(any(feature = "lmdb", feature = "sled", feature = "sqlite")))]
-compile_error!("Must activate the Cargo feature for at least one DB engine: lmdb, sled or sqlite.");
+#[cfg(not(any(feature = "lmdb", feature = "sqlite")))]
+compile_error!("Must activate the Cargo feature for at least one DB engine: lmdb or sqlite.");
 
 use std::net::SocketAddr;
 use std::path::PathBuf;
 
 use structopt::StructOpt;
+use utoipa::OpenApi;
 
 use garage_net::util::parse_and_resolve_peer_addr;
 use garage_net::NetworkKey;
@@ -34,10 +33,9 @@ use garage_util::error::*;
 use garage_rpc::system::*;
 use garage_rpc::*;
 
-use garage_model::helper::error::Error as HelperError;
+use garage_api_admin::api_server::{AdminRpc as ProxyRpc, ADMIN_RPC_PATH as PROXY_RPC_PATH};
 
-use admin::*;
-use cli::*;
+use cli::structs::*;
 use secrets::Secrets;
 
 #[derive(StructOpt, Debug)]
@@ -72,8 +70,6 @@ async fn main() {
 	let features = &[
 		#[cfg(feature = "k2v")]
 		"k2v",
-		#[cfg(feature = "sled")]
-		"sled",
 		#[cfg(feature = "lmdb")]
 		"lmdb",
 		#[cfg(feature = "sqlite")]
@@ -109,7 +105,7 @@ async fn main() {
 	);
 
 	// Initialize panic handler that aborts on panic and shows a nice message.
-	// By default, Tokio continues runing normally when a task panics. We want
+	// By default, Tokio continues running normally when a task panics. We want
 	// to avoid this behavior in Garage as this would risk putting the process in an
 	// unknown/uncontrollable state. We prefer to exit the process and restart it
 	// from scratch, so that it boots back into a fresh, known state.
@@ -140,29 +136,29 @@ async fn main() {
 	let opt = Opt::from_clap(&Opt::clap().version(version.as_str()).get_matches());
 
 	// Initialize logging as well as other libraries used in Garage
-	if std::env::var("RUST_LOG").is_err() {
-		let default_log = match &opt.cmd {
-			Command::Server => "netapp=info,garage=info",
-			_ => "netapp=warn,garage=warn",
-		};
-		std::env::set_var("RUST_LOG", default_log)
-	}
-	tracing_subscriber::fmt()
-		.with_writer(std::io::stderr)
-		.with_env_filter(tracing_subscriber::filter::EnvFilter::from_default_env())
-		.init();
+	init_logging(&opt);
+
 	sodiumoxide::init().expect("Unable to init sodiumoxide");
 
 	let res = match opt.cmd {
 		Command::Server => server::run_server(opt.config_file, opt.secrets).await,
 		Command::OfflineRepair(repair_opt) => {
-			repair::offline::offline_repair(opt.config_file, opt.secrets, repair_opt).await
+			cli::local::repair::offline_repair(opt.config_file, opt.secrets, repair_opt).await
 		}
 		Command::ConvertDb(conv_opt) => {
-			cli::convert_db::do_conversion(conv_opt).map_err(From::from)
+			cli::local::convert_db::do_conversion(conv_opt).map_err(From::from)
 		}
 		Command::Node(NodeOperation::NodeId(node_id_opt)) => {
-			node_id_command(opt.config_file, node_id_opt.quiet)
+			cli::local::init::node_id_command(opt.config_file, node_id_opt.quiet)
+		}
+		Command::AdminApiSchema => {
+			println!(
+				"{}",
+				garage_api_admin::openapi::ApiDoc::openapi()
+					.to_pretty_json()
+					.unwrap()
+			);
+			Ok(())
 		}
 		_ => cli_command(opt).await,
 	};
@@ -171,6 +167,95 @@ async fn main() {
 		eprintln!("Error: {}", e);
 		std::process::exit(1);
 	}
+}
+
+fn init_logging(opt: &Opt) {
+	if std::env::var("RUST_LOG").is_err() {
+		let default_log = match &opt.cmd {
+			Command::Server => "netapp=info,garage=info",
+			_ => "netapp=warn,garage=warn",
+		};
+		std::env::set_var("RUST_LOG", default_log)
+	}
+
+	let env_filter = tracing_subscriber::filter::EnvFilter::from_default_env();
+
+	if std::env::var("GARAGE_LOG_TO_SYSLOG")
+		.map(|x| x == "1" || x == "true")
+		.unwrap_or(false)
+	{
+		#[cfg(feature = "syslog")]
+		{
+			use std::ffi::CStr;
+			use syslog_tracing::{Facility, Options, Syslog};
+
+			let syslog = Syslog::new(
+				CStr::from_bytes_with_nul(b"garage\0").unwrap(),
+				Options::LOG_PID | Options::LOG_PERROR,
+				Facility::Daemon,
+			)
+			.expect("Unable to init syslog");
+
+			tracing_subscriber::fmt()
+				.with_writer(syslog)
+				.with_env_filter(env_filter)
+				.with_ansi(false) // disable ANSI escape sequences (colours)
+				.with_file(false)
+				.with_level(false)
+				.without_time()
+				.compact()
+				.init();
+
+			return;
+		}
+		#[cfg(not(feature = "syslog"))]
+		{
+			eprintln!("Syslog support is not enabled in this build.");
+			std::process::exit(1);
+		}
+	}
+
+	if std::env::var("GARAGE_LOG_TO_JOURNALD")
+		.map(|x| x == "1" || x == "true")
+		.unwrap_or(false)
+	{
+		#[cfg(feature = "journald")]
+		{
+			use tracing_journald::{Priority, PriorityMappings};
+			use tracing_subscriber::layer::SubscriberExt;
+			use tracing_subscriber::util::SubscriberInitExt;
+
+			let registry = tracing_subscriber::registry()
+				.with(tracing_subscriber::fmt::layer().with_writer(std::io::sink))
+				.with(env_filter);
+			match tracing_journald::layer() {
+				Ok(layer) => {
+					registry
+						.with(layer.with_priority_mappings(PriorityMappings {
+							info: Priority::Informational,
+							debug: Priority::Debug,
+							..PriorityMappings::new()
+						}))
+						.init();
+				}
+				Err(e) => {
+					eprintln!("Couldn't connect to journald: {}.", e);
+					std::process::exit(1);
+				}
+			}
+			return;
+		}
+		#[cfg(not(feature = "journald"))]
+		{
+			eprintln!("Journald support is not enabled in this build.");
+			std::process::exit(1);
+		}
+	}
+
+	tracing_subscriber::fmt()
+		.with_writer(std::io::stderr)
+		.with_env_filter(env_filter)
+		.init();
 }
 
 async fn cli_command(opt: Opt) -> Result<(), Error> {
@@ -211,7 +296,7 @@ async fn cli_command(opt: Opt) -> Result<(), Error> {
 		(id, addrs[0], false)
 	} else {
 		let node_id = garage_rpc::system::read_node_id(&config.as_ref().unwrap().metadata_dir)
-			.err_context(READ_KEY_ERROR)?;
+			.err_context(cli::local::init::READ_KEY_ERROR)?;
 		if let Some(a) = config.as_ref().and_then(|c| c.rpc_public_addr.as_ref()) {
 			use std::net::ToSocketAddrs;
 			let a = a
@@ -240,13 +325,12 @@ async fn cli_command(opt: Opt) -> Result<(), Error> {
 		Err(e).err_context("Unable to connect to destination RPC host. Check that you are using the same value of rpc_secret as them, and that you have their correct full-length node ID (public key).")?;
 	}
 
-	let system_rpc_endpoint = netapp.endpoint::<SystemRpc, ()>(SYSTEM_RPC_PATH.into());
-	let admin_rpc_endpoint = netapp.endpoint::<AdminRpc, ()>(ADMIN_RPC_PATH.into());
+	let proxy_rpc_endpoint = netapp.endpoint::<ProxyRpc, ()>(PROXY_RPC_PATH.into());
 
-	match cli_command_dispatch(opt.cmd, &system_rpc_endpoint, &admin_rpc_endpoint, id).await {
-		Err(HelperError::Internal(i)) => Err(Error::Message(format!("Internal error: {}", i))),
-		Err(HelperError::BadRequest(b)) => Err(Error::Message(b)),
-		Err(e) => Err(Error::Message(format!("{}", e))),
-		Ok(x) => Ok(x),
-	}
+	let cli = cli::remote::Cli {
+		proxy_rpc_endpoint,
+		rpc_host: id,
+	};
+
+	cli.handle(opt.cmd).await
 }

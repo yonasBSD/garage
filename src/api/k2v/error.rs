@@ -2,23 +2,30 @@ use err_derive::Error;
 use hyper::header::HeaderValue;
 use hyper::{HeaderMap, StatusCode};
 
-use crate::common_error::CommonError;
-pub use crate::common_error::{CommonErrorDerivative, OkOrBadRequest, OkOrInternalError};
-use crate::generic_server::ApiError;
-use crate::helpers::*;
-use crate::signature::error::Error as SignatureError;
+pub(crate) use garage_api_common::common_error::pass_helper_error;
+use garage_api_common::common_error::{commonErrorDerivative, CommonError};
+pub use garage_api_common::common_error::{
+	CommonErrorDerivative, OkOrBadRequest, OkOrInternalError,
+};
+use garage_api_common::generic_server::ApiError;
+use garage_api_common::helpers::*;
+use garage_api_common::signature::error::Error as SignatureError;
 
 /// Errors of this crate
 #[derive(Debug, Error)]
 pub enum Error {
 	#[error(display = "{}", _0)]
 	/// Error from common error
-	Common(CommonError),
+	Common(#[error(source)] CommonError),
 
 	// Category: cannot process
 	/// Authorization Header Malformed
 	#[error(display = "Authorization header malformed, unexpected scope: {}", _0)]
 	AuthorizationHeaderMalformed(String),
+
+	/// The provided digest (checksum) value was invalid
+	#[error(display = "Invalid digest: {}", _0)]
+	InvalidDigest(String),
 
 	/// The object requested don't exists
 	#[error(display = "Key not found")]
@@ -27,6 +34,10 @@ pub enum Error {
 	/// Some base64 encoded data was badly encoded
 	#[error(display = "Invalid base64: {}", _0)]
 	InvalidBase64(#[error(source)] base64::DecodeError),
+
+	/// Invalid causality token
+	#[error(display = "Invalid causality token")]
+	InvalidCausalityToken,
 
 	/// The client asked for an invalid return format (invalid Accept header)
 	#[error(display = "Not acceptable: {}", _0)]
@@ -37,16 +48,7 @@ pub enum Error {
 	InvalidUtf8Str(#[error(source)] std::str::Utf8Error),
 }
 
-impl<T> From<T> for Error
-where
-	CommonError: From<T>,
-{
-	fn from(err: T) -> Self {
-		Error::Common(CommonError::from(err))
-	}
-}
-
-impl CommonErrorDerivative for Error {}
+commonErrorDerivative!(Error);
 
 impl From<SignatureError> for Error {
 	fn from(err: SignatureError) -> Self {
@@ -56,6 +58,7 @@ impl From<SignatureError> for Error {
 				Self::AuthorizationHeaderMalformed(c)
 			}
 			SignatureError::InvalidUtf8Str(i) => Self::InvalidUtf8Str(i),
+			SignatureError::InvalidDigest(d) => Self::InvalidDigest(d),
 		}
 	}
 }
@@ -72,6 +75,8 @@ impl Error {
 			Error::AuthorizationHeaderMalformed(_) => "AuthorizationHeaderMalformed",
 			Error::InvalidBase64(_) => "InvalidBase64",
 			Error::InvalidUtf8Str(_) => "InvalidUtf8String",
+			Error::InvalidCausalityToken => "CausalityToken",
+			Error::InvalidDigest(_) => "InvalidDigest",
 		}
 	}
 }
@@ -85,13 +90,16 @@ impl ApiError for Error {
 			Error::NotAcceptable(_) => StatusCode::NOT_ACCEPTABLE,
 			Error::AuthorizationHeaderMalformed(_)
 			| Error::InvalidBase64(_)
-			| Error::InvalidUtf8Str(_) => StatusCode::BAD_REQUEST,
+			| Error::InvalidUtf8Str(_)
+			| Error::InvalidDigest(_)
+			| Error::InvalidCausalityToken => StatusCode::BAD_REQUEST,
 		}
 	}
 
 	fn add_http_headers(&self, header_map: &mut HeaderMap<HeaderValue>) {
 		use hyper::header;
 		header_map.append(header::CONTENT_TYPE, "application/json".parse().unwrap());
+		header_map.append(header::ACCESS_CONTROL_ALLOW_ORIGIN, "*".parse().unwrap());
 	}
 
 	fn http_body(&self, garage_region: &str, path: &str) -> ErrorBody {

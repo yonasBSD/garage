@@ -18,7 +18,7 @@ use crate::util::*;
 /// in the send queue of the client, and their responses in the send queue of the
 /// server. Lower values mean higher priority.
 ///
-/// This mechanism is usefull for messages bigger than the maximum chunk size
+/// This mechanism is useful for messages bigger than the maximum chunk size
 /// (set at `0x4000` bytes), such as large file transfers.
 /// In such case, all of the messages in the send queue with the highest priority
 /// will take turns to send individual chunks, in a round-robin fashion.
@@ -28,12 +28,30 @@ use crate::util::*;
 /// The same priority value is given to a request and to its associated response.
 pub type RequestPriority = u8;
 
+// Usage of priority levels in Garage:
+//
+// PRIO_HIGH
+//      for liveness check events such as pings and important
+//      reconfiguration events such as layout changes
+//
+// PRIO_NORMAL
+//      for standard interactive requests to exchange metadata
+//
+// PRIO_NORMAL | PRIO_SECONDARY
+//      for standard interactive requests to exchange block data
+//
+// PRIO_BACKGROUND
+//      for background resync requests to exchange metadata
+// PRIO_BACKGROUND | PRIO_SECONDARY
+//      for background resync requests to exchange block data
+
 /// Priority class: high
 pub const PRIO_HIGH: RequestPriority = 0x20;
 /// Priority class: normal
 pub const PRIO_NORMAL: RequestPriority = 0x40;
 /// Priority class: background
 pub const PRIO_BACKGROUND: RequestPriority = 0x80;
+
 /// Priority: primary among given class
 pub const PRIO_PRIMARY: RequestPriority = 0x00;
 /// Priority: secondary among given class (ex: `PRIO_HIGH | PRIO_SECONDARY`)
@@ -84,7 +102,7 @@ pub trait Message: Serialize + for<'de> Deserialize<'de> + Send + Sync + 'static
 
 /// The Req<M> is a helper object used to create requests and attach them
 /// a stream of data. If the stream is a fixed Bytes and not a ByteStream,
-/// Req<M> is cheaply clonable to allow the request to be sent to different
+/// Req<M> is cheaply cloneable to allow the request to be sent to different
 /// peers (Clone will panic if the stream is a ByteStream).
 pub struct Req<M: Message> {
 	pub(crate) msg: Arc<M>,

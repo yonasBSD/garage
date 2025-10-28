@@ -1,16 +1,16 @@
+use std::convert::TryInto;
 use std::path::PathBuf;
 use std::sync::Arc;
 use std::time::Duration;
 
 use arc_swap::{ArcSwap, ArcSwapOption};
-use async_trait::async_trait;
 use bytes::Bytes;
 use rand::prelude::*;
 use serde::{Deserialize, Serialize};
 
 use tokio::fs;
 use tokio::io::{AsyncReadExt, AsyncWriteExt, BufReader};
-use tokio::sync::{mpsc, Mutex, MutexGuard};
+use tokio::sync::{mpsc, Mutex, MutexGuard, Semaphore};
 
 use opentelemetry::{
 	trace::{FutureExt as OtelFutureExt, TraceContextExt, Tracer},
@@ -22,7 +22,7 @@ use garage_net::stream::{read_stream_to_end, stream_asyncread, ByteStream};
 use garage_db as db;
 
 use garage_util::background::{vars, BackgroundRunner};
-use garage_util::config::DataDirEnum;
+use garage_util::config::Config;
 use garage_util::data::*;
 use garage_util::error::*;
 use garage_util::metrics::RecordDuration;
@@ -32,8 +32,6 @@ use garage_util::time::msec_to_rfc3339;
 use garage_rpc::rpc_helper::OrderTag;
 use garage_rpc::system::System;
 use garage_rpc::*;
-
-use garage_table::replication::{TableReplication, TableShardedReplication};
 
 use crate::block::*;
 use crate::layout::*;
@@ -49,6 +47,8 @@ pub const INLINE_THRESHOLD: usize = 3072;
 // drops to zero, and the moment where we allow ourselves
 // to delete the block locally.
 pub(crate) const BLOCK_GC_DELAY: Duration = Duration::from_secs(600);
+
+const BLOCK_READ_SEMAPHORE_TIMEOUT: Duration = Duration::from_secs(15);
 
 /// RPC messages used to share blocks of data between nodes
 #[derive(Debug, Serialize, Deserialize)]
@@ -74,8 +74,8 @@ impl Rpc for BlockRpc {
 
 /// The block manager, handling block exchange between nodes, and block storage on local node
 pub struct BlockManager {
-	/// Replication strategy, allowing to find on which node blocks should be located
-	pub replication: TableShardedReplication,
+	/// Quorum of nodes for write operations
+	pub write_quorum: usize,
 
 	/// Data layout
 	pub(crate) data_layout: ArcSwap<DataLayout>,
@@ -84,14 +84,17 @@ pub struct BlockManager {
 
 	data_fsync: bool,
 	compression_level: Option<i32>,
+	disable_scrub: bool,
 
 	mutation_lock: Vec<Mutex<BlockManagerLocked>>,
+	read_semaphore: Semaphore,
 
-	pub(crate) rc: BlockRc,
+	pub rc: BlockRc,
 	pub resync: BlockResyncManager,
 
 	pub(crate) system: Arc<System>,
 	pub(crate) endpoint: Arc<Endpoint<BlockRpc, Self>>,
+	buffer_kb_semaphore: Arc<Semaphore>,
 
 	pub(crate) metrics: BlockManagerMetrics,
 
@@ -119,24 +122,22 @@ struct BlockManagerLocked();
 impl BlockManager {
 	pub fn new(
 		db: &db::Db,
-		data_dir: DataDirEnum,
-		data_fsync: bool,
-		compression_level: Option<i32>,
-		replication: TableShardedReplication,
+		config: &Config,
+		write_quorum: usize,
 		system: Arc<System>,
 	) -> Result<Arc<Self>, Error> {
 		// Load or compute layout, i.e. assignment of data blocks to the different data directories
 		let data_layout_persister: Persister<DataLayout> =
 			Persister::new(&system.metadata_dir, "data_layout");
-		let data_layout = match data_layout_persister.load() {
-			Ok(mut layout) => {
-				layout
-					.update(&data_dir)
-					.ok_or_message("invalid data_dir config")?;
-				layout
+		let mut data_layout = match data_layout_persister.load() {
+			Ok(layout) => layout
+				.update(&config.data_dir)
+				.ok_or_message("invalid data_dir config")?,
+			Err(_) => {
+				DataLayout::initialize(&config.data_dir).ok_or_message("invalid data_dir config")?
 			}
-			Err(_) => DataLayout::initialize(&data_dir).ok_or_message("invalid data_dir config")?,
 		};
+		data_layout.check_markers()?;
 		data_layout_persister
 			.save(&data_layout)
 			.expect("cannot save data_layout");
@@ -153,29 +154,36 @@ impl BlockManager {
 			.netapp
 			.endpoint("garage_block/manager.rs/Rpc".to_string());
 
+		let buffer_kb_semaphore = Arc::new(Semaphore::new(config.block_ram_buffer_max / 1024));
+
 		let metrics = BlockManagerMetrics::new(
-			compression_level,
-			rc.rc.clone(),
+			config.compression_level,
+			rc.rc_table.clone(),
 			resync.queue.clone(),
 			resync.errors.clone(),
+			buffer_kb_semaphore.clone(),
 		);
 
 		let scrub_persister = PersisterShared::new(&system.metadata_dir, "scrub_info");
 
 		let block_manager = Arc::new(Self {
-			replication,
+			write_quorum,
 			data_layout: ArcSwap::new(Arc::new(data_layout)),
 			data_layout_persister,
-			data_fsync,
-			compression_level,
+			data_fsync: config.data_fsync,
+			disable_scrub: config.disable_scrub,
+			compression_level: config.compression_level,
 			mutation_lock: vec![(); MUTEX_COUNT]
 				.iter()
 				.map(|_| Mutex::new(BlockManagerLocked()))
 				.collect::<Vec<_>>(),
+
+			read_semaphore: Semaphore::new(config.block_max_concurrent_reads),
 			rc,
 			resync,
 			system,
 			endpoint,
+			buffer_kb_semaphore,
 			metrics,
 			scrub_persister,
 			tx_scrub_command: ArcSwapOption::new(None),
@@ -194,33 +202,43 @@ impl BlockManager {
 		}
 
 		// Spawn scrub worker
-		let (scrub_tx, scrub_rx) = mpsc::channel(1);
-		self.tx_scrub_command.store(Some(Arc::new(scrub_tx)));
-		bg.spawn_worker(ScrubWorker::new(
-			self.clone(),
-			scrub_rx,
-			self.scrub_persister.clone(),
-		));
+		if !self.disable_scrub {
+			let (scrub_tx, scrub_rx) = mpsc::channel(1);
+			self.tx_scrub_command.store(Some(Arc::new(scrub_tx)));
+			bg.spawn_worker(ScrubWorker::new(
+				self.clone(),
+				scrub_rx,
+				self.scrub_persister.clone(),
+			));
+		}
 	}
 
 	pub fn register_bg_vars(&self, vars: &mut vars::BgVars) {
 		self.resync.register_bg_vars(vars);
 
-		vars.register_rw(
-			&self.scrub_persister,
-			"scrub-tranquility",
-			|p| p.get_with(|x| x.tranquility),
-			|p, tranquility| p.set_with(|x| x.tranquility = tranquility),
-		);
-		vars.register_ro(&self.scrub_persister, "scrub-last-completed", |p| {
-			p.get_with(|x| msec_to_rfc3339(x.time_last_complete_scrub))
-		});
-		vars.register_ro(&self.scrub_persister, "scrub-next-run", |p| {
-			p.get_with(|x| msec_to_rfc3339(x.time_next_run_scrub))
-		});
-		vars.register_ro(&self.scrub_persister, "scrub-corruptions_detected", |p| {
-			p.get_with(|x| x.corruptions_detected)
-		});
+		if !self.disable_scrub {
+			vars.register_rw(
+				&self.scrub_persister,
+				"scrub-tranquility",
+				|p| p.get_with(|x| x.tranquility),
+				|p, tranquility| p.set_with(|x| x.tranquility = tranquility),
+			);
+			vars.register_ro(&self.scrub_persister, "scrub-last-completed", |p| {
+				p.get_with(|x| msec_to_rfc3339(x.time_last_complete_scrub))
+			});
+			vars.register_ro(&self.scrub_persister, "scrub-next-run", |p| {
+				p.get_with(|x| msec_to_rfc3339(x.time_next_run_scrub))
+			});
+			vars.register_ro(&self.scrub_persister, "scrub-corruptions_detected", |p| {
+				p.get_with(|x| x.corruptions_detected)
+			});
+		}
+	}
+
+	/// Initialization: set how block references are recalculated
+	/// for repair operations
+	pub fn set_recalc_rc(&self, recalc: Vec<CalculateRefcount>) {
+		self.rc.recalc_rc.store(Some(Arc::new(recalc)));
 	}
 
 	/// Ask nodes that might have a (possibly compressed) block for it
@@ -228,10 +246,16 @@ impl BlockManager {
 	async fn rpc_get_raw_block_streaming(
 		&self,
 		hash: &Hash,
+		priority: RequestPriority,
 		order_tag: Option<OrderTag>,
 	) -> Result<DataBlockStream, Error> {
-		self.rpc_get_raw_block_internal(hash, order_tag, |stream| async move { Ok(stream) })
-			.await
+		self.rpc_get_raw_block_internal(
+			hash,
+			priority,
+			order_tag,
+			|stream| async move { Ok(stream) },
+		)
+		.await
 	}
 
 	/// Ask nodes that might have a (possibly compressed) block for it
@@ -239,9 +263,10 @@ impl BlockManager {
 	pub(crate) async fn rpc_get_raw_block(
 		&self,
 		hash: &Hash,
+		priority: RequestPriority,
 		order_tag: Option<OrderTag>,
 	) -> Result<DataBlock, Error> {
-		self.rpc_get_raw_block_internal(hash, order_tag, |block_stream| async move {
+		self.rpc_get_raw_block_internal(hash, priority, order_tag, |block_stream| async move {
 			let (header, stream) = block_stream.into_parts();
 			read_stream_to_end(stream)
 				.await
@@ -254,6 +279,7 @@ impl BlockManager {
 	async fn rpc_get_raw_block_internal<F, Fut, T>(
 		&self,
 		hash: &Hash,
+		priority: RequestPriority,
 		order_tag: Option<OrderTag>,
 		f: F,
 	) -> Result<T, Error>
@@ -261,15 +287,17 @@ impl BlockManager {
 		F: Fn(DataBlockStream) -> Fut,
 		Fut: futures::Future<Output = Result<T, Error>>,
 	{
-		let who = self.replication.read_nodes(hash);
-		let who = self.system.rpc.request_order(&who);
+		let who = self
+			.system
+			.rpc_helper()
+			.block_read_nodes_of(hash, self.system.rpc_helper())?;
 
 		for node in who.iter() {
 			let node_id = NodeID::from(*node);
 			let rpc = self.endpoint.call_streaming(
 				&node_id,
 				BlockRpc::GetBlock(*hash, order_tag),
-				PRIO_NORMAL | PRIO_SECONDARY,
+				priority,
 			);
 			tokio::select! {
 				res = rpc => {
@@ -302,15 +330,25 @@ impl BlockManager {
 				// if the first one doesn't succeed rapidly
 				// TODO: keep first request running when initiating a new one and take the
 				// one that finishes earlier
-				_ = tokio::time::sleep(self.system.rpc.rpc_timeout()) => {
+				_ = tokio::time::sleep(self.system.rpc_helper().rpc_timeout()) => {
 					debug!("Get block {:?}: node {:?} didn't return block in time, trying next.", hash, node);
 				}
 			};
 		}
 
-		let msg = format!("Get block {:?}: no node returned a valid block", hash);
-		debug!("{}", msg);
-		Err(Error::Message(msg))
+		let err = Error::MissingBlock(*hash);
+		debug!("{}", err);
+		Err(err)
+	}
+
+	/// Returns the set of nodes that should store a copy of a given block.
+	/// These are the nodes assigned to the block's hash in the current
+	/// layout version only: since blocks are immutable, we don't need to
+	/// do complex logic when several layour versions are active at once,
+	/// just move them directly to the new nodes.
+	pub(crate) fn storage_nodes_of(&self, hash: &Hash) -> Result<Vec<Uuid>, Error> {
+		let cluster_layout = self.system.cluster_layout();
+		Ok(cluster_layout.current()?.nodes_of(hash).collect())
 	}
 
 	// ---- Public interface ----
@@ -321,7 +359,9 @@ impl BlockManager {
 		hash: &Hash,
 		order_tag: Option<OrderTag>,
 	) -> Result<ByteStream, Error> {
-		let block_stream = self.rpc_get_raw_block_streaming(hash, order_tag).await?;
+		let block_stream = self
+			.rpc_get_raw_block_streaming(hash, PRIO_NORMAL | PRIO_SECONDARY, order_tag)
+			.await?;
 		let (header, stream) = block_stream.into_parts();
 		match header {
 			DataBlockHeader::Plain => Ok(stream),
@@ -335,34 +375,45 @@ impl BlockManager {
 		}
 	}
 
-	/// Ask nodes that might have a block for it, return it as one big Bytes
-	pub async fn rpc_get_block(
-		&self,
-		hash: &Hash,
-		order_tag: Option<OrderTag>,
-	) -> Result<Bytes, Error> {
-		let stream = self.rpc_get_block_streaming(hash, order_tag).await?;
-		Ok(read_stream_to_end(stream).await?.into_bytes())
-	}
-
 	/// Send block to nodes that should have it
-	pub async fn rpc_put_block(&self, hash: Hash, data: Bytes) -> Result<(), Error> {
-		let who = self.replication.write_nodes(&hash);
+	pub async fn rpc_put_block(
+		&self,
+		hash: Hash,
+		data: Bytes,
+		prevent_compression: bool,
+		order_tag: Option<OrderTag>,
+	) -> Result<(), Error> {
+		let who = self.storage_nodes_of(&hash)?;
 
-		let (header, bytes) = DataBlock::from_buffer(data, self.compression_level)
+		let compression_level = self.compression_level.filter(|_| !prevent_compression);
+		let (header, bytes) = DataBlock::from_buffer(data, compression_level)
 			.await
 			.into_parts();
+
+		let permit = self
+			.buffer_kb_semaphore
+			.clone()
+			.acquire_many_owned((bytes.len() / 1024).try_into().unwrap())
+			.await
+			.ok_or_message("could not reserve space for buffer of data to send to remote nodes")?;
+
 		let put_block_rpc =
 			Req::new(BlockRpc::PutBlock { hash, header })?.with_stream_from_buffer(bytes);
+		let put_block_rpc = if let Some(tag) = order_tag {
+			put_block_rpc.with_order_tag(tag)
+		} else {
+			put_block_rpc
+		};
 
 		self.system
-			.rpc
-			.try_call_many(
+			.rpc_helper()
+			.try_write_many_sets(
 				&self.endpoint,
-				&who[..],
+				&[who],
 				put_block_rpc,
 				RequestStrategy::with_priority(PRIO_NORMAL | PRIO_SECONDARY)
-					.with_quorum(self.replication.write_quorum()),
+					.with_drop_on_completion(permit)
+					.with_quorum(self.write_quorum),
 			)
 			.await?;
 
@@ -370,13 +421,8 @@ impl BlockManager {
 	}
 
 	/// Get number of items in the refcount table
-	pub fn rc_len(&self) -> Result<usize, Error> {
-		Ok(self.rc.rc.len()?)
-	}
-
-	/// Get number of items in the refcount table
-	pub fn rc_fast_len(&self) -> Result<Option<usize>, Error> {
-		Ok(self.rc.rc.fast_len()?)
+	pub fn rc_approximate_len(&self) -> Result<usize, Error> {
+		Ok(self.rc.rc_table.approximate_len()?)
 	}
 
 	/// Send command to start/stop/manager scrub worker
@@ -394,7 +440,7 @@ impl BlockManager {
 
 	/// List all resync errors
 	pub fn list_resync_errors(&self) -> Result<Vec<BlockResyncErrorInfo>, Error> {
-		let mut blocks = Vec::with_capacity(self.resync.errors.len());
+		let mut blocks = Vec::with_capacity(self.resync.errors.approximate_len()?);
 		for ent in self.resync.errors.iter()? {
 			let (hash, cnt) = ent?;
 			let cnt = ErrorCounter::decode(&cnt);
@@ -432,7 +478,7 @@ impl BlockManager {
 			tokio::spawn(async move {
 				if let Err(e) = this
 					.resync
-					.put_to_resync(&hash, 2 * this.system.rpc.rpc_timeout())
+					.put_to_resync(&hash, 2 * this.system.rpc_helper().rpc_timeout())
 				{
 					error!("Block {:?} could not be put in resync queue: {}.", hash, e);
 				}
@@ -524,9 +570,6 @@ impl BlockManager {
 			match self.find_block(hash).await {
 				Some(p) => self.read_block_from(hash, &p).await,
 				None => {
-					// Not found but maybe we should have had it ??
-					self.resync
-						.put_to_resync(hash, 2 * self.system.rpc.rpc_timeout())?;
 					return Err(Error::Message(format!(
 						"block {:?} not found on node",
 						hash
@@ -547,6 +590,15 @@ impl BlockManager {
 		block_path: &DataBlockPath,
 	) -> Result<DataBlock, Error> {
 		let (header, path) = block_path.as_parts_ref();
+
+		let permit = tokio::select! {
+			sem = self.read_semaphore.acquire() => sem.ok_or_message("acquire read semaphore")?,
+			_ = tokio::time::sleep(BLOCK_READ_SEMAPHORE_TIMEOUT) => {
+				self.metrics.block_read_semaphore_timeouts.add(1);
+				debug!("read block {:?}: read_semaphore acquire timeout", hash);
+				return Err(Error::Message("read block: read_semaphore acquire timeout".into()));
+			}
+		};
 
 		let mut f = fs::File::open(&path).await?;
 		let mut data = vec![];
@@ -571,6 +623,8 @@ impl BlockManager {
 
 			return Err(Error::CorruptData(*hash));
 		}
+
+		drop(permit);
 
 		Ok(data)
 	}
@@ -635,10 +689,12 @@ impl BlockManager {
 		hash: &Hash,
 		wrong_path: DataBlockPath,
 	) -> Result<usize, Error> {
+		let data = self.read_block_from(hash, &wrong_path).await?;
 		self.lock_mutate(hash)
 			.await
-			.fix_block_location(hash, wrong_path, self)
-			.await
+			.write_block_inner(hash, &data, self, Some(wrong_path))
+			.await?;
+		Ok(data.as_parts_ref().1.len())
 	}
 
 	async fn lock_mutate(&self, hash: &Hash) -> MutexGuard<'_, BlockManagerLocked> {
@@ -654,7 +710,6 @@ impl BlockManager {
 	}
 }
 
-#[async_trait]
 impl StreamingEndpointHandler<BlockRpc> for BlockManager {
 	async fn handle(self: &Arc<Self>, mut message: Req<BlockRpc>, _from: NodeID) -> Resp<BlockRpc> {
 		match message.msg() {
@@ -794,18 +849,6 @@ impl BlockManagerLocked {
 			}
 		}
 		Ok(())
-	}
-
-	async fn fix_block_location(
-		&self,
-		hash: &Hash,
-		wrong_path: DataBlockPath,
-		mgr: &BlockManager,
-	) -> Result<usize, Error> {
-		let data = mgr.read_block_from(hash, &wrong_path).await?;
-		self.write_block_inner(hash, &data, mgr, Some(wrong_path))
-			.await?;
-		Ok(data.as_parts_ref().1.len())
 	}
 }
 

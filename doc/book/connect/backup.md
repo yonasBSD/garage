@@ -55,8 +55,8 @@ Create your key and bucket:
 
 ```bash
 garage key create my-key
-garage bucket create backup
-garage bucket allow backup --read --write --key my-key
+garage bucket create backups
+garage bucket allow backups --read --write --key my-key
 ```
 
 Then register your Key ID and Secret key in your environment:
@@ -161,3 +161,49 @@ kopia repository validate-provider
 
 You can then run all the standard kopia commands: `kopia snapshot create`, `kopia mount`...
 Everything should work out-of-the-box.
+
+## Plakar
+
+Create your key and bucket on Garage server:
+
+```bash
+garage key create my-plakar-key
+garage bucket create plakar-backups
+garage bucket allow plakar-backups --read --write --key my-plakar-key
+…
+```
+
+On Plakar server, add your Garage as a storage location:
+```bash
+plakar store add garageS3 s3://my-garage.tld/plakar-backups \
+region=garage # Or as you've specified in garage.toml \
+access_key=<Key ID from "garage key info my-plakar-key"> \
+secret_access_key=<Secret key from "garage key info my-plakar-key">
+```
+
+Then create the repository.
+```bash
+plakar at @garageS3 create -plaintext # Unencrypted
+# or
+plakar at @garageS3 create #encrypted
+```
+
+If you encrypt your backups (Plakar default), you will need to define a strong passphrase. Do not forget to save your password safely. It will be needed to decrypt your backups.
+
+
+After the repository has been created, check that everything works as expected (that might give an empty result as no file has been added yet, but no error message):
+```bash
+plakar at @garageS3 check
+```
+
+Now that everything is configure, you can use Garage as your backups storage. For instance sync it with a local backup storage:
+```bash
+$ plakar at ~/backups sync to @garageS3
+```
+
+Or list the S3 storage content:
+```bash
+$ plakar at @garageS3 ls
+```
+
+More information in Plakar documentation: https://www.plakar.io/docs/main/quickstart/

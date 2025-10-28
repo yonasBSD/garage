@@ -1,172 +1,190 @@
 use std::collections::HashMap;
 use std::sync::Arc;
 
-use hyper::{body::Incoming as IncomingBody, Request, Response, StatusCode};
-use serde::{Deserialize, Serialize};
+use chrono::DateTime;
 
 use garage_table::*;
+use garage_util::time::now_msec;
 
 use garage_model::garage::Garage;
 use garage_model::key_table::*;
 
-use crate::admin::api_server::ResBody;
-use crate::admin::error::*;
-use crate::helpers::*;
+use crate::api::*;
+use crate::error::*;
+use crate::{Admin, RequestHandler};
 
-pub async fn handle_list_keys(garage: &Arc<Garage>) -> Result<Response<ResBody>, Error> {
-	let res = garage
-		.key_table
-		.get_range(
-			&EmptyKey,
-			None,
-			Some(KeyFilter::Deleted(DeletedFilter::NotDeleted)),
-			10000,
-			EnumerationOrder::Forward,
-		)
-		.await?
-		.iter()
-		.map(|k| ListKeyResultItem {
-			id: k.key_id.to_string(),
-			name: k.params().unwrap().name.get().clone(),
-		})
-		.collect::<Vec<_>>();
+impl RequestHandler for ListKeysRequest {
+	type Response = ListKeysResponse;
 
-	Ok(json_ok_response(&res)?)
-}
+	async fn handle(self, garage: &Arc<Garage>, _admin: &Admin) -> Result<ListKeysResponse, Error> {
+		let now = now_msec();
 
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-struct ListKeyResultItem {
-	id: String,
-	name: String,
-}
-
-pub async fn handle_get_key_info(
-	garage: &Arc<Garage>,
-	id: Option<String>,
-	search: Option<String>,
-	show_secret_key: bool,
-) -> Result<Response<ResBody>, Error> {
-	let key = if let Some(id) = id {
-		garage.key_helper().get_existing_key(&id).await?
-	} else if let Some(search) = search {
-		garage
-			.key_helper()
-			.get_existing_matching_key(&search)
+		let res = garage
+			.key_table
+			.get_range(
+				&EmptyKey,
+				None,
+				Some(KeyFilter::Deleted(DeletedFilter::NotDeleted)),
+				10000,
+				EnumerationOrder::Forward,
+			)
 			.await?
-	} else {
-		unreachable!();
-	};
+			.iter()
+			.map(|k| {
+				let p = k.params().unwrap();
 
-	key_info_results(garage, key, show_secret_key).await
-}
+				ListKeysResponseItem {
+					id: k.key_id.to_string(),
+					name: p.name.get().clone(),
+					created: p.created.map(|x| {
+						DateTime::from_timestamp_millis(x as i64)
+							.expect("invalid timestamp stored in db")
+					}),
+					expiration: p.expiration.get().map(|x| {
+						DateTime::from_timestamp_millis(x as i64)
+							.expect("invalid timestamp stored in db")
+					}),
+					expired: p.is_expired(now),
+				}
+			})
+			.collect::<Vec<_>>();
 
-pub async fn handle_create_key(
-	garage: &Arc<Garage>,
-	req: Request<IncomingBody>,
-) -> Result<Response<ResBody>, Error> {
-	let req = parse_json_body::<CreateKeyRequest, _, Error>(req).await?;
-
-	let key = Key::new(req.name.as_deref().unwrap_or("Unnamed key"));
-	garage.key_table.insert(&key).await?;
-
-	key_info_results(garage, key, true).await
-}
-
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct CreateKeyRequest {
-	name: Option<String>,
-}
-
-pub async fn handle_import_key(
-	garage: &Arc<Garage>,
-	req: Request<IncomingBody>,
-) -> Result<Response<ResBody>, Error> {
-	let req = parse_json_body::<ImportKeyRequest, _, Error>(req).await?;
-
-	let prev_key = garage.key_table.get(&EmptyKey, &req.access_key_id).await?;
-	if prev_key.is_some() {
-		return Err(Error::KeyAlreadyExists(req.access_key_id.to_string()));
+		Ok(ListKeysResponse(res))
 	}
-
-	let imported_key = Key::import(
-		&req.access_key_id,
-		&req.secret_access_key,
-		req.name.as_deref().unwrap_or("Imported key"),
-	)
-	.ok_or_bad_request("Invalid key format")?;
-	garage.key_table.insert(&imported_key).await?;
-
-	key_info_results(garage, imported_key, false).await
 }
 
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct ImportKeyRequest {
-	access_key_id: String,
-	secret_access_key: String,
-	name: Option<String>,
-}
+impl RequestHandler for GetKeyInfoRequest {
+	type Response = GetKeyInfoResponse;
 
-pub async fn handle_update_key(
-	garage: &Arc<Garage>,
-	id: String,
-	req: Request<IncomingBody>,
-) -> Result<Response<ResBody>, Error> {
-	let req = parse_json_body::<UpdateKeyRequest, _, Error>(req).await?;
+	async fn handle(
+		self,
+		garage: &Arc<Garage>,
+		_admin: &Admin,
+	) -> Result<GetKeyInfoResponse, Error> {
+		let key = match (self.id, self.search) {
+			(Some(id), None) => garage.key_helper().get_existing_key(&id).await?,
+			(None, Some(search)) => {
+				let candidates = garage
+					.key_table
+					.get_range(
+						&EmptyKey,
+						None,
+						Some(KeyFilter::MatchesAndNotDeleted(search.to_string())),
+						10,
+						EnumerationOrder::Forward,
+					)
+					.await?
+					.into_iter()
+					.collect::<Vec<_>>();
+				if candidates.len() != 1 {
+					return Err(Error::bad_request(format!(
+						"{} matching keys",
+						candidates.len()
+					)));
+				}
+				candidates.into_iter().next().unwrap()
+			}
+			_ => {
+				return Err(Error::bad_request(
+					"Either id or search must be provided (but not both)",
+				));
+			}
+		};
 
-	let mut key = garage.key_helper().get_existing_key(&id).await?;
-
-	let key_state = key.state.as_option_mut().unwrap();
-
-	if let Some(new_name) = req.name {
-		key_state.name.update(new_name);
+		Ok(key_info_results(garage, key, self.show_secret_key).await?)
 	}
-	if let Some(allow) = req.allow {
-		if allow.create_bucket {
-			key_state.allow_create_bucket.update(true);
+}
+
+impl RequestHandler for CreateKeyRequest {
+	type Response = CreateKeyResponse;
+
+	async fn handle(
+		self,
+		garage: &Arc<Garage>,
+		_admin: &Admin,
+	) -> Result<CreateKeyResponse, Error> {
+		let mut key = Key::new("Unnamed key");
+
+		apply_key_updates(&mut key, self.0)?;
+
+		garage.key_table.insert(&key).await?;
+
+		Ok(CreateKeyResponse(
+			key_info_results(garage, key, true).await?,
+		))
+	}
+}
+
+impl RequestHandler for ImportKeyRequest {
+	type Response = ImportKeyResponse;
+
+	async fn handle(
+		self,
+		garage: &Arc<Garage>,
+		_admin: &Admin,
+	) -> Result<ImportKeyResponse, Error> {
+		let prev_key = garage.key_table.get(&EmptyKey, &self.access_key_id).await?;
+		if prev_key.is_some() {
+			return Err(Error::KeyAlreadyExists(self.access_key_id.to_string()));
 		}
-	}
-	if let Some(deny) = req.deny {
-		if deny.create_bucket {
-			key_state.allow_create_bucket.update(false);
-		}
-	}
 
-	garage.key_table.insert(&key).await?;
+		let imported_key = Key::import(
+			&self.access_key_id,
+			&self.secret_access_key,
+			self.name.as_deref().unwrap_or("Imported key"),
+		)
+		.ok_or_bad_request("Invalid key format")?;
+		garage.key_table.insert(&imported_key).await?;
 
-	key_info_results(garage, key, false).await
+		Ok(ImportKeyResponse(
+			key_info_results(garage, imported_key, false).await?,
+		))
+	}
 }
 
-#[derive(Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct UpdateKeyRequest {
-	name: Option<String>,
-	allow: Option<KeyPerm>,
-	deny: Option<KeyPerm>,
+impl RequestHandler for UpdateKeyRequest {
+	type Response = UpdateKeyResponse;
+
+	async fn handle(
+		self,
+		garage: &Arc<Garage>,
+		_admin: &Admin,
+	) -> Result<UpdateKeyResponse, Error> {
+		let mut key = garage.key_helper().get_existing_key(&self.id).await?;
+
+		apply_key_updates(&mut key, self.body)?;
+
+		garage.key_table.insert(&key).await?;
+
+		Ok(UpdateKeyResponse(
+			key_info_results(garage, key, false).await?,
+		))
+	}
 }
 
-pub async fn handle_delete_key(
-	garage: &Arc<Garage>,
-	id: String,
-) -> Result<Response<ResBody>, Error> {
-	let helper = garage.locked_helper().await;
+impl RequestHandler for DeleteKeyRequest {
+	type Response = DeleteKeyResponse;
 
-	let mut key = helper.key().get_existing_key(&id).await?;
+	async fn handle(
+		self,
+		garage: &Arc<Garage>,
+		_admin: &Admin,
+	) -> Result<DeleteKeyResponse, Error> {
+		let helper = garage.locked_helper().await;
 
-	helper.delete_key(&mut key).await?;
+		let mut key = helper.key().get_existing_key(&self.id).await?;
 
-	Ok(Response::builder()
-		.status(StatusCode::NO_CONTENT)
-		.body(empty_body())?)
+		helper.delete_key(&mut key).await?;
+
+		Ok(DeleteKeyResponse)
+	}
 }
 
 async fn key_info_results(
 	garage: &Arc<Garage>,
 	key: Key,
 	show_secret: bool,
-) -> Result<Response<ResBody>, Error> {
+) -> Result<GetKeyInfoResponse, Error> {
 	let mut relevant_buckets = HashMap::new();
 
 	let key_state = key.state.as_option().unwrap();
@@ -192,8 +210,15 @@ async fn key_info_results(
 		}
 	}
 
-	let res = GetKeyInfoResult {
+	let res = GetKeyInfoResponse {
 		name: key_state.name.get().clone(),
+		created: key_state.created.map(|x| {
+			DateTime::from_timestamp_millis(x as i64).expect("invalid timestamp stored in db")
+		}),
+		expiration: key_state.expiration.get().map(|x| {
+			DateTime::from_timestamp_millis(x as i64).expect("invalid timestamp stored in db")
+		}),
+		expired: key_state.is_expired(now_msec()),
 		access_key_id: key.key_id.clone(),
 		secret_access_key: if show_secret {
 			Some(key_state.secret_key.clone())
@@ -205,9 +230,18 @@ async fn key_info_results(
 		},
 		buckets: relevant_buckets
 			.into_values()
-			.map(|bucket| {
+			.filter_map(|bucket| {
 				let state = bucket.state.as_option().unwrap();
-				KeyInfoBucketResult {
+				let permissions = key_state
+					.authorized_buckets
+					.get(&bucket.id)
+					.filter(|p| p.is_any())
+					.map(|p| ApiBucketKeyPerm {
+						read: p.allow_read,
+						write: p.allow_write,
+						owner: p.allow_owner,
+					})?;
+				Some(KeyInfoBucketResponse {
 					id: hex::encode(bucket.id),
 					global_aliases: state
 						.aliases
@@ -223,57 +257,45 @@ async fn key_info_results(
 						.filter(|((k, _), _, a)| *a && *k == key.key_id)
 						.map(|((_, n), _, _)| n.to_string())
 						.collect::<Vec<_>>(),
-					permissions: key_state
-						.authorized_buckets
-						.get(&bucket.id)
-						.map(|p| ApiBucketKeyPerm {
-							read: p.allow_read,
-							write: p.allow_write,
-							owner: p.allow_owner,
-						})
-						.unwrap_or_default(),
-				}
+					permissions,
+				})
 			})
 			.collect::<Vec<_>>(),
 	};
 
-	Ok(json_ok_response(&res)?)
+	Ok(res)
 }
 
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-struct GetKeyInfoResult {
-	name: String,
-	access_key_id: String,
-	#[serde(skip_serializing_if = "is_default")]
-	secret_access_key: Option<String>,
-	permissions: KeyPerm,
-	buckets: Vec<KeyInfoBucketResult>,
-}
+fn apply_key_updates(key: &mut Key, updates: UpdateKeyRequestBody) -> Result<(), Error> {
+	if updates.never_expires && updates.expiration.is_some() {
+		return Err(Error::bad_request(
+			"cannot specify `expiration` and `never_expires`",
+		));
+	}
 
-#[derive(Serialize, Deserialize)]
-#[serde(rename_all = "camelCase")]
-struct KeyPerm {
-	#[serde(default)]
-	create_bucket: bool,
-}
+	let key_state = key.state.as_option_mut().unwrap();
 
-#[derive(Serialize)]
-#[serde(rename_all = "camelCase")]
-struct KeyInfoBucketResult {
-	id: String,
-	global_aliases: Vec<String>,
-	local_aliases: Vec<String>,
-	permissions: ApiBucketKeyPerm,
-}
+	if let Some(new_name) = updates.name {
+		key_state.name.update(new_name);
+	}
+	if let Some(expiration) = updates.expiration {
+		key_state
+			.expiration
+			.update(Some(expiration.timestamp_millis() as u64));
+	}
+	if updates.never_expires {
+		key_state.expiration.update(None);
+	}
+	if let Some(allow) = updates.allow {
+		if allow.create_bucket {
+			key_state.allow_create_bucket.update(true);
+		}
+	}
+	if let Some(deny) = updates.deny {
+		if deny.create_bucket {
+			key_state.allow_create_bucket.update(false);
+		}
+	}
 
-#[derive(Serialize, Deserialize, Default)]
-#[serde(rename_all = "camelCase")]
-pub(crate) struct ApiBucketKeyPerm {
-	#[serde(default)]
-	pub(crate) read: bool,
-	#[serde(default)]
-	pub(crate) write: bool,
-	#[serde(default)]
-	pub(crate) owner: bool,
+	Ok(())
 }

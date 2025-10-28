@@ -3,7 +3,7 @@
 with import ./nix/common.nix;
 
 let
-  pkgs = import pkgsSrc {
+  pkgs = import nixpkgs {
     inherit system;
   };
   winscp = (import ./nix/winscp.nix) pkgs;
@@ -11,6 +11,7 @@ in
 {
   # --- Dev shell inherited from flake.nix ---
   devShell = devShells.default;
+  devShellFull = devShells.full;
 
   # --- Continuous integration shell ---
   # The shell used for all CI jobs (along with devShell)
@@ -25,6 +26,8 @@ in
       s3cmd
       minio-client
       rclone
+      (python312.withPackages (ps: [ ps.boto3 ]))
+
       socat
       psmisc
       which
@@ -34,11 +37,12 @@ in
     ];
     shellHook = ''
       function to_s3 {
+        AWS_REQUEST_CHECKSUM_CALCULATION=WHEN_REQUIRED AWS_RESPONSE_CHECKSUM_VALIDATION=WHEN_REQUIRED \
         aws \
             --endpoint-url https://garage.deuxfleurs.fr \
             --region garage \
           s3 cp \
-            ./result-bin/bin/garage \
+            ./result/bin/garage \
             s3://garagehq.deuxfleurs.fr/_releases/''${CI_COMMIT_TAG:-$CI_COMMIT_SHA}/''${TARGET}/garage
       }
 
@@ -90,6 +94,7 @@ in
 
         nix-build nix/build_index.nix
 
+        AWS_REQUEST_CHECKSUM_CALCULATION=WHEN_REQUIRED AWS_RESPONSE_CHECKSUM_VALIDATION=WHEN_REQUIRED \
         aws \
             --endpoint-url https://garage.deuxfleurs.fr \
             --region garage \
@@ -97,6 +102,7 @@ in
             result/share/_releases.json \
             s3://garagehq.deuxfleurs.fr/
 
+        AWS_REQUEST_CHECKSUM_CALCULATION=WHEN_REQUIRED AWS_RESPONSE_CHECKSUM_VALIDATION=WHEN_REQUIRED \
         aws \
             --endpoint-url https://garage.deuxfleurs.fr \
             --region garage \
@@ -114,7 +120,7 @@ in
     shellHook = ''
       function refresh_cache {
         pass show deuxfleurs/nix_priv_key > /tmp/nix-signing-key.sec
-        for attr in clippy.amd64 test.amd64 pkgs.{amd64,i386,arm,arm64}.release; do
+        for attr in pkgs.amd64.debug test.amd64 pkgs.{amd64,i386,arm,arm64}.release; do
           echo "Updating cache for ''${attr}"
           nix copy -j8 \
             --to 's3://nix?endpoint=garage.deuxfleurs.fr&region=garage&secret-key=/tmp/nix-signing-key.sec' \

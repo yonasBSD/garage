@@ -6,15 +6,14 @@ use garage_util::background::*;
 use garage_util::config::*;
 use garage_util::error::Error;
 
-use garage_api::admin::api_server::AdminApiServer;
-use garage_api::s3::api_server::S3ApiServer;
+use garage_api_admin::api_server::AdminApiServer;
+use garage_api_s3::api_server::S3ApiServer;
 use garage_model::garage::Garage;
 use garage_web::WebServer;
 
 #[cfg(feature = "k2v")]
-use garage_api::k2v::api_server::K2VApiServer;
+use garage_api_k2v::api_server::K2VApiServer;
 
-use crate::admin::*;
 use crate::secrets::{fill_secrets, Secrets};
 #[cfg(feature = "telemetry-otlp")]
 use crate::tracing_setup::*;
@@ -51,7 +50,7 @@ pub async fn run_server(config_file: PathBuf, secrets: Secrets) -> Result<(), Er
 	let (background, await_background_done) = BackgroundRunner::new(watch_cancel.clone());
 
 	info!("Spawning Garage workers...");
-	garage.spawn_workers(&background);
+	garage.spawn_workers(&background)?;
 
 	if config.admin.trace_sink.is_some() {
 		info!("Initialize tracing...");
@@ -66,15 +65,13 @@ pub async fn run_server(config_file: PathBuf, secrets: Secrets) -> Result<(), Er
 	info!("Initialize Admin API server and metrics collector...");
 	let admin_server = AdminApiServer::new(
 		garage.clone(),
+		background.clone(),
 		#[cfg(feature = "metrics")]
 		metrics_exporter,
 	);
 
 	info!("Launching internal Garage cluster communications...");
 	let run_system = tokio::spawn(garage.system.clone().run(watch_cancel.clone()));
-
-	info!("Create admin RPC handler...");
-	AdminRpcHandler::new(garage.clone(), background.clone());
 
 	// ---- Launch public-facing API servers ----
 
@@ -113,7 +110,7 @@ pub async fn run_server(config_file: PathBuf, secrets: Secrets) -> Result<(), Er
 
 	if let Some(web_config) = &config.s3_web {
 		info!("Initializing web server...");
-		let web_server = WebServer::new(garage.clone(), web_config.root_domain.clone());
+		let web_server = WebServer::new(garage.clone(), &web_config);
 		servers.push((
 			"Web",
 			tokio::spawn(web_server.run(web_config.bind_addr.clone(), watch_cancel.clone())),
@@ -183,10 +180,21 @@ fn watch_shutdown_signal() -> watch::Receiver<bool> {
 		let mut sigterm =
 			signal(SignalKind::terminate()).expect("Failed to install SIGTERM handler");
 		let mut sighup = signal(SignalKind::hangup()).expect("Failed to install SIGHUP handler");
-		tokio::select! {
-			_ = sigint.recv() => info!("Received SIGINT, shutting down."),
-			_ = sigterm.recv() => info!("Received SIGTERM, shutting down."),
-			_ = sighup.recv() => info!("Received SIGHUP, shutting down."),
+		loop {
+			tokio::select! {
+					_ = sigint.recv() => {
+						info!("Received SIGINT, shutting down.");
+						break
+					}
+					_ = sigterm.recv() => {
+						info!("Received SIGTERM, shutting down.");
+						break
+					}
+					_ = sighup.recv() => {
+						info!("Received SIGHUP, reload not supported.");
+						continue
+					}
+			}
 		}
 		send_cancel.send(true).unwrap();
 	});

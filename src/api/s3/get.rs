@@ -1,33 +1,40 @@
 //! Function related to GET and HEAD requests
+use std::collections::BTreeMap;
 use std::convert::TryInto;
 use std::sync::Arc;
-use std::time::{Duration, UNIX_EPOCH};
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
+use bytes::Bytes;
 use futures::future;
-use futures::stream::{self, StreamExt};
+use futures::stream::{self, Stream, StreamExt};
 use http::header::{
-	ACCEPT_RANGES, CACHE_CONTROL, CONTENT_DISPOSITION, CONTENT_ENCODING, CONTENT_LANGUAGE,
-	CONTENT_LENGTH, CONTENT_RANGE, CONTENT_TYPE, ETAG, EXPIRES, IF_MODIFIED_SINCE, IF_NONE_MATCH,
-	LAST_MODIFIED, RANGE,
+	HeaderMap, HeaderName, ACCEPT_RANGES, CACHE_CONTROL, CONTENT_DISPOSITION, CONTENT_ENCODING,
+	CONTENT_LANGUAGE, CONTENT_LENGTH, CONTENT_RANGE, CONTENT_TYPE, ETAG, EXPIRES, IF_MATCH,
+	IF_MODIFIED_SINCE, IF_NONE_MATCH, IF_UNMODIFIED_SINCE, LAST_MODIFIED, RANGE,
 };
-use hyper::{body::Body, Request, Response, StatusCode};
+use hyper::{Request, Response, StatusCode};
 use tokio::sync::mpsc;
 
 use garage_net::stream::ByteStream;
 use garage_rpc::rpc_helper::OrderTag;
 use garage_table::EmptyKey;
 use garage_util::data::*;
-use garage_util::error::OkOrMessage;
+use garage_util::error::{Error as UtilError, OkOrMessage};
 
 use garage_model::garage::Garage;
 use garage_model::s3::object_table::*;
 use garage_model::s3::version_table::*;
 
-use crate::helpers::*;
-use crate::s3::api_server::ResBody;
-use crate::s3::error::*;
+use garage_api_common::common_error::CommonError;
+use garage_api_common::helpers::*;
+use garage_api_common::signature::checksum::{add_checksum_response_headers, X_AMZ_CHECKSUM_MODE};
 
-const X_AMZ_MP_PARTS_COUNT: &str = "x-amz-mp-parts-count";
+use crate::api_server::ResBody;
+use crate::copy::*;
+use crate::encryption::{EncryptionParams, OekDerivationInfo};
+use crate::error::*;
+
+const X_AMZ_MP_PARTS_COUNT: HeaderName = HeaderName::from_static("x-amz-mp-parts-count");
 
 #[derive(Default)]
 pub struct GetObjectOverrides {
@@ -42,6 +49,9 @@ pub struct GetObjectOverrides {
 fn object_headers(
 	version: &ObjectVersion,
 	version_meta: &ObjectVersionMeta,
+	meta_inner: &ObjectVersionMetaInner,
+	encryption: EncryptionParams,
+	checksum_mode: ChecksumMode,
 ) -> http::response::Builder {
 	debug!("Version meta: {:?}", version_meta);
 
@@ -49,7 +59,6 @@ fn object_headers(
 	let date_str = httpdate::fmt_http_date(date);
 
 	let mut resp = Response::builder()
-		.header(CONTENT_TYPE, version_meta.headers.content_type.to_string())
 		.header(LAST_MODIFIED, date_str)
 		.header(ACCEPT_RANGES, "bytes".to_string());
 
@@ -57,9 +66,27 @@ fn object_headers(
 		resp = resp.header(ETAG, format!("\"{}\"", version_meta.etag));
 	}
 
-	for (k, v) in version_meta.headers.other.iter() {
-		resp = resp.header(k, v.to_string());
+	// When metadata is retrieved through the REST API, Amazon S3 combines headers that
+	// have the same name (ignoring case) into a comma-delimited list.
+	// See: https://docs.aws.amazon.com/AmazonS3/latest/userguide/UsingMetadata.html
+	let mut headers_by_name = BTreeMap::new();
+	for (name, value) in meta_inner.headers.iter() {
+		let name_lower = name.to_ascii_lowercase();
+		headers_by_name
+			.entry(name_lower)
+			.or_insert(vec![])
+			.push(value.as_str());
 	}
+
+	for (name, values) in headers_by_name {
+		resp = resp.header(name, values.join(","));
+	}
+
+	if checksum_mode.enabled {
+		resp = add_checksum_response_headers(&meta_inner.checksum, resp);
+	}
+
+	encryption.add_response_headers(&mut resp);
 
 	resp
 }
@@ -90,49 +117,39 @@ fn getobject_override_headers(
 	Ok(())
 }
 
-fn try_answer_cached(
+fn handle_http_precondition(
 	version: &ObjectVersion,
 	version_meta: &ObjectVersionMeta,
-	req: &Request<impl Body>,
-) -> Option<Response<ResBody>> {
-	// <trinity> It is possible, and is even usually the case, [that both If-None-Match and
-	// If-Modified-Since] are present in a request. In this situation If-None-Match takes
-	// precedence and If-Modified-Since is ignored (as per 6.Precedence from rfc7232). The rational
-	// being that etag based matching is more accurate, it has no issue with sub-second precision
-	// for instance (in case of very fast updates)
-	let cached = if let Some(none_match) = req.headers().get(IF_NONE_MATCH) {
-		let none_match = none_match.to_str().ok()?;
-		let expected = format!("\"{}\"", version_meta.etag);
-		let found = none_match
-			.split(',')
-			.map(str::trim)
-			.any(|etag| etag == expected || etag == "\"*\"");
-		found
-	} else if let Some(modified_since) = req.headers().get(IF_MODIFIED_SINCE) {
-		let modified_since = modified_since.to_str().ok()?;
-		let client_date = httpdate::parse_http_date(modified_since).ok()?;
-		let server_date = UNIX_EPOCH + Duration::from_millis(version.timestamp);
-		client_date >= server_date
-	} else {
-		false
-	};
+	req: &Request<()>,
+) -> Result<Option<Response<ResBody>>, Error> {
+	let precondition_headers = PreconditionHeaders::parse(req)?;
 
-	if cached {
-		Some(
+	if let Some(status_code) = precondition_headers.check(&version, &version_meta.etag)? {
+		Ok(Some(
 			Response::builder()
-				.status(StatusCode::NOT_MODIFIED)
+				.status(status_code)
 				.body(empty_body())
 				.unwrap(),
-		)
+		))
 	} else {
-		None
+		Ok(None)
 	}
 }
 
 /// Handle HEAD request
 pub async fn handle_head(
+	ctx: ReqCtx,
+	req: &Request<()>,
+	key: &str,
+	part_number: Option<u64>,
+) -> Result<Response<ResBody>, Error> {
+	handle_head_without_ctx(ctx.garage, req, ctx.bucket_id, key, part_number).await
+}
+
+/// Handle HEAD request for website
+pub async fn handle_head_without_ctx(
 	garage: Arc<Garage>,
-	req: &Request<impl Body>,
+	req: &Request<()>,
 	bucket_id: Uuid,
 	key: &str,
 	part_number: Option<u64>,
@@ -161,25 +178,41 @@ pub async fn handle_head(
 		_ => unreachable!(),
 	};
 
-	if let Some(cached) = try_answer_cached(object_version, version_meta, req) {
-		return Ok(cached);
+	if let Some(res) = handle_http_precondition(object_version, version_meta, req)? {
+		return Ok(res);
 	}
+
+	let (encryption, headers) = EncryptionParams::check_decrypt(
+		&garage,
+		req.headers(),
+		&version_meta.encryption,
+		OekDerivationInfo::for_object(&object, object_version),
+	)?;
+
+	let checksum_mode = checksum_mode(&req);
 
 	if let Some(pn) = part_number {
 		match version_data {
-			ObjectVersionData::Inline(_, bytes) => {
+			ObjectVersionData::Inline(_, _) => {
 				if pn != 1 {
 					return Err(Error::InvalidPart);
 				}
-				Ok(object_headers(object_version, version_meta)
-					.header(CONTENT_LENGTH, format!("{}", bytes.len()))
-					.header(
-						CONTENT_RANGE,
-						format!("bytes 0-{}/{}", bytes.len() - 1, bytes.len()),
-					)
-					.header(X_AMZ_MP_PARTS_COUNT, "1")
-					.status(StatusCode::PARTIAL_CONTENT)
-					.body(empty_body())?)
+				let bytes_len = version_meta.size;
+				Ok(object_headers(
+					object_version,
+					version_meta,
+					&headers,
+					encryption,
+					checksum_mode,
+				)
+				.header(CONTENT_LENGTH, format!("{}", bytes_len))
+				.header(
+					CONTENT_RANGE,
+					format!("bytes 0-{}/{}", bytes_len - 1, bytes_len),
+				)
+				.header(X_AMZ_MP_PARTS_COUNT, "1")
+				.status(StatusCode::PARTIAL_CONTENT)
+				.body(empty_body())?)
 			}
 			ObjectVersionData::FirstBlock(_, _) => {
 				let version = garage
@@ -187,39 +220,63 @@ pub async fn handle_head(
 					.get(&object_version.uuid, &EmptyKey)
 					.await?
 					.ok_or(Error::NoSuchKey)?;
+				check_version_not_deleted(&version)?;
 
 				let (part_offset, part_end) =
 					calculate_part_bounds(&version, pn).ok_or(Error::InvalidPart)?;
 
-				Ok(object_headers(object_version, version_meta)
-					.header(CONTENT_LENGTH, format!("{}", part_end - part_offset))
-					.header(
-						CONTENT_RANGE,
-						format!(
-							"bytes {}-{}/{}",
-							part_offset,
-							part_end - 1,
-							version_meta.size
-						),
-					)
-					.header(X_AMZ_MP_PARTS_COUNT, format!("{}", version.n_parts()?))
-					.status(StatusCode::PARTIAL_CONTENT)
-					.body(empty_body())?)
+				Ok(object_headers(
+					object_version,
+					version_meta,
+					&headers,
+					encryption,
+					checksum_mode,
+				)
+				.header(CONTENT_LENGTH, format!("{}", part_end - part_offset))
+				.header(
+					CONTENT_RANGE,
+					format!(
+						"bytes {}-{}/{}",
+						part_offset,
+						part_end - 1,
+						version_meta.size
+					),
+				)
+				.header(X_AMZ_MP_PARTS_COUNT, format!("{}", version.n_parts()?))
+				.status(StatusCode::PARTIAL_CONTENT)
+				.body(empty_body())?)
 			}
 			_ => unreachable!(),
 		}
 	} else {
-		Ok(object_headers(object_version, version_meta)
-			.header(CONTENT_LENGTH, format!("{}", version_meta.size))
-			.status(StatusCode::OK)
-			.body(empty_body())?)
+		Ok(object_headers(
+			object_version,
+			version_meta,
+			&headers,
+			encryption,
+			checksum_mode,
+		)
+		.header(CONTENT_LENGTH, format!("{}", version_meta.size))
+		.status(StatusCode::OK)
+		.body(empty_body())?)
 	}
 }
 
 /// Handle GET request
 pub async fn handle_get(
+	ctx: ReqCtx,
+	req: &Request<()>,
+	key: &str,
+	part_number: Option<u64>,
+	overrides: GetObjectOverrides,
+) -> Result<Response<ResBody>, Error> {
+	handle_get_without_ctx(ctx.garage, req, ctx.bucket_id, key, part_number, overrides).await
+}
+
+/// Handle GET request
+pub async fn handle_get_without_ctx(
 	garage: Arc<Garage>,
-	req: &Request<impl Body>,
+	req: &Request<()>,
 	bucket_id: Uuid,
 	key: &str,
 	part_number: Option<u64>,
@@ -248,28 +305,89 @@ pub async fn handle_get(
 		ObjectVersionData::FirstBlock(meta, _) => meta,
 	};
 
-	if let Some(cached) = try_answer_cached(last_v, last_v_meta, req) {
-		return Ok(cached);
+	if let Some(res) = handle_http_precondition(last_v, last_v_meta, req)? {
+		return Ok(res);
 	}
+
+	let (enc, headers) = EncryptionParams::check_decrypt(
+		&garage,
+		req.headers(),
+		&last_v_meta.encryption,
+		OekDerivationInfo::for_object(&object, last_v),
+	)?;
+
+	let checksum_mode = checksum_mode(&req);
 
 	match (part_number, parse_range_header(req, last_v_meta.size)?) {
 		(Some(_), Some(_)) => Err(Error::bad_request(
 			"Cannot specify both partNumber and Range header",
 		)),
-		(Some(pn), None) => handle_get_part(garage, last_v, last_v_data, last_v_meta, pn).await,
+		(Some(pn), None) => {
+			handle_get_part(
+				garage,
+				last_v,
+				last_v_data,
+				last_v_meta,
+				enc,
+				&headers,
+				pn,
+				ChecksumMode {
+					// TODO: for multipart uploads, checksums of each part should be stored
+					// so that we can return the corresponding checksum here
+					// https://docs.aws.amazon.com/AmazonS3/latest/userguide/checking-object-integrity.html
+					enabled: false,
+				},
+			)
+			.await
+		}
 		(None, Some(range)) => {
 			handle_get_range(
 				garage,
 				last_v,
 				last_v_data,
 				last_v_meta,
+				enc,
+				&headers,
 				range.start,
 				range.start + range.length,
+				ChecksumMode {
+					// TODO: for range queries that align with part boundaries,
+					// we should return the saved checksum of the part
+					// https://docs.aws.amazon.com/AmazonS3/latest/userguide/checking-object-integrity.html
+					enabled: false,
+				},
 			)
 			.await
 		}
-		(None, None) => handle_get_full(garage, last_v, last_v_data, last_v_meta, overrides).await,
+		(None, None) => {
+			handle_get_full(
+				garage,
+				last_v,
+				last_v_data,
+				last_v_meta,
+				enc,
+				&headers,
+				overrides,
+				checksum_mode,
+			)
+			.await
+		}
 	}
+}
+
+pub(crate) fn check_version_not_deleted(version: &Version) -> Result<(), Error> {
+	if version.deleted.get() {
+		// the version was deleted between when the object_table was consulted
+		// and now, this could mean the object was deleted, or overriden.
+		// Rather than say the key doesn't exist, return a transient error
+		// to signal the client to try again.
+		return Err(CommonError::InternalError(UtilError::Message(
+			"conflict/inconsistency between object and version state, version is deleted"
+				.to_string(),
+		))
+		.into());
+	}
+	Ok(())
 }
 
 async fn handle_get_full(
@@ -277,17 +395,43 @@ async fn handle_get_full(
 	version: &ObjectVersion,
 	version_data: &ObjectVersionData,
 	version_meta: &ObjectVersionMeta,
+	encryption: EncryptionParams,
+	meta_inner: &ObjectVersionMetaInner,
 	overrides: GetObjectOverrides,
+	checksum_mode: ChecksumMode,
 ) -> Result<Response<ResBody>, Error> {
-	let mut resp_builder = object_headers(version, version_meta)
-		.header(CONTENT_LENGTH, format!("{}", version_meta.size))
-		.status(StatusCode::OK);
+	let mut resp_builder = object_headers(
+		version,
+		version_meta,
+		&meta_inner,
+		encryption,
+		checksum_mode,
+	)
+	.header(CONTENT_LENGTH, format!("{}", version_meta.size))
+	.status(StatusCode::OK);
 	getobject_override_headers(overrides, &mut resp_builder)?;
 
+	let stream = full_object_byte_stream(garage, version, version_data, encryption);
+
+	Ok(resp_builder.body(response_body_from_stream(stream))?)
+}
+
+pub fn full_object_byte_stream(
+	garage: Arc<Garage>,
+	version: &ObjectVersion,
+	version_data: &ObjectVersionData,
+	encryption: EncryptionParams,
+) -> ByteStream {
 	match &version_data {
 		ObjectVersionData::DeleteMarker => unreachable!(),
 		ObjectVersionData::Inline(_, bytes) => {
-			Ok(resp_builder.body(bytes_body(bytes.to_vec().into()))?)
+			let bytes = bytes.to_vec();
+			Box::pin(futures::stream::once(async move {
+				encryption
+					.decrypt_blob(&bytes)
+					.map(|x| Bytes::from(x.to_vec()))
+					.map_err(std_error_from_read_error)
+			}))
 		}
 		ObjectVersionData::FirstBlock(_, first_block_hash) => {
 			let (tx, rx) = mpsc::channel::<ByteStream>(2);
@@ -303,19 +447,19 @@ async fn handle_get_full(
 						garage2.version_table.get(&version_uuid, &EmptyKey).await
 					});
 
-					let stream_block_0 = garage
-						.block_manager
-						.rpc_get_block_streaming(&first_block_hash, Some(order_stream.order(0)))
+					let stream_block_0 = encryption
+						.get_block(&garage, &first_block_hash, Some(order_stream.order(0)))
 						.await?;
+
 					tx.send(stream_block_0)
 						.await
 						.ok_or_message("channel closed")?;
 
 					let version = version_fut.await.unwrap()?.ok_or(Error::NoSuchKey)?;
+					check_version_not_deleted(&version)?;
 					for (i, (_, vb)) in version.blocks.items().iter().enumerate().skip(1) {
-						let stream_block_i = garage
-							.block_manager
-							.rpc_get_block_streaming(&vb.hash, Some(order_stream.order(i as u64)))
+						let stream_block_i = encryption
+							.get_block(&garage, &vb.hash, Some(order_stream.order(i as u64)))
 							.await?;
 						tx.send(stream_block_i)
 							.await
@@ -328,13 +472,20 @@ async fn handle_get_full(
 				{
 					Ok(()) => (),
 					Err(e) => {
+						// TODO i think this is a bad idea, we should log
+						// an error and stop there. If the error happens to
+						// be exactly the size of what hasn't been streamed
+						// yet, the client will see the request as a
+						// success
+						// instead truncating the output notify the client
+						// something happened with their download, so that
+						// they can retry it
 						let _ = tx.send(error_stream_item(e)).await;
 					}
 				}
 			});
 
-			let body = response_body_from_block_stream(rx);
-			Ok(resp_builder.body(body)?)
+			Box::pin(tokio_stream::wrappers::ReceiverStream::new(rx).flatten())
 		}
 	}
 }
@@ -344,13 +495,16 @@ async fn handle_get_range(
 	version: &ObjectVersion,
 	version_data: &ObjectVersionData,
 	version_meta: &ObjectVersionMeta,
+	encryption: EncryptionParams,
+	meta_inner: &ObjectVersionMetaInner,
 	begin: u64,
 	end: u64,
+	checksum_mode: ChecksumMode,
 ) -> Result<Response<ResBody>, Error> {
 	// Here we do not use getobject_override_headers because we don't
 	// want to add any overridden headers (those should not be added
 	// when returning PARTIAL_CONTENT)
-	let resp_builder = object_headers(version, version_meta)
+	let resp_builder = object_headers(version, version_meta, meta_inner, encryption, checksum_mode)
 		.header(CONTENT_LENGTH, format!("{}", end - begin))
 		.header(
 			CONTENT_RANGE,
@@ -361,6 +515,7 @@ async fn handle_get_range(
 	match &version_data {
 		ObjectVersionData::DeleteMarker => unreachable!(),
 		ObjectVersionData::Inline(_meta, bytes) => {
+			let bytes = encryption.decrypt_blob(&bytes)?;
 			if end as usize <= bytes.len() {
 				let body = bytes_body(bytes[begin as usize..end as usize].to_vec().into());
 				Ok(resp_builder.body(body)?)
@@ -376,8 +531,9 @@ async fn handle_get_range(
 				.get(&version.uuid, &EmptyKey)
 				.await?
 				.ok_or(Error::NoSuchKey)?;
-
-			let body = body_from_blocks_range(garage, version.blocks.items(), begin, end);
+			check_version_not_deleted(&version)?;
+			let body =
+				body_from_blocks_range(garage, encryption, version.blocks.items(), begin, end);
 			Ok(resp_builder.body(body)?)
 		}
 	}
@@ -388,17 +544,28 @@ async fn handle_get_part(
 	object_version: &ObjectVersion,
 	version_data: &ObjectVersionData,
 	version_meta: &ObjectVersionMeta,
+	encryption: EncryptionParams,
+	meta_inner: &ObjectVersionMetaInner,
 	part_number: u64,
+	checksum_mode: ChecksumMode,
 ) -> Result<Response<ResBody>, Error> {
 	// Same as for get_range, no getobject_override_headers
-	let resp_builder =
-		object_headers(object_version, version_meta).status(StatusCode::PARTIAL_CONTENT);
+	let resp_builder = object_headers(
+		object_version,
+		version_meta,
+		meta_inner,
+		encryption,
+		checksum_mode,
+	)
+	.status(StatusCode::PARTIAL_CONTENT);
 
 	match version_data {
 		ObjectVersionData::Inline(_, bytes) => {
 			if part_number != 1 {
 				return Err(Error::InvalidPart);
 			}
+			let bytes = encryption.decrypt_blob(&bytes)?;
+			assert_eq!(bytes.len() as u64, version_meta.size);
 			Ok(resp_builder
 				.header(CONTENT_LENGTH, format!("{}", bytes.len()))
 				.header(
@@ -406,7 +573,7 @@ async fn handle_get_part(
 					format!("bytes {}-{}/{}", 0, bytes.len() - 1, bytes.len()),
 				)
 				.header(X_AMZ_MP_PARTS_COUNT, "1")
-				.body(bytes_body(bytes.to_vec().into()))?)
+				.body(bytes_body(bytes.into_owned().into()))?)
 		}
 		ObjectVersionData::FirstBlock(_, _) => {
 			let version = garage
@@ -415,10 +582,13 @@ async fn handle_get_part(
 				.await?
 				.ok_or(Error::NoSuchKey)?;
 
+			check_version_not_deleted(&version)?;
+
 			let (begin, end) =
 				calculate_part_bounds(&version, part_number).ok_or(Error::InvalidPart)?;
 
-			let body = body_from_blocks_range(garage, version.blocks.items(), begin, end);
+			let body =
+				body_from_blocks_range(garage, encryption, version.blocks.items(), begin, end);
 
 			Ok(resp_builder
 				.header(CONTENT_LENGTH, format!("{}", end - begin))
@@ -434,7 +604,7 @@ async fn handle_get_part(
 }
 
 fn parse_range_header(
-	req: &Request<impl Body>,
+	req: &Request<()>,
 	total_size: u64,
 ) -> Result<Option<http_range::HttpRange>, Error> {
 	let range = match req.headers().get(RANGE) {
@@ -471,8 +641,23 @@ fn calculate_part_bounds(v: &Version, part_number: u64) -> Option<(u64, u64)> {
 	None
 }
 
+struct ChecksumMode {
+	enabled: bool,
+}
+
+fn checksum_mode(req: &Request<()>) -> ChecksumMode {
+	ChecksumMode {
+		enabled: req
+			.headers()
+			.get(X_AMZ_CHECKSUM_MODE)
+			.map(|x| x == "ENABLED")
+			.unwrap_or(false),
+	}
+}
+
 fn body_from_blocks_range(
 	garage: Arc<Garage>,
+	encryption: EncryptionParams,
 	all_blocks: &[(VersionBlockKey, VersionBlock)],
 	begin: u64,
 	end: u64,
@@ -502,12 +687,11 @@ fn body_from_blocks_range(
 
 	tokio::spawn(async move {
 		match async {
-			let garage = garage.clone();
 			for (i, (block, block_offset)) in blocks.iter().enumerate() {
-				let block_stream = garage
-					.block_manager
-					.rpc_get_block_streaming(&block.hash, Some(order_stream.order(i as u64)))
-					.await?
+				let block_stream = encryption
+					.get_block(&garage, &block.hash, Some(order_stream.order(i as u64)))
+					.await?;
+				let block_stream = block_stream
 					.scan(*block_offset, move |chunk_offset, chunk| {
 						let r = match chunk {
 							Ok(chunk_bytes) => {
@@ -567,19 +751,143 @@ fn body_from_blocks_range(
 }
 
 fn response_body_from_block_stream(rx: mpsc::Receiver<ByteStream>) -> ResBody {
-	let body_stream = tokio_stream::wrappers::ReceiverStream::new(rx)
-		.flatten()
-		.map(|x| {
-			x.map(hyper::body::Frame::data)
-				.map_err(|e| Error::from(garage_util::error::Error::from(e)))
-		});
+	let body_stream = tokio_stream::wrappers::ReceiverStream::new(rx).flatten();
+	response_body_from_stream(body_stream)
+}
+
+fn response_body_from_stream<S>(stream: S) -> ResBody
+where
+	S: Stream<Item = Result<Bytes, std::io::Error>> + Send + Sync + 'static,
+{
+	let body_stream = stream.map(|x| {
+		x.map(hyper::body::Frame::data)
+			.map_err(|e| Error::from(garage_util::error::Error::from(e)))
+	});
 	ResBody::new(http_body_util::StreamBody::new(body_stream))
 }
 
 fn error_stream_item<E: std::fmt::Display>(e: E) -> ByteStream {
-	let err = std::io::Error::new(
+	Box::pin(stream::once(future::ready(Err(std_error_from_read_error(
+		e,
+	)))))
+}
+
+fn std_error_from_read_error<E: std::fmt::Display>(e: E) -> std::io::Error {
+	std::io::Error::new(
 		std::io::ErrorKind::Other,
-		format!("Error while getting object data: {}", e),
-	);
-	Box::pin(stream::once(future::ready(Err(err))))
+		format!("Error while reading object data: {}", e),
+	)
+}
+
+// ----
+
+pub struct PreconditionHeaders {
+	if_match: Option<Vec<String>>,
+	if_modified_since: Option<SystemTime>,
+	if_none_match: Option<Vec<String>>,
+	if_unmodified_since: Option<SystemTime>,
+}
+
+impl PreconditionHeaders {
+	fn parse<B>(req: &Request<B>) -> Result<Self, Error> {
+		Self::parse_with(
+			req.headers(),
+			&IF_MATCH,
+			&IF_NONE_MATCH,
+			&IF_MODIFIED_SINCE,
+			&IF_UNMODIFIED_SINCE,
+		)
+	}
+
+	pub(crate) fn parse_copy_source<B>(req: &Request<B>) -> Result<Self, Error> {
+		Self::parse_with(
+			req.headers(),
+			&X_AMZ_COPY_SOURCE_IF_MATCH,
+			&X_AMZ_COPY_SOURCE_IF_NONE_MATCH,
+			&X_AMZ_COPY_SOURCE_IF_MODIFIED_SINCE,
+			&X_AMZ_COPY_SOURCE_IF_UNMODIFIED_SINCE,
+		)
+	}
+
+	fn parse_with(
+		headers: &HeaderMap,
+		hdr_if_match: &HeaderName,
+		hdr_if_none_match: &HeaderName,
+		hdr_if_modified_since: &HeaderName,
+		hdr_if_unmodified_since: &HeaderName,
+	) -> Result<Self, Error> {
+		Ok(Self {
+			if_match: headers
+				.get(hdr_if_match)
+				.map(|x| x.to_str())
+				.transpose()?
+				.map(|x| {
+					x.split(',')
+						.map(|m| m.trim().trim_matches('"').to_string())
+						.collect::<Vec<_>>()
+				}),
+			if_none_match: headers
+				.get(hdr_if_none_match)
+				.map(|x| x.to_str())
+				.transpose()?
+				.map(|x| {
+					x.split(',')
+						.map(|m| m.trim().trim_matches('"').to_string())
+						.collect::<Vec<_>>()
+				}),
+			if_modified_since: headers
+				.get(hdr_if_modified_since)
+				.map(|x| x.to_str())
+				.transpose()?
+				.map(httpdate::parse_http_date)
+				.transpose()
+				.ok_or_bad_request("Invalid date in if-modified-since")?,
+			if_unmodified_since: headers
+				.get(hdr_if_unmodified_since)
+				.map(|x| x.to_str())
+				.transpose()?
+				.map(httpdate::parse_http_date)
+				.transpose()
+				.ok_or_bad_request("Invalid date in if-unmodified-since")?,
+		})
+	}
+
+	fn check(&self, v: &ObjectVersion, etag: &str) -> Result<Option<StatusCode>, Error> {
+		let v_date = UNIX_EPOCH + Duration::from_millis(v.timestamp);
+
+		// Implemented from https://datatracker.ietf.org/doc/html/rfc7232#section-6
+
+		if let Some(im) = &self.if_match {
+			// Step 1: if-match is present
+			if !im.iter().any(|x| x == etag || x == "*") {
+				return Ok(Some(StatusCode::PRECONDITION_FAILED));
+			}
+		} else if let Some(ius) = &self.if_unmodified_since {
+			// Step 2: if-unmodified-since is present, and if-match is absent
+			if v_date > *ius {
+				return Ok(Some(StatusCode::PRECONDITION_FAILED));
+			}
+		}
+
+		if let Some(inm) = &self.if_none_match {
+			// Step 3: if-none-match is present
+			if inm.iter().any(|x| x == etag || x == "*") {
+				return Ok(Some(StatusCode::NOT_MODIFIED));
+			}
+		} else if let Some(ims) = &self.if_modified_since {
+			// Step 4: if-modified-since is present, and if-none-match is absent
+			if v_date <= *ims {
+				return Ok(Some(StatusCode::NOT_MODIFIED));
+			}
+		}
+
+		Ok(None)
+	}
+
+	pub(crate) fn check_copy_source(&self, v: &ObjectVersion, etag: &str) -> Result<(), Error> {
+		match self.check(v, etag)? {
+			Some(_) => Err(Error::PreconditionFailed),
+			None => Ok(()),
+		}
+	}
 }

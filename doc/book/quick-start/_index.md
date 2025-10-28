@@ -42,6 +42,13 @@ If a binary of the last version is not available for your architecture,
 or if you want a build customized for your system,
 you can [build Garage from source](@/documentation/cookbook/from-source.md).
 
+If none of these option work for you, you can also run Garage in a Docker
+container.  When using Docker, the commands used in this guide will not work
+anymore.  We recommend reading the tutorial on [configuring a
+multi-node cluster](@/documentation/cookbook/real-world.md) to learn about
+using Garage as a Docker container. For simplicity, a minimal command to launch
+Garage using Docker is provided in this quick start guide as well.
+
 
 ## Configuring and starting Garage
 
@@ -57,9 +64,9 @@ to generate unique and private secrets for security reasons:
 cat > garage.toml <<EOF
 metadata_dir = "/tmp/meta"
 data_dir = "/tmp/data"
-db_engine = "lmdb"
+db_engine = "sqlite"
 
-replication_mode = "none"
+replication_factor = 1
 
 rpc_bind_addr = "[::]:3901"
 rpc_public_addr = "127.0.0.1:3901"
@@ -79,10 +86,14 @@ index = "index.html"
 api_bind_addr = "[::]:3904"
 
 [admin]
-api_bind_addr = "0.0.0.0:3903"
+api_bind_addr = "[::]:3903"
 admin_token = "$(openssl rand -base64 32)"
+metrics_token = "$(openssl rand -base64 32)"
 EOF
 ```
+
+See the [Configuration file format](https://garagehq.deuxfleurs.fr/documentation/reference-manual/configuration/)
+for complete options and values.
 
 Now that your configuration file has been created, you may save it to the directory of your choice.
 By default, Garage looks for **`/etc/garage.toml`.**
@@ -110,6 +121,26 @@ garage -c path/to/garage.toml server
 
 If you have placed the `garage.toml` file in `/etc` (its default location), you can simply run `garage server`.
 
+Alternatively, if you cannot or do not wish to run the Garage binary directly,
+you may use Docker to run Garage in a container using the following command:
+
+```bash
+docker run \
+  -d \
+  --name garaged \
+  -p 3900:3900 -p 3901:3901 -p 3902:3902 -p 3903:3903 \
+  -v /path/to/garage.toml:/etc/garage.toml \
+  -v /path/to/garage/meta:/var/lib/garage/meta \
+  -v /path/to/garage/data:/var/lib/garage/data \
+  dxflrs/garage:v2.1.0
+```
+
+Under Linux, you can substitute `--network host` for `-p 3900:3900 -p 3901:3901 -p 3902:3902 -p 3903:3903`
+
+#### Troubleshooting
+
+Ensure your configuration file, `metadata_dir` and `data_dir`  are readable by the user running the `garage` server or Docker.
+
 You can tune Garage's verbosity by setting the `RUST_LOG=` environment variable. \
 Available log levels are (from less verbose to more verbose): `error`, `warn`, `info` *(default)*, `debug` and `trace`.
 
@@ -130,6 +161,9 @@ It uses values from the TOML configuration file to find the Garage daemon runnin
 local node, therefore if your configuration file is not at `/etc/garage.toml` you will
 again have to specify `-c path/to/garage.toml` at each invocation.
 
+If you are running Garage in a Docker container, you can set `alias garage="docker exec -ti <container name> /garage"`
+to use the Garage binary inside your container.
+
 If the `garage` CLI is able to correctly detect the parameters of your local Garage node,
 the following command should be enough to show the status of your cluster:
 
@@ -148,11 +182,12 @@ ID                 Hostname  Address         Tag                   Zone  Capacit
 ## Creating a cluster layout
 
 Creating a cluster layout for a Garage deployment means informing Garage
-of the disk space available on each node of the cluster
-as well as the zone (e.g. datacenter) each machine is located in.
+of the disk space available on each node of the cluster, `-c`,
+as well as the name of the zone (e.g. datacenter), `-z`, each machine is located in.
 
-For our test deployment, we are using only one node. The way in which we configure
-it does not matter, you can simply write:
+For our test deployment, we are have only one node with zone named `dc1` and a
+capacity of `1G`, though the capacity is ignored for a single node deployment
+and can be changed later when adding new nodes.
 
 ```bash
 garage layout assign -z dc1 -c 1G <node_id>
@@ -165,7 +200,7 @@ For instance here you could write just `garage layout assign -z dc1 -c 1G 563e`.
 The layout then has to be applied to the cluster, using:
 
 ```bash
-garage layout apply
+garage layout apply --version 1
 ```
 
 
@@ -315,7 +350,7 @@ Check [our s3 compatibility list](@/documentation/reference-manual/s3-compatibil
 
 ### Other tools for interacting with Garage
 
-The following tools can also be used to send and recieve files from/to Garage:
+The following tools can also be used to send and receive files from/to Garage:
 
 - [minio-client](@/documentation/connect/cli.md#minio-client) 
 - [s3cmd](@/documentation/connect/cli.md#s3cmd) 

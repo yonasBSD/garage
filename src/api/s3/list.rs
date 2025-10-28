@@ -1,26 +1,26 @@
 use std::collections::{BTreeMap, BTreeSet};
 use std::iter::{Iterator, Peekable};
-use std::sync::Arc;
 
 use base64::prelude::*;
-use hyper::Response;
+use hyper::{Request, Response};
 
 use garage_util::data::*;
 use garage_util::error::Error as GarageError;
 use garage_util::time::*;
 
-use garage_model::garage::Garage;
 use garage_model::s3::mpu_table::*;
 use garage_model::s3::object_table::*;
 
 use garage_table::EnumerationOrder;
 
-use crate::encoding::*;
-use crate::helpers::*;
-use crate::s3::api_server::ResBody;
-use crate::s3::error::*;
-use crate::s3::multipart as s3_multipart;
-use crate::s3::xml as s3_xml;
+use garage_api_common::encoding::*;
+use garage_api_common::helpers::*;
+
+use crate::api_server::{ReqBody, ResBody};
+use crate::encryption::{EncryptionParams, OekDerivationInfo};
+use crate::error::*;
+use crate::multipart as s3_multipart;
+use crate::xml as s3_xml;
 
 const DUMMY_NAME: &str = "Dummy Key";
 const DUMMY_KEY: &str = "GKDummyKey";
@@ -54,7 +54,6 @@ pub struct ListMultipartUploadsQuery {
 #[derive(Debug)]
 pub struct ListPartsQuery {
 	pub bucket_name: String,
-	pub bucket_id: Uuid,
 	pub key: String,
 	pub upload_id: String,
 	pub part_number_marker: Option<u64>,
@@ -62,9 +61,10 @@ pub struct ListPartsQuery {
 }
 
 pub async fn handle_list(
-	garage: Arc<Garage>,
+	ctx: ReqCtx,
 	query: &ListObjectsQuery,
 ) -> Result<Response<ResBody>, Error> {
+	let ReqCtx { garage, .. } = &ctx;
 	let io = |bucket, key, count| {
 		let t = &garage.object_table;
 		async move {
@@ -167,9 +167,11 @@ pub async fn handle_list(
 }
 
 pub async fn handle_list_multipart_upload(
-	garage: Arc<Garage>,
+	ctx: ReqCtx,
 	query: &ListMultipartUploadsQuery,
 ) -> Result<Response<ResBody>, Error> {
+	let ReqCtx { garage, .. } = &ctx;
+
 	let io = |bucket, key, count| {
 		let t = &garage.object_table;
 		async move {
@@ -269,15 +271,30 @@ pub async fn handle_list_multipart_upload(
 }
 
 pub async fn handle_list_parts(
-	garage: Arc<Garage>,
+	ctx: ReqCtx,
+	req: Request<ReqBody>,
 	query: &ListPartsQuery,
 ) -> Result<Response<ResBody>, Error> {
 	debug!("ListParts {:?}", query);
 
 	let upload_id = s3_multipart::decode_upload_id(&query.upload_id)?;
 
-	let (_, _, mpu) =
-		s3_multipart::get_upload(&garage, &query.bucket_id, &query.key, &upload_id).await?;
+	let (_, object_version, mpu) = s3_multipart::get_upload(&ctx, &query.key, &upload_id).await?;
+
+	let object_encryption = match object_version.state {
+		ObjectVersionState::Uploading { encryption, .. } => encryption,
+		_ => unreachable!(),
+	};
+	let encryption_res = EncryptionParams::check_decrypt(
+		&ctx.garage,
+		req.headers(),
+		&object_encryption,
+		OekDerivationInfo {
+			bucket_id: ctx.bucket_id,
+			version_id: upload_id,
+			object_key: &query.key,
+		},
+	);
 
 	let (info, next) = fetch_part_info(query, &mpu)?;
 
@@ -296,11 +313,46 @@ pub async fn handle_list_parts(
 		is_truncated: s3_xml::Value(format!("{}", next.is_some())),
 		parts: info
 			.iter()
-			.map(|part| s3_xml::PartItem {
-				etag: s3_xml::Value(format!("\"{}\"", part.etag)),
-				last_modified: s3_xml::Value(msec_to_rfc3339(part.timestamp)),
-				part_number: s3_xml::IntValue(part.part_number as i64),
-				size: s3_xml::IntValue(part.size as i64),
+			.map(|part| {
+				// hide checksum if object is encrypted and the decryption
+				// keys are not provided
+				let checksum = part.checksum.filter(|_| encryption_res.is_ok());
+				s3_xml::PartItem {
+					etag: s3_xml::Value(format!("\"{}\"", part.etag)),
+					last_modified: s3_xml::Value(msec_to_rfc3339(part.timestamp)),
+					part_number: s3_xml::IntValue(part.part_number as i64),
+					size: s3_xml::IntValue(part.size as i64),
+					checksum_crc32: match &checksum {
+						Some(ChecksumValue::Crc32(x)) => {
+							Some(s3_xml::Value(BASE64_STANDARD.encode(&x)))
+						}
+						_ => None,
+					},
+					checksum_crc32c: match &checksum {
+						Some(ChecksumValue::Crc32c(x)) => {
+							Some(s3_xml::Value(BASE64_STANDARD.encode(&x)))
+						}
+						_ => None,
+					},
+					checksum_crc64nvme: match &checksum {
+						Some(ChecksumValue::Crc64Nvme(x)) => {
+							Some(s3_xml::Value(BASE64_STANDARD.encode(&x)))
+						}
+						_ => None,
+					},
+					checksum_sha1: match &checksum {
+						Some(ChecksumValue::Sha1(x)) => {
+							Some(s3_xml::Value(BASE64_STANDARD.encode(&x)))
+						}
+						_ => None,
+					},
+					checksum_sha256: match &checksum {
+						Some(ChecksumValue::Sha256(x)) => {
+							Some(s3_xml::Value(BASE64_STANDARD.encode(&x)))
+						}
+						_ => None,
+					},
+				}
 			})
 			.collect(),
 
@@ -346,6 +398,7 @@ struct PartInfo<'a> {
 	timestamp: u64,
 	part_number: u64,
 	size: u64,
+	checksum: Option<ChecksumValue>,
 }
 
 enum ExtractionResult {
@@ -359,7 +412,7 @@ enum ExtractionResult {
 		key: String,
 	},
 	// Fallback key is used for legacy APIs that only support
-	// exlusive pagination (and not inclusive one).
+	// exclusive pagination (and not inclusive one).
 	SkipTo {
 		key: String,
 		fallback_key: Option<String>,
@@ -369,7 +422,7 @@ enum ExtractionResult {
 #[derive(PartialEq, Clone, Debug)]
 enum RangeBegin {
 	// Fallback key is used for legacy APIs that only support
-	// exlusive pagination (and not inclusive one).
+	// exclusive pagination (and not inclusive one).
 	IncludingKey {
 		key: String,
 		fallback_key: Option<String>,
@@ -486,6 +539,7 @@ fn fetch_part_info<'a>(
 				timestamp: pk.timestamp,
 				etag,
 				size,
+				checksum: p.checksum,
 			};
 			match parts.last_mut() {
 				Some(lastpart) if lastpart.part_number == pk.part_number => {
@@ -944,10 +998,14 @@ mod tests {
 			timestamp: TS,
 			state: ObjectVersionState::Uploading {
 				multipart: true,
-				headers: ObjectVersionHeaders {
-					content_type: "text/plain".to_string(),
-					other: BTreeMap::<String, String>::new(),
+				encryption: ObjectVersionEncryption::Plaintext {
+					inner: ObjectVersionMetaInner {
+						headers: vec![],
+						checksum: None,
+						checksum_type: None,
+					},
 				},
+				checksum_algorithm: None,
 			},
 		}
 	}
@@ -1136,6 +1194,7 @@ mod tests {
 					version: uuid,
 					size: Some(3),
 					etag: Some("etag1".into()),
+					checksum: None,
 				},
 			),
 			(
@@ -1147,6 +1206,7 @@ mod tests {
 					version: uuid,
 					size: None,
 					etag: None,
+					checksum: None,
 				},
 			),
 			(
@@ -1158,6 +1218,7 @@ mod tests {
 					version: uuid,
 					size: Some(10),
 					etag: Some("etag2".into()),
+					checksum: None,
 				},
 			),
 			(
@@ -1169,6 +1230,7 @@ mod tests {
 					version: uuid,
 					size: Some(7),
 					etag: Some("etag3".into()),
+					checksum: None,
 				},
 			),
 			(
@@ -1180,6 +1242,7 @@ mod tests {
 					version: uuid,
 					size: Some(5),
 					etag: Some("etag4".into()),
+					checksum: None,
 				},
 			),
 		];
@@ -1196,10 +1259,8 @@ mod tests {
 
 	#[test]
 	fn test_fetch_part_info() -> Result<(), Error> {
-		let uuid = Uuid::from([0x08; 32]);
 		let mut query = ListPartsQuery {
 			bucket_name: "a".to_string(),
-			bucket_id: uuid,
 			key: "a".to_string(),
 			upload_id: "xx".to_string(),
 			part_number_marker: None,
@@ -1218,12 +1279,14 @@ mod tests {
 					etag: "etag1",
 					timestamp: TS,
 					part_number: 1,
-					size: 3
+					size: 3,
+					checksum: None,
 				},
 				PartInfo {
 					etag: "etag2",
 					timestamp: TS,
 					part_number: 3,
+					checksum: None,
 					size: 10
 				},
 			]
@@ -1239,12 +1302,14 @@ mod tests {
 				PartInfo {
 					etag: "etag3",
 					timestamp: TS,
+					checksum: None,
 					part_number: 5,
 					size: 7
 				},
 				PartInfo {
 					etag: "etag4",
 					timestamp: TS,
+					checksum: None,
 					part_number: 8,
 					size: 5
 				},
@@ -1268,24 +1333,28 @@ mod tests {
 				PartInfo {
 					etag: "etag1",
 					timestamp: TS,
+					checksum: None,
 					part_number: 1,
 					size: 3
 				},
 				PartInfo {
 					etag: "etag2",
 					timestamp: TS,
+					checksum: None,
 					part_number: 3,
 					size: 10
 				},
 				PartInfo {
 					etag: "etag3",
 					timestamp: TS,
+					checksum: None,
 					part_number: 5,
 					size: 7
 				},
 				PartInfo {
 					etag: "etag4",
 					timestamp: TS,
+					checksum: None,
 					part_number: 8,
 					size: 5
 				},

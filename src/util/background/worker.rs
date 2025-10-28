@@ -6,7 +6,6 @@ use async_trait::async_trait;
 use futures::future::*;
 use futures::stream::FuturesUnordered;
 use futures::StreamExt;
-use serde::{Deserialize, Serialize};
 use tokio::select;
 use tokio::sync::{mpsc, watch};
 
@@ -14,27 +13,16 @@ use crate::background::{WorkerInfo, WorkerStatus};
 use crate::error::Error;
 use crate::time::now_msec;
 
-// All workers that haven't exited for this time after an exit signal was recieved
+// All workers that haven't exited for this time after an exit signal was received
 // will be interrupted in the middle of whatever they are doing.
 const EXIT_DEADLINE: Duration = Duration::from_secs(8);
 
-#[derive(PartialEq, Copy, Clone, Serialize, Deserialize, Debug)]
+#[derive(PartialEq, Copy, Clone, Debug)]
 pub enum WorkerState {
 	Busy,
 	Throttled(f32),
 	Idle,
 	Done,
-}
-
-impl std::fmt::Display for WorkerState {
-	fn fmt(&self, f: &mut std::fmt::Formatter<'_>) -> std::fmt::Result {
-		match self {
-			WorkerState::Busy => write!(f, "Busy"),
-			WorkerState::Throttled(_) => write!(f, "Busy*"),
-			WorkerState::Idle => write!(f, "Idle"),
-			WorkerState::Done => write!(f, "Done"),
-		}
-	}
 }
 
 #[async_trait]
@@ -54,7 +42,7 @@ pub trait Worker: Send {
 	async fn work(&mut self, must_exit: &mut watch::Receiver<bool>) -> Result<WorkerState, Error>;
 
 	/// Wait for work: await for some task to become available.  This future can be interrupted in
-	/// the middle for any reason, for example if an interrupt signal was recieved.
+	/// the middle for any reason, for example if an interrupt signal was received.
 	async fn wait_for_work(&mut self) -> WorkerState;
 }
 

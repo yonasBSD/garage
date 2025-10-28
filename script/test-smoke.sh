@@ -81,10 +81,21 @@ if [ -z "$SKIP_AWS" ]; then
     echo "Invalid multipart upload"
     exit 1
   fi
-fi
+  aws s3api delete-object --bucket eprouvette --key upload
 
-echo "OK!!"
-exit 0
+  echo "🛠️ Test SSE-C with awscli (aws s3)"
+  SSEC_KEY="u8zCfnEyt5Imo/krN+sxA1DQXxLWtPJavU6T6gOVj1Y="
+  SSEC_KEY_MD5="jMGbs3GyZkYjJUP6q5jA7g=="
+  echo "$SSEC_KEY" |  base64 -d  > /tmp/garage.ssec-key
+  for idx in {1,2}.rnd; do
+    aws s3 cp --sse-c AES256 --sse-c-key fileb:///tmp/garage.ssec-key \
+      "/tmp/garage.$idx" "s3://eprouvette/garage.$idx.aws.sse-c"
+    aws s3 cp --sse-c AES256 --sse-c-key fileb:///tmp/garage.ssec-key \
+      "s3://eprouvette/garage.$idx.aws.sse-c" "/tmp/garage.$idx.dl.sse-c"
+    diff "/tmp/garage.$idx" "/tmp/garage.$idx.dl.sse-c"
+    aws s3api delete-object --bucket eprouvette --key "garage.$idx.aws.sse-c"
+  done
+fi
 
 # S3CMD
 if [ -z "$SKIP_S3CMD" ]; then
@@ -99,6 +110,23 @@ if [ -z "$SKIP_S3CMD" ]; then
     rm /tmp/garage.$idx.dl
     s3cmd rm "s3://eprouvette/&+-é\"/garage.$idx.s3cmd"
   done
+fi
+
+# BOTO3
+if [ -z "$SKIP_BOTO3" ]; then
+  echo "🛠️ Testing with boto3 for STREAMING-UNSIGNED-PAYLOAD-TRAILER"
+  source ${SCRIPT_FOLDER}/dev-env-aws.sh
+  AWS_ENDPOINT_URL=https://localhost:4443 python <<EOF
+import boto3
+client = boto3.client('s3', verify=False)
+print("Put&delete hello world object")
+client.put_object(Body=b'hello world', Bucket='eprouvette', Key='test.s3.txt')
+client.delete_object(Bucket='eprouvette', Key='test.s3.txt')
+print("Put&delete big object")
+client.upload_file("/tmp/garage.3.rnd", 'eprouvette', 'garage.3.rnd')
+client.delete_object(Bucket='eprouvette', Key='garage.3.rnd')
+print("OK!")
+EOF
 fi
 
 # Minio Client

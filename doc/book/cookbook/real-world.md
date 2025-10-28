@@ -27,7 +27,7 @@ To run a real-world deployment, make sure the following conditions are met:
   [Yggdrasil](https://yggdrasil-network.github.io/) are approaches to consider
   in addition to building out your own VPN tunneling.
 
-- This guide will assume you are using Docker containers to deploy Garage on each node. 
+- This guide will assume you are using Docker containers to deploy Garage on each node.
   Garage can also be run independently, for instance as a [Systemd service](@/documentation/cookbook/systemd.md).
   You can also use an orchestrator such as Nomad or Kubernetes to automatically manage
   Docker containers on a fleet of nodes.
@@ -53,9 +53,9 @@ to store 2 TB of data in total.
 
 ### Best practices
 
-- If you have fast dedicated networking between all your nodes, and are planing to store
-  very large files, bump the `block_size` configuration parameter to 10 MB
-  (`block_size = 10485760`).
+- If you have reasonably fast networking between all your nodes, and are planing to store
+  mostly large files, bump the `block_size` configuration parameter to 10 MB
+  (`block_size = "10M"`).
 
 - Garage stores its files in two locations: it uses a metadata directory to store frequently-accessed
   small metadata items, and a data directory to store data blocks of uploaded objects.
@@ -68,31 +68,42 @@ to store 2 TB of data in total.
   EXT4 is not recommended as it has more strict limitations on the number of inodes,
   which might cause issues with Garage when large numbers of objects are stored.
 
-- If you only have an HDD and no SSD, it's fine to put your metadata alongside the data
-  on the same drive. Having lots of RAM for your kernel to cache the metadata will
-  help a lot with performance.  Make sure to use the LMDB database engine,
-  instead of Sled, which suffers from quite bad performance degradation on HDDs.
-  Sled is still the default for legacy reasons, but is not recommended anymore.
-
-- For the metadata storage, Garage does not do checksumming and integrity
-  verification on its own. If you are afraid of bitrot/data corruption,
-  put your metadata directory on a ZFS or BTRFS partition. Otherwise, just use regular
-  EXT4 or XFS.
-
 - Servers with multiple HDDs are supported natively by Garage without resorting
   to RAID, see [our dedicated documentation page](@/documentation/operations/multi-hdd.md).
+
+- For the metadata storage, Garage does not do checksumming and integrity
+  verification on its own, so it is better to use a robust filesystem such as
+  BTRFS or ZFS. Users have reported that when using the LMDB database engine
+  (the default), database files have a tendency of becoming corrupted after an
+  unclean shutdown (e.g. a power outage), so you should take regular snapshots
+  to be able to recover from such a situation.  This can be done using Garage's
+  built-in automatic snapshotting (since v0.9.4), or by using filesystem level
+  snapshots. If you cannot do so, you might want to switch to Sqlite which is
+  more robust.
+
+- LMDB is the fastest and most tested database engine, but it has the following
+  weaknesses: 1/ data files are not architecture-independent, you cannot simply
+  move a Garage metadata directory between nodes running different architectures,
+  and 2/ LMDB is not suited for 32-bit platforms. Sqlite is a viable alternative
+  if any of these are of concern.
+
+- If you only have an HDD and no SSD, it's fine to put your metadata alongside
+  the data on the same drive, but then consider your filesystem choice wisely
+  (see above). Having lots of RAM for your kernel to cache the metadata will
+  help a lot with performance.  The default LMDB database engine is the most
+  tested and has good performance.
 
 ## Get a Docker image
 
 Our docker image is currently named `dxflrs/garage` and is stored on the [Docker Hub](https://hub.docker.com/r/dxflrs/garage/tags?page=1&ordering=last_updated).
-We encourage you to use a fixed tag (eg. `v0.9.1`) and not the `latest` tag.
-For this example, we will use the latest published version at the time of the writing which is `v0.9.1` but it's up to you
+We encourage you to use a fixed tag (eg. `v2.1.0`) and not the `latest` tag.
+For this example, we will use the latest published version at the time of the writing which is `v2.1.0` but it's up to you
 to check [the most recent versions on the Docker Hub](https://hub.docker.com/r/dxflrs/garage/tags?page=1&ordering=last_updated).
 
 For example:
 
 ```
-sudo docker pull dxflrs/garage:v0.9.1
+sudo docker pull dxflrs/garage:v2.1.0
 ```
 
 ## Deploying and configuring Garage
@@ -115,8 +126,9 @@ A valid `/etc/garage.toml` for our cluster would look as follows:
 metadata_dir = "/var/lib/garage/meta"
 data_dir = "/var/lib/garage/data"
 db_engine = "lmdb"
+metadata_auto_snapshot_interval = "6h"
 
-replication_mode = "3"
+replication_factor = 3
 
 compression_level = 2
 
@@ -140,6 +152,8 @@ Check the following for your configuration files:
 - Make sure `rpc_public_addr` contains the public IP address of the node you are configuring.
   This parameter is optional but recommended: if your nodes have trouble communicating with
   one another, consider adding it.
+  Alternatively, you can also set `rpc_public_addr_subnet`, which can filter
+  the addresses announced to other peers to a specific subnet.
 
 - Make sure `rpc_secret` is the same value on all nodes. It should be a 32-bytes hex-encoded secret key.
   You can generate such a key with `openssl rand -hex 32`.
@@ -157,7 +171,7 @@ docker run \
   -v /etc/garage.toml:/etc/garage.toml \
   -v /var/lib/garage/meta:/var/lib/garage/meta \
   -v /var/lib/garage/data:/var/lib/garage/data \
-  dxflrs/garage:v0.9.1
+  dxflrs/garage:v2.1.0
 ```
 
 With this command line, Garage should be started automatically at each boot.
@@ -171,7 +185,7 @@ If you want to use `docker-compose`, you may use the following `docker-compose.y
 version: "3"
 services:
   garage:
-    image: dxflrs/garage:v0.9.1
+    image: dxflrs/garage:v2.1.0
     network_mode: "host"
     restart: unless-stopped
     volumes:
@@ -187,7 +201,7 @@ upgrades.  With the containerized setup proposed here, the upgrade process
 will require stopping and removing the existing container, and re-creating it
 with the upgraded version.
 
-## Controling the daemon
+## Controlling the daemon
 
 The `garage` binary has two purposes:
   - it acts as a daemon when launched with `garage server`
@@ -245,7 +259,7 @@ You can then instruct nodes to connect to one another as follows:
 Venus$ garage node connect 563e1ac825ee3323aa441e72c26d1030d6d4414aeb3dd25287c531e7fc2bc95d@[fc00:1::1]:3901
 ```
 
-You don't nead to instruct all node to connect to all other nodes:
+You don't need to instruct all node to connect to all other nodes:
 nodes will discover one another transitively.
 
 Now if your run `garage status` on any node, you should have an output that looks as follows:
@@ -328,8 +342,8 @@ Given the information above, we will configure our cluster as follow:
 ```bash
 garage layout assign 563e -z par1 -c 1T -t mercury
 garage layout assign 86f0 -z par1 -c 2T -t venus
-garage layout assign 6814 -z lon1 -c 2T -t earth 
-garage layout assign 212f -z bru1 -c 1.5T -t mars 
+garage layout assign 6814 -z lon1 -c 2T -t earth
+garage layout assign 212f -z bru1 -c 1.5T -t mars
 ```
 
 At this point, the changes in the cluster layout have not yet been applied.

@@ -1,7 +1,7 @@
 use crate::*;
 
 fn test_suite(db: Db) {
-	let tree = db.open_tree("tree").unwrap();
+	let tree = db.open_tree("tree:this_is_a_tree").unwrap();
 
 	let ka: &[u8] = &b"test"[..];
 	let kb: &[u8] = &b"zwello"[..];
@@ -10,13 +10,18 @@ fn test_suite(db: Db) {
 	let vb: &[u8] = &b"plip"[..];
 	let vc: &[u8] = &b"plup"[..];
 
-	assert!(tree.insert(ka, va).unwrap().is_none());
+	// ---- test simple insert/delete ----
+
+	assert!(tree.insert(ka, va).is_ok());
 	assert_eq!(tree.get(ka).unwrap().unwrap(), va);
+	assert_eq!(tree.iter().unwrap().count(), 1);
+
+	// ---- test transaction logic ----
 
 	let res = db.transaction::<_, (), _>(|tx| {
 		assert_eq!(tx.get(&tree, ka).unwrap().unwrap(), va);
 
-		assert_eq!(tx.insert(&tree, ka, vb).unwrap().unwrap(), va);
+		assert_eq!(tx.insert(&tree, ka, vb).unwrap(), ());
 
 		assert_eq!(tx.get(&tree, ka).unwrap().unwrap(), vb);
 
@@ -28,7 +33,7 @@ fn test_suite(db: Db) {
 	let res = db.transaction::<(), _, _>(|tx| {
 		assert_eq!(tx.get(&tree, ka).unwrap().unwrap(), vb);
 
-		assert_eq!(tx.insert(&tree, ka, vc).unwrap().unwrap(), vb);
+		assert_eq!(tx.insert(&tree, ka, vc).unwrap(), ());
 
 		assert_eq!(tx.get(&tree, ka).unwrap().unwrap(), vc);
 
@@ -37,13 +42,15 @@ fn test_suite(db: Db) {
 	assert!(matches!(res, Err(TxError::Abort(42))));
 	assert_eq!(tree.get(ka).unwrap().unwrap(), vb);
 
+	// ---- test iteration outside of transactions ----
+
 	let mut iter = tree.iter().unwrap();
 	let next = iter.next().unwrap().unwrap();
 	assert_eq!((next.0.as_ref(), next.1.as_ref()), (ka, vb));
 	assert!(iter.next().is_none());
 	drop(iter);
 
-	assert!(tree.insert(kb, vc).unwrap().is_none());
+	assert!(tree.insert(kb, vc).is_ok());
 	assert_eq!(tree.get(kb).unwrap().unwrap(), vc);
 
 	let mut iter = tree.iter().unwrap();
@@ -73,6 +80,48 @@ fn test_suite(db: Db) {
 	assert_eq!((next.0.as_ref(), next.1.as_ref()), (ka, vb));
 	assert!(iter.next().is_none());
 	drop(iter);
+
+	// ---- test iteration within transactions ----
+
+	db.transaction::<_, (), _>(|tx| {
+		let mut iter = tx.iter(&tree).unwrap();
+		let next = iter.next().unwrap().unwrap();
+		assert_eq!((next.0.as_ref(), next.1.as_ref()), (ka, vb));
+		let next = iter.next().unwrap().unwrap();
+		assert_eq!((next.0.as_ref(), next.1.as_ref()), (kb, vc));
+		assert!(iter.next().is_none());
+		Ok(())
+	})
+	.unwrap();
+
+	db.transaction::<_, (), _>(|tx| {
+		let mut iter = tx.range(&tree, kint..).unwrap();
+		let next = iter.next().unwrap().unwrap();
+		assert_eq!((next.0.as_ref(), next.1.as_ref()), (kb, vc));
+		assert!(iter.next().is_none());
+		Ok(())
+	})
+	.unwrap();
+
+	db.transaction::<_, (), _>(|tx| {
+		let mut iter = tx.range_rev(&tree, ..kint).unwrap();
+		let next = iter.next().unwrap().unwrap();
+		assert_eq!((next.0.as_ref(), next.1.as_ref()), (ka, vb));
+		assert!(iter.next().is_none());
+		Ok(())
+	})
+	.unwrap();
+
+	db.transaction::<_, (), _>(|tx| {
+		let mut iter = tx.iter_rev(&tree).unwrap();
+		let next = iter.next().unwrap().unwrap();
+		assert_eq!((next.0.as_ref(), next.1.as_ref()), (kb, vc));
+		let next = iter.next().unwrap().unwrap();
+		assert_eq!((next.0.as_ref(), next.1.as_ref()), (ka, vb));
+		assert!(iter.next().is_none());
+		Ok(())
+	})
+	.unwrap();
 }
 
 #[test]
@@ -91,21 +140,23 @@ fn test_lmdb_db() {
 }
 
 #[test]
-#[cfg(feature = "sled")]
-fn test_sled_db() {
-	use crate::sled_adapter::SledDb;
-
-	let path = mktemp::Temp::new_dir().unwrap();
-	let db = SledDb::init(sled::open(path.to_path_buf()).unwrap());
-	test_suite(db);
-	drop(path);
-}
-
-#[test]
 #[cfg(feature = "sqlite")]
 fn test_sqlite_db() {
 	use crate::sqlite_adapter::SqliteDb;
 
-	let db = SqliteDb::init(rusqlite::Connection::open_in_memory().unwrap());
+	let manager = r2d2_sqlite::SqliteConnectionManager::memory();
+	let db = SqliteDb::new(manager, false).unwrap();
+	test_suite(db);
+}
+
+#[test]
+#[cfg(feature = "fjall")]
+fn test_fjall_db() {
+	use crate::fjall_adapter::{fjall, FjallDb};
+
+	let path = mktemp::Temp::new_dir().unwrap();
+	let config = fjall::Config::new(path).temporary(true);
+	let keyspace = config.open_transactional().unwrap();
+	let db = FjallDb::init(keyspace);
 	test_suite(db);
 }

@@ -11,7 +11,7 @@ PATH="${GARAGE_DEBUG}:${GARAGE_RELEASE}:${NIX_RELEASE}:$PATH"
 FANCYCOLORS=("41m" "42m" "44m" "45m" "100m" "104m")
 
 export RUST_BACKTRACE=1 
-export RUST_LOG=garage=info,garage_api=debug
+export RUST_LOG=garage=info,garage_api_common=debug,garage_api_s3=debug
 MAIN_LABEL="\e[${FANCYCOLORS[0]}[main]\e[49m"
 
 if [ -z "$GARAGE_BIN" ]; then
@@ -30,6 +30,12 @@ for count in $(seq 1 3); do
 CONF_PATH="/tmp/config.$count.toml"
 LABEL="\e[${FANCYCOLORS[$count]}[$count]\e[49m"
 
+if [ "$GARAGE_OLDVER" == "v08" ]; then
+	REPLICATION_MODE="replication_mode = \"3\""
+else
+	REPLICATION_MODE="replication_factor = 3"
+fi
+
 cat > $CONF_PATH <<EOF
 block_size = 1048576			# objects are split in blocks of maximum this number of bytes
 metadata_dir = "/tmp/garage-meta-$count"
@@ -38,7 +44,7 @@ data_dir = "/tmp/garage-data-$count"
 rpc_bind_addr = "0.0.0.0:$((3900+$count))"		# the port other Garage nodes will use to talk to this node
 rpc_public_addr = "127.0.0.1:$((3900+$count))"
 bootstrap_peers = []
-replication_mode = "3"
+$REPLICATION_MODE
 rpc_secret = "$NETWORK_SECRET"
 
 [s3_api]

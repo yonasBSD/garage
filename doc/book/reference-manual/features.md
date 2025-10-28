@@ -37,6 +37,21 @@ A Garage cluster can very easily evolve over time, as storage nodes are added or
 Garage will automatically rebalance data between nodes as needed to ensure the desired number of copies.
 Read about cluster layout management [here](@/documentation/operations/layout.md).
 
+### Several replication modes
+
+Garage supports a variety of replication modes, with configurable replica count,
+and with various levels of consistency, in order to adapt to a variety of usage scenarios.
+Read our reference page on [supported replication modes](@/documentation/reference-manual/configuration.md#replication_factor)
+to select the replication mode best suited to your use case (hint: in most cases, `replication_factor = 3` is what you want).
+
+### Compression and deduplication
+
+All data stored in Garage is deduplicated, and optionnally compressed using
+Zstd.  Objects uploaded to Garage are chunked in blocks of constant sizes (see
+[`block_size`](@/documentation/reference-manual/configuration.md#block_size)),
+and the hashes of individual blocks are used to dispatch them to storage nodes
+and to deduplicate them.
+
 ### No RAFT slowing you down
 
 It might seem strange to tout the absence of something as a desirable feature,
@@ -46,14 +61,7 @@ directed to a Garage cluster can be handled independently of one another instead
 of going through a central bottleneck (the leader node).
 As a consequence, requests can be handled much faster, even in cases where latency
 between cluster nodes is important (see our [benchmarks](@/documentation/design/benchmarks/index.md) for data on this).
-This is particularly usefull when nodes are far from one another and talk to one other through standard Internet connections.
-
-### Several replication modes
-
-Garage supports a variety of replication modes, with 1 copy, 2 copies or 3 copies of your data,
-and with various levels of consistency, in order to adapt to a variety of usage scenarios.
-Read our reference page on [supported replication modes](@/documentation/reference-manual/configuration.md#replication_mode)
-to select the replication mode best suited to your use case (hint: in most cases, `replication_mode = "3"` is what you want).
+This is particularly useful when nodes are far from one another and talk to one other through standard Internet connections.
 
 ### Web server for static websites
 
@@ -121,5 +129,5 @@ related to objects stored in an S3 bucket.
 In the context of our research project, [Aérogramme](https://aerogramme.deuxfleurs.fr),
 K2V is used to provide metadata and log storage for operations on encrypted e-mail storage.
 
-Learn more on the specification of K2V [here](https://git.deuxfleurs.fr/Deuxfleurs/garage/src/branch/k2v/doc/drafts/k2v-spec.md)
+Learn more on the specification of K2V [here](https://git.deuxfleurs.fr/Deuxfleurs/garage/src/commit/f8be15c37db857e177d543de7be863692628d567/doc/drafts/k2v-spec.md)
 and on how to enable it in Garage [here](@/documentation/reference-manual/k2v.md).

@@ -15,7 +15,6 @@ use opentelemetry::{
 };
 
 use garage_db as db;
-use garage_db::counted_tree_hack::CountedTree;
 
 use garage_util::background::*;
 use garage_util::data::*;
@@ -27,8 +26,6 @@ use garage_util::tranquilizer::Tranquilizer;
 
 use garage_rpc::system::System;
 use garage_rpc::*;
-
-use garage_table::replication::TableReplication;
 
 use crate::manager::*;
 
@@ -47,9 +44,9 @@ pub(crate) const MAX_RESYNC_WORKERS: usize = 8;
 const INITIAL_RESYNC_TRANQUILITY: u32 = 2;
 
 pub struct BlockResyncManager {
-	pub(crate) queue: CountedTree,
+	pub(crate) queue: db::Tree,
 	pub(crate) notify: Arc<Notify>,
-	pub(crate) errors: CountedTree,
+	pub(crate) errors: db::Tree,
 
 	busy_set: BusySet,
 
@@ -90,12 +87,10 @@ impl BlockResyncManager {
 		let queue = db
 			.open_tree("block_local_resync_queue")
 			.expect("Unable to open block_local_resync_queue tree");
-		let queue = CountedTree::new(queue).expect("Could not count block_local_resync_queue");
 
 		let errors = db
 			.open_tree("block_local_resync_errors")
 			.expect("Unable to open block_local_resync_errors tree");
-		let errors = CountedTree::new(errors).expect("Could not count block_local_resync_errors");
 
 		let persister = PersisterShared::new(&system.metadata_dir, "resync_cfg");
 
@@ -108,18 +103,14 @@ impl BlockResyncManager {
 		}
 	}
 
-	/// Get lenght of resync queue
-	pub fn queue_len(&self) -> Result<usize, Error> {
-		// This currently can't return an error because the CountedTree hack
-		// doesn't error on .len(), but this will change when we remove the hack
-		// (hopefully someday!)
-		Ok(self.queue.len())
+	/// Get length of resync queue
+	pub fn queue_approximate_len(&self) -> Result<usize, Error> {
+		Ok(self.queue.approximate_len()?)
 	}
 
 	/// Get number of blocks that have an error
-	pub fn errors_len(&self) -> Result<usize, Error> {
-		// (see queue_len comment)
-		Ok(self.errors.len())
+	pub fn errors_approximate_len(&self) -> Result<usize, Error> {
+		Ok(self.errors.approximate_len()?)
 	}
 
 	/// Clear the error counter for a block and put it in queue immediately
@@ -138,6 +129,14 @@ impl BlockResyncManager {
 			"Block {:?} was not in an errored state",
 			hash
 		)))
+	}
+
+	/// Clear the entire resync queue and list of errored blocks
+	/// Corresponds to `garage repair clear-resync-queue`
+	pub fn clear_resync_queue(&self) -> Result<(), Error> {
+		self.queue.clear()?;
+		self.errors.clear()?;
+		Ok(())
 	}
 
 	pub fn register_bg_vars(&self, vars: &mut vars::BgVars) {
@@ -180,7 +179,7 @@ impl BlockResyncManager {
 	// deleted once the garbage collection delay has passed.
 	//
 	// Here are some explanations on how the resync queue works.
-	// There are two Sled trees that are used to have information
+	// There are two db trees that are used to have information
 	// about the status of blocks that need to be resynchronized:
 	//
 	// - resync.queue: a tree that is ordered first by a timestamp
@@ -192,10 +191,10 @@ impl BlockResyncManager {
 	//
 	// - resync.errors: a tree that indicates for each block
 	//   if the last resync resulted in an error, and if so,
-	//   the following two informations (see the ErrorCounter struct):
+	//   the following two information (see the ErrorCounter struct):
 	//   - how many consecutive resync errors for this block?
 	//   - when was the last try?
-	//   These two informations are used to implement an
+	//   These two information are used to implement an
 	//   exponential backoff retry strategy.
 	//   The key in this tree is the 32-byte hash of the block,
 	//   and the value is the encoded ErrorCounter value.
@@ -374,18 +373,25 @@ impl BlockResyncManager {
 		}
 
 		if exists && rc.is_deletable() {
+			if manager.rc.recalculate_rc(hash)?.0 > 0 {
+				return Err(Error::Message(format!(
+					"Refcount for block {:?} was inconsistent, retrying later",
+					hash
+				)));
+			}
+
 			info!("Resync block {:?}: offloading and deleting", hash);
 			let existing_path = existing_path.unwrap();
 
-			let mut who = manager.replication.write_nodes(hash);
-			if who.len() < manager.replication.write_quorum() {
+			let mut who = manager.storage_nodes_of(hash)?;
+			if who.len() < manager.write_quorum {
 				return Err(Error::Message("Not trying to offload block because we don't have a quorum of nodes to write to".to_string()));
 			}
 			who.retain(|id| *id != manager.system.id);
 
 			let who_needs_resps = manager
 				.system
-				.rpc
+				.rpc_helper()
 				.call_many(
 					&manager.endpoint,
 					&who,
@@ -431,12 +437,12 @@ impl BlockResyncManager {
 				.with_stream_from_buffer(bytes);
 				manager
 					.system
-					.rpc
+					.rpc_helper()
 					.try_call_many(
 						&manager.endpoint,
-						&need_nodes[..],
+						&need_nodes,
 						put_block_message,
-						RequestStrategy::with_priority(PRIO_BACKGROUND)
+						RequestStrategy::with_priority(PRIO_BACKGROUND | PRIO_SECONDARY)
 							.with_quorum(need_nodes.len()),
 					)
 					.await
@@ -455,12 +461,38 @@ impl BlockResyncManager {
 		}
 
 		if rc.is_nonzero() && !exists {
+			// The refcount is > 0, and the block is not present locally.
+			// We might need to fetch it from another node.
+
+			// First, check whether we are still supposed to store that
+			// block in the latest cluster layout version.
+			let storage_nodes = manager.storage_nodes_of(&hash)?;
+
+			if !storage_nodes.contains(&manager.system.id) {
+				info!(
+					"Resync block {:?}: block is absent with refcount > 0, but it will drop to zero after all metadata is synced. Not fetching the block.",
+					hash
+				);
+				return Ok(());
+			}
+
+			// We know we need the block. Fetch it.
 			info!(
 				"Resync block {:?}: fetching absent but needed block (refcount > 0)",
 				hash
 			);
 
-			let block_data = manager.rpc_get_raw_block(hash, None).await?;
+			let block_data = manager
+				.rpc_get_raw_block(hash, PRIO_BACKGROUND | PRIO_SECONDARY, None)
+				.await;
+			if matches!(block_data, Err(Error::MissingBlock(_))) {
+				warn!(
+					"Could not fetch needed block {:?}, no node returned valid data. Checking that refcount is correct.",
+					hash
+				);
+				manager.rc.recalculate_rc(hash)?;
+			}
+			let block_data = block_data?;
 
 			manager.metrics.resync_recv_counter.add(1);
 
@@ -516,9 +548,11 @@ impl Worker for ResyncWorker {
 		}
 
 		WorkerStatus {
-			queue_length: Some(self.manager.resync.queue_len().unwrap_or(0) as u64),
+			queue_length: Some(self.manager.resync.queue_approximate_len().unwrap_or(0) as u64),
 			tranquility: Some(tranquility),
-			persistent_errors: Some(self.manager.resync.errors_len().unwrap_or(0) as u64),
+			persistent_errors: Some(
+				self.manager.resync.errors_approximate_len().unwrap_or(0) as u64
+			),
 			..Default::default()
 		}
 	}
@@ -541,9 +575,9 @@ impl Worker for ResyncWorker {
 				Ok(WorkerState::Idle)
 			}
 			Err(e) => {
-				// The errors that we have here are only Sled errors
+				// The errors that we have here are only db errors
 				// We don't really know how to handle them so just ¯\_(ツ)_/¯
-				// (there is kind of an assumption that Sled won't error on us,
+				// (there is kind of an assumption that the db won't error on us,
 				// if it does there is not much we can do -- TODO should we just panic?)
 				// Here we just give the error to the worker manager,
 				// it will print it to the logs and increment a counter

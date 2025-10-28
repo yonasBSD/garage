@@ -72,6 +72,16 @@ impl K2vClient {
 			.enable_http2()
 			.build();
 		let client = HttpClient::builder(TokioExecutor::new()).build(connector);
+		Self::new_with_client(config, client)
+	}
+
+	/// Create a new K2V client with an external client.
+	/// Useful for example if you plan on creating many clients but you want to mutualize the
+	/// underlying thread pools & co.
+	pub fn new_with_client(
+		config: K2vClientConfig,
+		client: HttpClient<HttpsConnector<HttpConnector>, Body>,
+	) -> Result<Self, Error> {
 		let user_agent: std::borrow::Cow<str> = match &config.user_agent {
 			Some(ua) => ua.into(),
 			None => format!("k2v/{}", env!("CARGO_PKG_VERSION")).into(),
@@ -336,7 +346,7 @@ impl K2vClient {
 			.collect())
 	}
 
-	/// Perform a DeleteBatch request, deleting mutiple values or range of values at once, without
+	/// Perform a DeleteBatch request, deleting multiple values or range of values at once, without
 	/// providing causality information.
 	pub async fn delete_batch(&self, operations: &[BatchDeleteOp<'_>]) -> Result<Vec<u64>, Error> {
 		let url = self.build_url(None, &[("delete", "")]);

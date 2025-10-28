@@ -1,15 +1,14 @@
 #[macro_use]
-#[cfg(feature = "sqlite")]
 extern crate tracing;
 
+#[cfg(feature = "fjall")]
+pub mod fjall_adapter;
 #[cfg(feature = "lmdb")]
 pub mod lmdb_adapter;
-#[cfg(feature = "sled")]
-pub mod sled_adapter;
 #[cfg(feature = "sqlite")]
 pub mod sqlite_adapter;
 
-pub mod counted_tree_hack;
+pub mod open;
 
 #[cfg(test)]
 pub mod test;
@@ -18,9 +17,12 @@ use core::ops::{Bound, RangeBounds};
 
 use std::borrow::Cow;
 use std::cell::Cell;
+use std::path::PathBuf;
 use std::sync::Arc;
 
 use err_derive::Error;
+
+pub use open::*;
 
 pub(crate) type OnCommit = Vec<Box<dyn FnOnce()>>;
 
@@ -45,6 +47,12 @@ pub type TxValueIter<'a> = Box<dyn std::iter::Iterator<Item = TxOpResult<(Value,
 #[error(display = "{}", _0)]
 pub struct Error(pub Cow<'static, str>);
 
+impl From<std::io::Error> for Error {
+	fn from(e: std::io::Error) -> Error {
+		Error(format!("IO: {}", e).into())
+	}
+}
+
 pub type Result<T> = std::result::Result<T, Error>;
 
 #[derive(Debug, Error)]
@@ -52,6 +60,7 @@ pub type Result<T> = std::result::Result<T, Error>;
 pub struct TxOpError(pub(crate) Error);
 pub type TxOpResult<T> = std::result::Result<T, TxOpError>;
 
+#[derive(Debug)]
 pub enum TxError<E> {
 	Abort(E),
 	Db(Error),
@@ -97,33 +106,49 @@ impl Db {
 			result: Cell::new(None),
 		};
 		let tx_res = self.0.transaction(&f);
-		let ret = f
-			.result
-			.into_inner()
-			.expect("Transaction did not store result");
+		let fn_res = f.result.into_inner();
 
-		match tx_res {
-			Ok(on_commit) => match ret {
-				Ok(value) => {
-					on_commit.into_iter().for_each(|f| f());
-					Ok(value)
-				}
-				_ => unreachable!(),
-			},
-			Err(TxError::Abort(())) => match ret {
-				Err(TxError::Abort(e)) => Err(TxError::Abort(e)),
-				_ => unreachable!(),
-			},
-			Err(TxError::Db(e2)) => match ret {
-				// Ok was stored -> the error occured when finalizing
-				// transaction
-				Ok(_) => Err(TxError::Db(e2)),
-				// An error was already stored: that's the one we want to
-				// return
-				Err(TxError::Db(e)) => Err(TxError::Db(e)),
-				_ => unreachable!(),
-			},
+		match (tx_res, fn_res) {
+			(Ok(on_commit), Some(Ok(value))) => {
+				// Transaction succeeded
+				// TxFn stored the value to return to the user in fn_res
+				// tx_res contains the on_commit list of callbacks, run them now
+				on_commit.into_iter().for_each(|f| f());
+				Ok(value)
+			}
+			(Err(TxError::Abort(())), Some(Err(TxError::Abort(e)))) => {
+				// Transaction was aborted by user code
+				// The abort error value is stored in fn_res
+				Err(TxError::Abort(e))
+			}
+			(Err(TxError::Db(_tx_e)), Some(Err(TxError::Db(fn_e)))) => {
+				// Transaction encountered a DB error in user code
+				// The error value encountered is the one in fn_res,
+				// tx_res contains only a dummy error message
+				Err(TxError::Db(fn_e))
+			}
+			(Err(TxError::Db(tx_e)), None) => {
+				// Transaction encounterred a DB error when initializing the transaction,
+				// before user code was called
+				Err(TxError::Db(tx_e))
+			}
+			(Err(TxError::Db(tx_e)), Some(Ok(_))) => {
+				// Transaction encounterred a DB error when commiting the transaction,
+				// after user code was called
+				Err(TxError::Db(tx_e))
+			}
+			(tx_res, fn_res) => {
+				panic!(
+					"unexpected error case: tx_res={:?}, fn_res={:?}",
+					tx_res.map(|_| "..."),
+					fn_res.map(|x| x.map(|_| "...").map_err(|_| "..."))
+				);
+			}
 		}
+	}
+
+	pub fn snapshot(&self, path: &PathBuf) -> Result<()> {
+		self.0.snapshot(path)
 	}
 
 	pub fn import(&self, other: &Db) -> Result<()> {
@@ -141,7 +166,7 @@ impl Db {
 		let tree_names = other.list_trees()?;
 		for name in tree_names {
 			let tree = self.open_tree(&name)?;
-			if tree.len()? > 0 {
+			if !tree.is_empty()? {
 				return Err(Error(format!("tree {} already contains data", name).into()));
 			}
 
@@ -171,48 +196,6 @@ impl Db {
 	}
 }
 
-/// List of supported database engine types
-///
-/// The `enum` holds list of *all* database engines that are are be supported by crate, no matter
-/// if relevant feature is enabled or not. It allows us to distinguish between invalid engine
-/// and valid engine, whose support is not enabled via feature flag.
-#[derive(Clone, Copy, Debug, PartialEq, Eq)]
-pub enum Engine {
-	Lmdb,
-	Sqlite,
-	Sled,
-}
-
-impl Engine {
-	/// Return variant name as static `&str`
-	pub fn as_str(&self) -> &'static str {
-		match self {
-			Self::Lmdb => "lmdb",
-			Self::Sqlite => "sqlite",
-			Self::Sled => "sled",
-		}
-	}
-}
-
-impl std::fmt::Display for Engine {
-	fn fmt(&self, fmt: &mut std::fmt::Formatter) -> std::fmt::Result {
-		self.as_str().fmt(fmt)
-	}
-}
-
-impl std::str::FromStr for Engine {
-	type Err = Error;
-
-	fn from_str(text: &str) -> Result<Engine> {
-		match text {
-			"lmdb" | "heed" => Ok(Self::Lmdb),
-			"sqlite" | "sqlite3" | "rusqlite" => Ok(Self::Sqlite),
-			"sled" => Ok(Self::Sled),
-			kind => Err(Error(format!("Invalid DB engine: {}", kind).into())),
-		}
-	}
-}
-
 #[allow(clippy::len_without_is_empty)]
 impl Tree {
 	#[inline]
@@ -225,12 +208,12 @@ impl Tree {
 		self.0.get(self.1, key.as_ref())
 	}
 	#[inline]
-	pub fn len(&self) -> Result<usize> {
-		self.0.len(self.1)
+	pub fn approximate_len(&self) -> Result<usize> {
+		self.0.approximate_len(self.1)
 	}
 	#[inline]
-	pub fn fast_len(&self) -> Result<Option<usize>> {
-		self.0.fast_len(self.1)
+	pub fn is_empty(&self) -> Result<bool> {
+		self.0.is_empty(self.1)
 	}
 
 	#[inline]
@@ -246,16 +229,12 @@ impl Tree {
 
 	/// Returns the old value if there was one
 	#[inline]
-	pub fn insert<T: AsRef<[u8]>, U: AsRef<[u8]>>(
-		&self,
-		key: T,
-		value: U,
-	) -> Result<Option<Value>> {
+	pub fn insert<T: AsRef<[u8]>, U: AsRef<[u8]>>(&self, key: T, value: U) -> Result<()> {
 		self.0.insert(self.1, key.as_ref(), value.as_ref())
 	}
 	/// Returns the old value if there was one
 	#[inline]
-	pub fn remove<T: AsRef<[u8]>>(&self, key: T) -> Result<Option<Value>> {
+	pub fn remove<T: AsRef<[u8]>>(&self, key: T) -> Result<()> {
 		self.0.remove(self.1, key.as_ref())
 	}
 	/// Clears all values from the tree
@@ -313,13 +292,18 @@ impl<'a> Transaction<'a> {
 		tree: &Tree,
 		key: T,
 		value: U,
-	) -> TxOpResult<Option<Value>> {
+	) -> TxOpResult<()> {
 		self.tx.insert(tree.1, key.as_ref(), value.as_ref())
 	}
 	/// Returns the old value if there was one
 	#[inline]
-	pub fn remove<T: AsRef<[u8]>>(&mut self, tree: &Tree, key: T) -> TxOpResult<Option<Value>> {
+	pub fn remove<T: AsRef<[u8]>>(&mut self, tree: &Tree, key: T) -> TxOpResult<()> {
 		self.tx.remove(tree.1, key.as_ref())
+	}
+	/// Clears all values in a tree
+	#[inline]
+	pub fn clear(&mut self, tree: &Tree) -> TxOpResult<()> {
+		self.tx.clear(tree.1)
 	}
 
 	#[inline]
@@ -364,15 +348,14 @@ pub(crate) trait IDb: Send + Sync {
 	fn engine(&self) -> String;
 	fn open_tree(&self, name: &str) -> Result<usize>;
 	fn list_trees(&self) -> Result<Vec<String>>;
+	fn snapshot(&self, path: &PathBuf) -> Result<()>;
 
 	fn get(&self, tree: usize, key: &[u8]) -> Result<Option<Value>>;
-	fn len(&self, tree: usize) -> Result<usize>;
-	fn fast_len(&self, _tree: usize) -> Result<Option<usize>> {
-		Ok(None)
-	}
+	fn approximate_len(&self, tree: usize) -> Result<usize>;
+	fn is_empty(&self, tree: usize) -> Result<bool>;
 
-	fn insert(&self, tree: usize, key: &[u8], value: &[u8]) -> Result<Option<Value>>;
-	fn remove(&self, tree: usize, key: &[u8]) -> Result<Option<Value>>;
+	fn insert(&self, tree: usize, key: &[u8], value: &[u8]) -> Result<()>;
+	fn remove(&self, tree: usize, key: &[u8]) -> Result<()>;
 	fn clear(&self, tree: usize) -> Result<()>;
 
 	fn iter(&self, tree: usize) -> Result<ValueIter<'_>>;
@@ -398,8 +381,9 @@ pub(crate) trait ITx {
 	fn get(&self, tree: usize, key: &[u8]) -> TxOpResult<Option<Value>>;
 	fn len(&self, tree: usize) -> TxOpResult<usize>;
 
-	fn insert(&mut self, tree: usize, key: &[u8], value: &[u8]) -> TxOpResult<Option<Value>>;
-	fn remove(&mut self, tree: usize, key: &[u8]) -> TxOpResult<Option<Value>>;
+	fn insert(&mut self, tree: usize, key: &[u8], value: &[u8]) -> TxOpResult<()>;
+	fn remove(&mut self, tree: usize, key: &[u8]) -> TxOpResult<()>;
+	fn clear(&mut self, tree: usize) -> TxOpResult<()>;
 
 	fn iter(&self, tree: usize) -> TxOpResult<TxValueIter<'_>>;
 	fn iter_rev(&self, tree: usize) -> TxOpResult<TxValueIter<'_>>;

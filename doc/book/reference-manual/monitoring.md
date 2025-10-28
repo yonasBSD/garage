@@ -225,6 +225,17 @@ block_bytes_read 120586322022
 block_bytes_written 3386618077
 ```
 
+#### `block_ram_buffer_free_kb` (gauge)
+
+Kibibytes available for buffering blocks that have to be sent to remote nodes.
+When clients send too much data to this node and a storage node is not receiving
+data fast enough due to slower network conditions, this will decrease down to
+zero and backpressure will be applied.
+
+```
+block_ram_buffer_free_kb 219829
+```
+
 #### `block_compression_level` (counter)
 
 Exposes the block compression level configured for the Garage node.
@@ -381,7 +392,7 @@ table_merkle_updater_todo_queue_length{table_name="block_ref"} 0
 
 #### `table_sync_items_received`, `table_sync_items_sent` (counters)
 
-Number of data items sent to/recieved from other nodes during resync procedures
+Number of data items sent to/received from other nodes during resync procedures
 
 ```
 table_sync_items_received{from="<remote node>",table_name="bucket_v2"} 3

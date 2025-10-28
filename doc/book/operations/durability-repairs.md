@@ -19,7 +19,7 @@ connecting to. To run on all nodes, add the `-a` flag as follows:
 
 # Data block operations
 
-## Data store scrub
+## Data store scrub {#scrub}
 
 Scrubbing the data store means examining each individual data block to check that
 their content is correct, by verifying their hash. Any block found to be corrupted
@@ -42,7 +42,7 @@ You may pause an ongoing scrub using `garage repair scrub pause`, but note that
 the scrub will resume automatically 24 hours later as Garage will not let your
 cluster run without a regular scrub. If the scrub procedure is too intensive
 for your servers and is slowing down your workload, the recommended solution
-is to increase the "scrub tranquility" using `garage repair scrub set-tranquility`.
+is to increase the "scrub tranquility" using `garage worker set scrub-tranquility`.
 A higher tranquility value will make Garage take longer pauses between two block
 verifications. Of course, scrubbing the entire data store will also take longer.
 
@@ -104,6 +104,24 @@ operation will also move out all data from locations marked as read-only.
 
 # Metadata operations
 
+## Metadata snapshotting
+
+It is good practice to setup automatic snapshotting of your metadata database
+file, to recover from situations where it becomes corrupted on disk. This can
+be done at the filesystem level if you are using ZFS or BTRFS.
+
+Since Garage v0.9.4, Garage is able to take snapshots of the metadata database
+itself. This basically amounts to copying the database file, except that it can
+be run live while Garage is running without the risk of corruption or
+inconsistencies.  This can be setup to run automatically on a schedule using
+[`metadata_auto_snapshot_interval`](@/documentation/reference-manual/configuration.md#metadata_auto_snapshot_interval).
+A snapshot can also be triggered manually using the `garage meta snapshot`
+command. Note that taking a snapshot using this method is very intensive as it
+requires making a full copy of the database file, so you might prefer using
+filesystem-level snapshots if possible. To recover a corrupted node from such a
+snapshot, read the instructions
+[here](@/documentation/operations/recovering.md#corrupted_meta).
+
 ## Metadata table resync
 
 Garage automatically resyncs all entries stored in the metadata tables every hour,
@@ -123,4 +141,7 @@ blocks may still be held by Garage. If you suspect that such corruption has occu
 in your cluster, you can run one of the following repair procedures:
 
 - `garage repair versions`: checks that all versions belong to a non-deleted object, and purges any orphan version
-- `garage repair block_refs`: checks that all block references belong to a non-deleted object version, and purges any orphan block reference (this will then allow the blocks to be garbage-collected)
+
+- `garage repair block-refs`: checks that all block references belong to a non-deleted object version, and purges any orphan block reference (this will then allow the blocks to be garbage-collected)
+
+- `garage repair block-rc`: checks that the reference counters for blocks are in sync with the actual number of non-deleted entries in the block reference table

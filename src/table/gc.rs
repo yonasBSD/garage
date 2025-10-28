@@ -4,13 +4,14 @@ use std::sync::Arc;
 use std::time::Duration;
 
 use async_trait::async_trait;
+
 use serde::{Deserialize, Serialize};
 use serde_bytes::ByteBuf;
 
 use futures::future::join_all;
 use tokio::sync::watch;
 
-use garage_db::counted_tree_hack::CountedTree;
+use garage_db as db;
 
 use garage_util::background::*;
 use garage_util::data::*;
@@ -152,7 +153,7 @@ impl<F: TableSchema, R: TableReplication> TableGc<F, R> {
 		let mut partitions = HashMap::new();
 		for entry in entries {
 			let pkh = Hash::try_from(&entry.key[..32]).unwrap();
-			let mut nodes = self.data.replication.write_nodes(&pkh);
+			let mut nodes = self.data.replication.storage_nodes(&pkh)?;
 			nodes.retain(|x| *x != self.system.id);
 			nodes.sort();
 
@@ -227,10 +228,10 @@ impl<F: TableSchema, R: TableReplication> TableGc<F, R> {
 		// GC'ing is not a critical function of the system, so it's not a big
 		// deal if we can't do it right now.
 		self.system
-			.rpc
+			.rpc_helper()
 			.try_call_many(
 				&self.endpoint,
-				&nodes[..],
+				&nodes,
 				GcRpc::Update(updates),
 				RequestStrategy::with_priority(PRIO_BACKGROUND).with_quorum(nodes.len()),
 			)
@@ -248,31 +249,30 @@ impl<F: TableSchema, R: TableReplication> TableGc<F, R> {
 		// it means that the garbage collection wasn't completed and has
 		// to be retried later.
 		self.system
-			.rpc
+			.rpc_helper()
 			.try_call_many(
 				&self.endpoint,
-				&nodes[..],
+				&nodes,
 				GcRpc::DeleteIfEqualHash(deletes),
 				RequestStrategy::with_priority(PRIO_BACKGROUND).with_quorum(nodes.len()),
 			)
 			.await
 			.err_context("GC: remote delete tombstones")?;
 
-		// GC has been successfull for all of these entries.
+		// GC has been successful for all of these entries.
 		// We now remove them all from our local table and from the GC todo list.
 		for item in items {
 			self.data
 				.delete_if_equal_hash(&item.key[..], item.value_hash)
 				.err_context("GC: local delete tombstones")?;
 			item.remove_if_equal(&self.data.gc_todo)
-				.err_context("GC: remove from todo list after successfull GC")?;
+				.err_context("GC: remove from todo list after successful GC")?;
 		}
 
 		Ok(())
 	}
 }
 
-#[async_trait]
 impl<F: TableSchema, R: TableReplication> EndpointHandler<GcRpc> for TableGc<F, R> {
 	async fn handle(self: &Arc<Self>, message: &GcRpc, _from: NodeID) -> Result<GcRpc, Error> {
 		match message {
@@ -313,7 +313,7 @@ impl<F: TableSchema, R: TableReplication> Worker for GcWorker<F, R> {
 
 	fn status(&self) -> WorkerStatus {
 		WorkerStatus {
-			queue_length: Some(self.gc.data.gc_todo_len().unwrap_or(0) as u64),
+			queue_length: Some(self.gc.data.gc_todo_approximate_len().unwrap_or(0) as u64),
 			..Default::default()
 		}
 	}
@@ -334,9 +334,9 @@ impl<F: TableSchema, R: TableReplication> Worker for GcWorker<F, R> {
 	}
 }
 
-/// An entry stored in the gc_todo Sled tree associated with the table
+/// An entry stored in the gc_todo db tree associated with the table
 /// Contains helper function for parsing, saving, and removing
-/// such entry in Sled
+/// such entry in the db
 ///
 /// Format of an entry:
 /// - key =    8 bytes: timestamp of tombstone
@@ -353,7 +353,7 @@ pub(crate) struct GcTodoEntry {
 }
 
 impl GcTodoEntry {
-	/// Creates a new GcTodoEntry (not saved in Sled) from its components:
+	/// Creates a new GcTodoEntry (not saved in the db) from its components:
 	/// the key of an entry in the table, and the hash of the associated
 	/// serialized value
 	pub(crate) fn new(key: Vec<u8>, value_hash: Hash) -> Self {
@@ -376,22 +376,24 @@ impl GcTodoEntry {
 	}
 
 	/// Saves the GcTodoEntry in the gc_todo tree
-	pub(crate) fn save(&self, gc_todo_tree: &CountedTree) -> Result<(), Error> {
+	pub(crate) fn save(&self, gc_todo_tree: &db::Tree) -> Result<(), Error> {
 		gc_todo_tree.insert(self.todo_table_key(), self.value_hash.as_slice())?;
 		Ok(())
 	}
 
 	/// Removes the GcTodoEntry from the gc_todo tree if the
 	/// hash of the serialized value is the same here as in the tree.
-	/// This is usefull to remove a todo entry only under the condition
+	/// This is useful to remove a todo entry only under the condition
 	/// that it has not changed since the time it was read, i.e.
 	/// what we have to do is still the same
-	pub(crate) fn remove_if_equal(&self, gc_todo_tree: &CountedTree) -> Result<(), Error> {
-		gc_todo_tree.compare_and_swap::<_, _, &[u8]>(
-			&self.todo_table_key(),
-			Some(self.value_hash),
-			None,
-		)?;
+	pub(crate) fn remove_if_equal(&self, gc_todo_tree: &db::Tree) -> Result<(), Error> {
+		gc_todo_tree.db().transaction(|txn| {
+			let key = self.todo_table_key();
+			if txn.get(gc_todo_tree, &key)?.as_deref() == Some(self.value_hash.as_slice()) {
+				txn.remove(gc_todo_tree, &key)?;
+			}
+			Ok(())
+		})?;
 		Ok(())
 	}
 

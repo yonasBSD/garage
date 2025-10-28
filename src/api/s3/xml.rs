@@ -1,7 +1,7 @@
 use quick_xml::se::to_string;
 use serde::{Deserialize, Serialize, Serializer};
 
-use crate::s3::error::Error as ApiError;
+use crate::error::Error as ApiError;
 
 pub fn to_xml_with_header<T: Serialize>(x: &T) -> Result<String, ApiError> {
 	let mut xml = r#"<?xml version="1.0" encoding="UTF-8"?>"#.to_string();
@@ -11,6 +11,10 @@ pub fn to_xml_with_header<T: Serialize>(x: &T) -> Result<String, ApiError> {
 
 pub fn xmlns_tag<S: Serializer>(_v: &(), s: S) -> Result<S::Ok, S::Error> {
 	s.serialize_str("http://s3.amazonaws.com/doc/2006-03-01/")
+}
+
+pub fn xmlns_xsi_tag<S: Serializer>(_v: &(), s: S) -> Result<S::Ok, S::Error> {
+	s.serialize_str("http://www.w3.org/2001/XMLSchema-instance")
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
@@ -131,6 +135,18 @@ pub struct CompleteMultipartUploadResult {
 	pub key: Value,
 	#[serde(rename = "ETag")]
 	pub etag: Value,
+	#[serde(rename = "ChecksumCRC32")]
+	pub checksum_crc32: Option<Value>,
+	#[serde(rename = "ChecksumCRC32C")]
+	pub checksum_crc32c: Option<Value>,
+	#[serde(rename = "ChecksumCR64NVME")]
+	pub checksum_crc64nvme: Option<Value>,
+	#[serde(rename = "ChecksumSHA1")]
+	pub checksum_sha1: Option<Value>,
+	#[serde(rename = "ChecksumSHA256")]
+	pub checksum_sha256: Option<Value>,
+	#[serde(rename = "ChecksumType")]
+	pub checksum_type: Option<Value>,
 }
 
 #[derive(Debug, Serialize, PartialEq, Eq)]
@@ -197,6 +213,16 @@ pub struct PartItem {
 	pub part_number: IntValue,
 	#[serde(rename = "Size")]
 	pub size: IntValue,
+	#[serde(rename = "ChecksumCRC32")]
+	pub checksum_crc32: Option<Value>,
+	#[serde(rename = "ChecksumCRC32C")]
+	pub checksum_crc32c: Option<Value>,
+	#[serde(rename = "ChecksumCRC64NVME")]
+	pub checksum_crc64nvme: Option<Value>,
+	#[serde(rename = "ChecksumSHA1")]
+	pub checksum_sha1: Option<Value>,
+	#[serde(rename = "ChecksumSHA256")]
+	pub checksum_sha256: Option<Value>,
 }
 
 #[derive(Debug, Serialize, PartialEq, Eq)]
@@ -301,6 +327,42 @@ pub struct PostObject {
 	pub key: Value,
 	#[serde(rename = "ETag")]
 	pub etag: Value,
+}
+
+#[derive(Debug, Serialize, PartialEq, Eq)]
+pub struct Grantee {
+	#[serde(rename = "xmlns:xsi", serialize_with = "xmlns_xsi_tag")]
+	pub xmlns_xsi: (),
+	#[serde(rename = "xsi:type")]
+	pub typ: String,
+	#[serde(rename = "DisplayName")]
+	pub display_name: Option<Value>,
+	#[serde(rename = "ID")]
+	pub id: Option<Value>,
+}
+
+#[derive(Debug, Serialize, PartialEq, Eq)]
+pub struct Grant {
+	#[serde(rename = "Grantee")]
+	pub grantee: Grantee,
+	#[serde(rename = "Permission")]
+	pub permission: Value,
+}
+
+#[derive(Debug, Serialize, PartialEq, Eq)]
+pub struct AccessControlList {
+	#[serde(rename = "Grant")]
+	pub entries: Vec<Grant>,
+}
+
+#[derive(Debug, Serialize, PartialEq, Eq)]
+pub struct AccessControlPolicy {
+	#[serde(serialize_with = "xmlns_tag")]
+	pub xmlns: (),
+	#[serde(rename = "Owner")]
+	pub owner: Option<Owner>,
+	#[serde(rename = "AccessControlList")]
+	pub acl: AccessControlList,
 }
 
 #[cfg(test)]
@@ -412,6 +474,43 @@ mod tests {
 	}
 
 	#[test]
+	fn get_bucket_acl_result() -> Result<(), ApiError> {
+		let grant = Grant {
+			grantee: Grantee {
+				xmlns_xsi: (),
+				typ: "CanonicalUser".to_string(),
+				display_name: Some(Value("owner_name".to_string())),
+				id: Some(Value("qsdfjklm".to_string())),
+			},
+			permission: Value("FULL_CONTROL".to_string()),
+		};
+
+		let get_bucket_acl = AccessControlPolicy {
+			xmlns: (),
+			owner: None,
+			acl: AccessControlList {
+				entries: vec![grant],
+			},
+		};
+		assert_eq!(
+			to_xml_with_header(&get_bucket_acl)?,
+			"<?xml version=\"1.0\" encoding=\"UTF-8\"?>\
+<AccessControlPolicy xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\">\
+	<AccessControlList>\
+		<Grant>\
+			<Grantee xmlns:xsi=\"http://www.w3.org/2001/XMLSchema-instance\" xsi:type=\"CanonicalUser\">\
+				<DisplayName>owner_name</DisplayName>\
+				<ID>qsdfjklm</ID>\
+			</Grantee>\
+			<Permission>FULL_CONTROL</Permission>\
+		</Grant>\
+	</AccessControlList>\
+</AccessControlPolicy>"
+		);
+		Ok(())
+	}
+
+	#[test]
 	fn delete_result() -> Result<(), ApiError> {
 		let delete_result = DeleteResult {
 			xmlns: (),
@@ -494,12 +593,19 @@ mod tests {
 
 	#[test]
 	fn complete_multipart_upload_result() -> Result<(), ApiError> {
+		use garage_api_common::signature::checksum::COMPOSITE;
 		let result = CompleteMultipartUploadResult {
 			xmlns: (),
 			location: Some(Value("https://garage.tld/mybucket/a/plop".to_string())),
 			bucket: Value("mybucket".to_string()),
 			key: Value("a/plop".to_string()),
 			etag: Value("\"3858f62230ac3c915f300c664312c11f-9\"".to_string()),
+			checksum_crc32: None,
+			checksum_crc32c: None,
+			checksum_crc64nvme: None,
+			checksum_sha1: Some(Value("ZJAnHyG8PeKz9tI8UTcHrJos39A=".into())),
+			checksum_sha256: None,
+			checksum_type: Some(Value(COMPOSITE.into())),
 		};
 		assert_eq!(
 			to_xml_with_header(&result)?,
@@ -509,6 +615,8 @@ mod tests {
 	<Bucket>mybucket</Bucket>\
 	<Key>a/plop</Key>\
 	<ETag>&quot;3858f62230ac3c915f300c664312c11f-9&quot;</ETag>\
+    <ChecksumSHA1>ZJAnHyG8PeKz9tI8UTcHrJos39A=</ChecksumSHA1>\
+    <ChecksumType>COMPOSITE</ChecksumType>\
 </CompleteMultipartUploadResult>"
 		);
 		Ok(())
@@ -780,12 +888,24 @@ mod tests {
 					last_modified: Value("2010-11-10T20:48:34.000Z".to_string()),
 					part_number: IntValue(2),
 					size: IntValue(10485760),
+					checksum_crc32: None,
+					checksum_crc32c: None,
+					checksum_crc64nvme: None,
+					checksum_sha256: Some(Value(
+						"5RQ3A5uk0w7ojNjvegohch4JRBBGN/cLhsNrPzfv/hA=".into(),
+					)),
+					checksum_sha1: None,
 				},
 				PartItem {
 					etag: Value("\"aaaa18db4cc2f85cedef654fccc4a4x8\"".to_string()),
 					last_modified: Value("2010-11-10T20:48:33.000Z".to_string()),
 					part_number: IntValue(3),
 					size: IntValue(10485760),
+					checksum_sha256: None,
+					checksum_crc32c: None,
+					checksum_crc32: Some(Value("ZJAnHyG8=".into())),
+					checksum_crc64nvme: None,
+					checksum_sha1: None,
 				},
 			],
 			initiator: Initiator {
@@ -820,12 +940,14 @@ mod tests {
     <LastModified>2010-11-10T20:48:34.000Z</LastModified>\
     <PartNumber>2</PartNumber>\
     <Size>10485760</Size>\
+    <ChecksumSHA256>5RQ3A5uk0w7ojNjvegohch4JRBBGN/cLhsNrPzfv/hA=</ChecksumSHA256>\
   </Part>\
   <Part>\
     <ETag>&quot;aaaa18db4cc2f85cedef654fccc4a4x8&quot;</ETag>\
     <LastModified>2010-11-10T20:48:33.000Z</LastModified>\
     <PartNumber>3</PartNumber>\
     <Size>10485760</Size>\
+    <ChecksumCRC32>ZJAnHyG8=</ChecksumCRC32>\
   </Part>\
   <Initiator>\
       <DisplayName>umat-user-11116a31-17b5-4fb7-9df5-b288870f11xx</DisplayName>\
