@@ -27,7 +27,7 @@ Feel free to open a PR to suggest fixes this table. Minio is missing because the
 
 | Feature                      | Garage                           | [Openstack Swift](https://docs.openstack.org/swift/latest/s3_compat.html) | [Ceph Object Gateway](https://docs.ceph.com/en/latest/radosgw/s3/) | [Riak CS](https://docs.riak.com/riak/cs/2.1.1/references/apis/storage/s3/index.html) | [OpenIO](https://docs.openio.io/latest/source/arch-design/s3_compliancy.html) |
 |------------------------------|----------------------------------|-----------------|---------------|---------|-----|
-| [signature v2](https://docs.aws.amazon.com/general/latest/gr/signature-version-2.html) (deprecated) | ❌ Missing | ✅ |  ✅ | ✅ | ✅ |
+| [signature v2](https://docs.aws.amazon.com/AmazonS3/latest/API/Appendix-Sigv2.html) (deprecated) | ❌ Missing | ✅ |  ✅ | ✅ | ✅ |
 | [signature v4](https://docs.aws.amazon.com/AmazonS3/latest/API/sig-v4-authenticating-requests.html) |  ✅ Implemented |  ✅ |  ✅ | ❌ | ✅ |
 | [URL path-style](https://docs.aws.amazon.com/AmazonS3/latest/userguide/VirtualHosting.html#path-style-access) (eg. `host.tld/bucket/key`) |  ✅ Implemented | ✅ |  ✅ | ❓| ✅ |
 | [URL vhost-style](https://docs.aws.amazon.com/AmazonS3/latest/userguide/VirtualHosting.html#virtual-hosted-style-access) URL (eg. `bucket.host.tld/key`) |  ✅ Implemented | ❌| ✅| ✅ | ✅ |
