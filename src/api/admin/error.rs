@@ -1,6 +1,6 @@
 use std::convert::TryFrom;
 
-use err_derive::Error;
+use thiserror::Error;
 use hyper::header::HeaderValue;
 use hyper::{HeaderMap, StatusCode};
 
@@ -16,20 +16,17 @@ use garage_api_common::helpers::*;
 /// Errors of this crate
 #[derive(Debug, Error)]
 pub enum Error {
-	#[error(display = "{}", _0)]
+	#[error("{0}")]
 	/// Error from common error
-	Common(#[error(source)] CommonError),
+	Common(#[from] CommonError),
 
 	// Category: cannot process
 	/// The API access key does not exist
-	#[error(display = "Access key not found: {}", _0)]
+	#[error("Access key not found: {0}")]
 	NoSuchAccessKey(String),
 
 	/// In Import key, the key already exists
-	#[error(
-		display = "Key {} already exists in data store. Even if it is deleted, we can't let you create a new key with the same ID. Sorry.",
-		_0
-	)]
+	#[error("Key {0} already exists in data store. Even if it is deleted, we can't let you create a new key with the same ID. Sorry.")]
 	KeyAlreadyExists(String),
 }
 

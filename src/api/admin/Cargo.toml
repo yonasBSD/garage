@@ -22,7 +22,7 @@ garage_api_common.workspace = true
 
 argon2.workspace = true
 async-trait.workspace = true
-err-derive.workspace = true
+thiserror.workspace = true
 hex.workspace = true
 tracing.workspace = true
 

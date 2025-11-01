@@ -1,6 +1,6 @@
 use std::convert::TryFrom;
 
-use err_derive::Error;
+use thiserror::Error;
 use hyper::StatusCode;
 
 use garage_util::error::Error as GarageError;
@@ -12,48 +12,48 @@ use garage_model::helper::error::Error as HelperError;
 pub enum CommonError {
 	// ---- INTERNAL ERRORS ----
 	/// Error related to deeper parts of Garage
-	#[error(display = "Internal error: {}", _0)]
-	InternalError(#[error(source)] GarageError),
+	#[error("Internal error: {0}")]
+	InternalError(#[from] GarageError),
 
 	/// Error related to Hyper
-	#[error(display = "Internal error (Hyper error): {}", _0)]
-	Hyper(#[error(source)] hyper::Error),
+	#[error("Internal error (Hyper error): {0}")]
+	Hyper(#[from] hyper::Error),
 
 	/// Error related to HTTP
-	#[error(display = "Internal error (HTTP error): {}", _0)]
-	Http(#[error(source)] http::Error),
+	#[error("Internal error (HTTP error): {0}")]
+	Http(#[from] http::Error),
 
 	// ---- GENERIC CLIENT ERRORS ----
 	/// Proper authentication was not provided
-	#[error(display = "Forbidden: {}", _0)]
+	#[error("Forbidden: {0}")]
 	Forbidden(String),
 
 	/// Generic bad request response with custom message
-	#[error(display = "Bad request: {}", _0)]
+	#[error("Bad request: {0}")]
 	BadRequest(String),
 
 	/// The client sent a header with invalid value
-	#[error(display = "Invalid header value: {}", _0)]
-	InvalidHeader(#[error(source)] hyper::header::ToStrError),
+	#[error("Invalid header value: {0}")]
+	InvalidHeader(#[from] hyper::header::ToStrError),
 
 	// ---- SPECIFIC ERROR CONDITIONS ----
 	// These have to be error codes referenced in the S3 spec here:
 	// https://docs.aws.amazon.com/AmazonS3/latest/API/ErrorResponses.html#ErrorCodeList
 	/// The bucket requested don't exists
-	#[error(display = "Bucket not found: {}", _0)]
+	#[error("Bucket not found: {0}")]
 	NoSuchBucket(String),
 
 	/// Tried to create a bucket that already exist
-	#[error(display = "Bucket already exists")]
+	#[error("Bucket already exists")]
 	BucketAlreadyExists,
 
 	/// Tried to delete a non-empty bucket
-	#[error(display = "Tried to delete a non-empty bucket")]
+	#[error("Tried to delete a non-empty bucket")]
 	BucketNotEmpty,
 
 	// Category: bad request
 	/// Bucket name is not valid according to AWS S3 specs
-	#[error(display = "Invalid bucket name: {}", _0)]
+	#[error("Invalid bucket name: {0}")]
 	InvalidBucketName(String),
 }
 

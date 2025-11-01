@@ -1,4 +1,4 @@
-use err_derive::Error;
+use thiserror::Error;
 use hyper::header::HeaderValue;
 use hyper::{HeaderMap, StatusCode};
 
@@ -8,15 +8,15 @@ use garage_api_common::generic_server::ApiError;
 #[derive(Debug, Error)]
 pub enum Error {
 	/// An error received from the API crate
-	#[error(display = "API error: {}", _0)]
+	#[error("API error: {0}")]
 	ApiError(garage_api_s3::error::Error),
 
 	/// The file does not exist
-	#[error(display = "Not found")]
+	#[error("Not found")]
 	NotFound,
 
 	/// The client sent a request without host, or with unsupported method
-	#[error(display = "Bad request: {}", _0)]
+	#[error("Bad request: {0}")]
 	BadRequest(String),
 }
 
