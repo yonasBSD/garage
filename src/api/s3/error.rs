@@ -1,8 +1,8 @@
 use std::convert::TryInto;
 
-use thiserror::Error;
 use hyper::header::HeaderValue;
 use hyper::{HeaderMap, StatusCode};
+use thiserror::Error;
 
 use garage_model::helper::error::Error as HelperError;
 
@@ -100,9 +100,9 @@ impl From<HelperError> for Error {
 }
 
 impl From<(http_range::HttpRangeParseError, u64)> for Error {
-        fn from (err: (http_range::HttpRangeParseError, u64)) -> Error {
-                Error::InvalidRange(err)
-        }
+	fn from(err: (http_range::HttpRangeParseError, u64)) -> Error {
+		Error::InvalidRange(err)
+	}
 }
 
 impl From<roxmltree::Error> for Error {

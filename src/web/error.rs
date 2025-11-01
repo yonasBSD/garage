@@ -1,6 +1,6 @@
-use thiserror::Error;
 use hyper::header::HeaderValue;
 use hyper::{HeaderMap, StatusCode};
+use thiserror::Error;
 
 use garage_api_common::generic_server::ApiError;
 
