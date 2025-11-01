@@ -15,9 +15,10 @@ Alpine Linux repositories (available since v3.17):
 apk add garage
 ```
 
-The default configuration file is installed to `/etc/garage.toml`. You can run
-Garage using: `rc-service garage start`. If you don't specify `rpc_secret`, it
-will be automatically replaced with a random string on the first start.
+The default configuration file is installed to `/etc/garage/garage.toml`. You can run
+Garage using: `rc-service garage start`.
+
+If you don't specify `rpc_secret`, it will be automatically replaced with a random string on the first start.
 
 Please note that this package is built without Consul discovery, Kubernetes
 discovery, OpenTelemetry exporter, and K2V features (K2V will be enabled once
