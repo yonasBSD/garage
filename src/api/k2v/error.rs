@@ -1,6 +1,6 @@
-use thiserror::Error;
 use hyper::header::HeaderValue;
 use hyper::{HeaderMap, StatusCode};
+use thiserror::Error;
 
 use garage_api_common::common_error::{commonErrorDerivative, CommonError};
 pub(crate) use garage_api_common::common_error::{helper_error_as_internal, pass_helper_error};

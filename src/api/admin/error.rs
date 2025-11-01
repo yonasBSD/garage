@@ -1,8 +1,8 @@
 use std::convert::TryFrom;
 
-use thiserror::Error;
 use hyper::header::HeaderValue;
 use hyper::{HeaderMap, StatusCode};
+use thiserror::Error;
 
 pub use garage_model::helper::error::Error as HelperError;
 

@@ -1,7 +1,7 @@
 use std::convert::TryFrom;
 
-use thiserror::Error;
 use hyper::StatusCode;
+use thiserror::Error;
 
 use garage_util::error::Error as GarageError;
 
