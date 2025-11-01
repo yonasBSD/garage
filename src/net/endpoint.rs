@@ -159,7 +159,7 @@ where
 pub(crate) type DynEndpoint = Box<dyn GenericEndpoint + Send + Sync>;
 
 pub(crate) trait GenericEndpoint {
-	fn handle(&self, req_enc: ReqEnc, from: NodeID) -> BoxFuture<Result<RespEnc, Error>>;
+	fn handle(&self, req_enc: ReqEnc, from: NodeID) -> BoxFuture<'_, Result<RespEnc, Error>>;
 	fn drop_handler(&self);
 	fn clone_endpoint(&self) -> DynEndpoint;
 }
@@ -175,7 +175,7 @@ where
 	M: Message,
 	H: StreamingEndpointHandler<M> + 'static,
 {
-	fn handle(&self, req_enc: ReqEnc, from: NodeID) -> BoxFuture<Result<RespEnc, Error>> {
+	fn handle(&self, req_enc: ReqEnc, from: NodeID) -> BoxFuture<'_, Result<RespEnc, Error>> {
 		async move {
 			match self.0.handler.load_full() {
 				None => Err(Error::NoHandler),

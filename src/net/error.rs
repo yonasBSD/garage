@@ -1,49 +1,49 @@
 use std::io;
 
-use err_derive::Error;
+use thiserror::Error;
 use log::error;
 
 #[derive(Debug, Error)]
 pub enum Error {
-	#[error(display = "IO error: {}", _0)]
-	Io(#[error(source)] io::Error),
+	#[error("IO error: {0}")]
+	Io(#[from] io::Error),
 
-	#[error(display = "Messagepack encode error: {}", _0)]
-	RMPEncode(#[error(source)] rmp_serde::encode::Error),
-	#[error(display = "Messagepack decode error: {}", _0)]
-	RMPDecode(#[error(source)] rmp_serde::decode::Error),
+	#[error("Messagepack encode error: {0}")]
+	RMPEncode(#[from] rmp_serde::encode::Error),
+	#[error("Messagepack decode error: {0}")]
+	RMPDecode(#[from] rmp_serde::decode::Error),
 
-	#[error(display = "Tokio join error: {}", _0)]
-	TokioJoin(#[error(source)] tokio::task::JoinError),
+	#[error("Tokio join error: {0}")]
+	TokioJoin(#[from] tokio::task::JoinError),
 
-	#[error(display = "oneshot receive error: {}", _0)]
-	OneshotRecv(#[error(source)] tokio::sync::oneshot::error::RecvError),
+	#[error("oneshot receive error: {0}")]
+	OneshotRecv(#[from] tokio::sync::oneshot::error::RecvError),
 
-	#[error(display = "Handshake error: {}", _0)]
-	Handshake(#[error(source)] kuska_handshake::async_std::Error),
+	#[error("Handshake error: {0}")]
+	Handshake(#[from] kuska_handshake::async_std::Error),
 
-	#[error(display = "UTF8 error: {}", _0)]
-	UTF8(#[error(source)] std::string::FromUtf8Error),
+	#[error("UTF8 error: {0}")]
+	UTF8(#[from] std::string::FromUtf8Error),
 
-	#[error(display = "Framing protocol error")]
+	#[error("Framing protocol error")]
 	Framing,
 
-	#[error(display = "Remote error ({:?}): {}", _0, _1)]
+	#[error("Remote error ({0:?}): {1}")]
 	Remote(io::ErrorKind, String),
 
-	#[error(display = "Request ID collision")]
+	#[error("Request ID collision")]
 	IdCollision,
 
-	#[error(display = "{}", _0)]
+	#[error("{0}")]
 	Message(String),
 
-	#[error(display = "No handler / shutting down")]
+	#[error("No handler / shutting down")]
 	NoHandler,
 
-	#[error(display = "Connection closed")]
+	#[error("Connection closed")]
 	ConnectionClosed,
 
-	#[error(display = "Version mismatch: {}", _0)]
+	#[error("Version mismatch: {0}")]
 	VersionMismatch(String),
 }
 

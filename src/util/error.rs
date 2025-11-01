@@ -2,7 +2,7 @@
 use std::fmt;
 use std::io;
 
-use err_derive::Error;
+use thiserror::Error;
 
 use serde::{de::Visitor, Deserialize, Deserializer, Serialize, Serializer};
 
@@ -12,71 +12,64 @@ use crate::encode::debug_serialize;
 /// Regroup all Garage errors
 #[derive(Debug, Error)]
 pub enum Error {
-	#[error(display = "IO error: {}", _0)]
-	Io(#[error(source)] io::Error),
+	#[error("IO error: {0}")]
+	Io(#[from] io::Error),
 
-	#[error(display = "Hyper error: {}", _0)]
-	Hyper(#[error(source)] hyper::Error),
+	#[error("Hyper error: {0}")]
+	Hyper(#[from] hyper::Error),
 
-	#[error(display = "HTTP error: {}", _0)]
-	Http(#[error(source)] http::Error),
+	#[error("HTTP error: {0}")]
+	Http(#[from] http::Error),
 
-	#[error(display = "Invalid HTTP header value: {}", _0)]
-	HttpHeader(#[error(source)] http::header::ToStrError),
+	#[error("Invalid HTTP header value: {0}")]
+	HttpHeader(#[from] http::header::ToStrError),
 
-	#[error(display = "Network error: {}", _0)]
-	Net(#[error(source)] garage_net::error::Error),
+	#[error("Network error: {0}")]
+	Net(#[from] garage_net::error::Error),
 
-	#[error(display = "DB error: {}", _0)]
-	Db(#[error(source)] garage_db::Error),
+	#[error("DB error: {0}")]
+	Db(#[from] garage_db::Error),
 
-	#[error(display = "Messagepack encode error: {}", _0)]
-	RmpEncode(#[error(source)] rmp_serde::encode::Error),
-	#[error(display = "Messagepack decode error: {}", _0)]
-	RmpDecode(#[error(source)] rmp_serde::decode::Error),
-	#[error(display = "JSON error: {}", _0)]
-	Json(#[error(source)] serde_json::error::Error),
-	#[error(display = "TOML decode error: {}", _0)]
-	TomlDecode(#[error(source)] toml::de::Error),
+	#[error("Messagepack encode error: {0}")]
+	RmpEncode(#[from] rmp_serde::encode::Error),
+	#[error("Messagepack decode error: {0}")]
+	RmpDecode(#[from] rmp_serde::decode::Error),
+	#[error("JSON error: {0}")]
+	Json(#[from] serde_json::error::Error),
+	#[error("TOML decode error: {0}")]
+	TomlDecode(#[from] toml::de::Error),
 
-	#[error(display = "Tokio join error: {}", _0)]
-	TokioJoin(#[error(source)] tokio::task::JoinError),
+	#[error("Tokio join error: {0}")]
+	TokioJoin(#[from] tokio::task::JoinError),
 
-	#[error(display = "Tokio semaphore acquire error: {}", _0)]
-	TokioSemAcquire(#[error(source)] tokio::sync::AcquireError),
+	#[error("Tokio semaphore acquire error: {0}")]
+	TokioSemAcquire(#[from] tokio::sync::AcquireError),
 
-	#[error(display = "Tokio broadcast receive error: {}", _0)]
-	TokioBcastRecv(#[error(source)] tokio::sync::broadcast::error::RecvError),
+	#[error("Tokio broadcast receive error: {0}")]
+	TokioBcastRecv(#[from] tokio::sync::broadcast::error::RecvError),
 
-	#[error(display = "Remote error: {}", _0)]
+	#[error("Remote error: {0}")]
 	RemoteError(String),
 
-	#[error(display = "Timeout")]
+	#[error("Timeout")]
 	Timeout,
 
-	#[error(display = "Layout not ready")]
+	#[error("Layout not ready")]
 	LayoutNotReady,
 
-	#[error(
-		display = "Could not reach quorum of {} (sets={:?}). {} of {} request succeeded, others returned errors: {:?}",
-		_0,
-		_1,
-		_2,
-		_3,
-		_4
-	)]
+	#[error("Could not reach quorum of {0} (sets={1:?}). {2} of {3} request succeeded, others returned errors: {4:?}")]
 	Quorum(usize, Option<usize>, usize, usize, Vec<String>),
 
-	#[error(display = "Unexpected RPC message: {}", _0)]
+	#[error("Unexpected RPC message: {0}")]
 	UnexpectedRpcMessage(String),
 
-	#[error(display = "Corrupt data: does not match hash {:?}", _0)]
+	#[error("Corrupt data: does not match hash {0:?}")]
 	CorruptData(Hash),
 
-	#[error(display = "Missing block {:?}: no node returned a valid block", _0)]
+	#[error("Missing block {0:?}: no node returned a valid block")]
 	MissingBlock(Hash),
 
-	#[error(display = "{}", _0)]
+	#[error("{0}")]
 	Message(String),
 }
 

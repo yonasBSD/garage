@@ -51,7 +51,6 @@ cfg-if = "1.0"
 chrono = { version = "0.4", features = ["serde"] }
 crc-fast = "1.1"
 crypto-common = "0.1"
-err-derive = "0.3"
 gethostname = "0.4"
 git-version = "0.3.4"
 hex = "0.4"
@@ -138,7 +137,7 @@ prometheus = "0.13"
 aws-sigv4 = { version = "1.1", default-features = false }
 hyper-rustls = { version = "0.26", default-features = false, features = ["http1", "http2", "ring", "rustls-native-certs"] }
 log = "0.4"
-thiserror = "1.0"
+thiserror = "2.0"
 
 # ---- used only as build / dev dependencies ----
 assert-json-diff = "2.0"
