@@ -20,7 +20,7 @@ use std::cell::Cell;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use err_derive::Error;
+use thiserror::Error;
 
 pub use open::*;
 
@@ -44,7 +44,7 @@ pub type TxValueIter<'a> = Box<dyn std::iter::Iterator<Item = TxOpResult<(Value,
 // ----
 
 #[derive(Debug, Error)]
-#[error(display = "{}", _0)]
+#[error("{0}")]
 pub struct Error(pub Cow<'static, str>);
 
 impl From<std::io::Error> for Error {
@@ -56,7 +56,7 @@ impl From<std::io::Error> for Error {
 pub type Result<T> = std::result::Result<T, Error>;
 
 #[derive(Debug, Error)]
-#[error(display = "{}", _0)]
+#[error("{0}")]
 pub struct TxOpError(pub(crate) Error);
 pub type TxOpResult<T> = std::result::Result<T, TxOpError>;
 

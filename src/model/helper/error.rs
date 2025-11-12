@@ -1,24 +1,24 @@
-use err_derive::Error;
 use serde::{Deserialize, Serialize};
+use thiserror::Error;
 
 use garage_util::error::Error as GarageError;
 
 #[derive(Debug, Error, Serialize, Deserialize)]
 pub enum Error {
-	#[error(display = "Internal error: {}", _0)]
-	Internal(#[error(source)] GarageError),
+	#[error("Internal error: {0}")]
+	Internal(#[from] GarageError),
 
-	#[error(display = "Bad request: {}", _0)]
+	#[error("Bad request: {0}")]
 	BadRequest(String),
 
 	/// Bucket name is not valid according to AWS S3 specs
-	#[error(display = "Invalid bucket name: {}", _0)]
+	#[error("Invalid bucket name: {0}")]
 	InvalidBucketName(String),
 
-	#[error(display = "Access key not found: {}", _0)]
+	#[error("Access key not found: {0}")]
 	NoSuchAccessKey(String),
 
-	#[error(display = "Bucket not found: {}", _0)]
+	#[error("Bucket not found: {0}")]
 	NoSuchBucket(String),
 }
 
