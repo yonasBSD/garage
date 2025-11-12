@@ -1113,20 +1113,6 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "877a4ace8713b0bcf2a4e7eec82529c029f1d0619886d18145fea96c3ffe5c0f"
 
 [[package]]
-name = "err-derive"
-version = "0.3.1"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "c34a887c8df3ed90498c1c437ce21f211c8e27672921a8ffa293cb8d6d4caa9e"
-dependencies = [
- "proc-macro-error",
- "proc-macro2",
- "quote",
- "rustversion",
- "syn 1.0.109",
- "synstructure 0.12.6",
-]
-
-[[package]]
 name = "errno"
 version = "0.3.10"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1355,7 +1341,6 @@ dependencies = [
  "async-trait",
  "bytesize",
  "chrono",
- "err-derive",
  "format_table",
  "futures",
  "garage_api_common",
@@ -1373,6 +1358,7 @@ dependencies = [
  "prometheus",
  "serde",
  "serde_json",
+ "thiserror 2.0.12",
  "tokio",
  "tracing",
  "url",
@@ -1388,7 +1374,6 @@ dependencies = [
  "chrono",
  "crc-fast",
  "crypto-common",
- "err-derive",
  "futures",
  "garage_model",
  "garage_table",
@@ -1407,6 +1392,7 @@ dependencies = [
  "serde_json",
  "sha1",
  "sha2",
+ "thiserror 2.0.12",
  "tokio",
  "tracing",
  "url",
@@ -1417,7 +1403,6 @@ name = "garage_api_k2v"
 version = "2.1.0"
 dependencies = [
  "base64 0.21.7",
- "err-derive",
  "futures",
  "garage_api_common",
  "garage_model",
@@ -1430,6 +1415,7 @@ dependencies = [
  "percent-encoding",
  "serde",
  "serde_json",
+ "thiserror 2.0.12",
  "tokio",
  "tracing",
  "url",
@@ -1445,7 +1431,6 @@ dependencies = [
  "bytes",
  "chrono",
  "crc-fast",
- "err-derive",
  "form_urlencoded",
  "futures",
  "garage_api_common",
@@ -1473,6 +1458,7 @@ dependencies = [
  "serde_json",
  "sha1",
  "sha2",
+ "thiserror 2.0.12",
  "tokio",
  "tokio-stream",
  "tokio-util 0.7.14",
@@ -1508,7 +1494,6 @@ dependencies = [
 name = "garage_db"
 version = "2.1.0"
 dependencies = [
- "err-derive",
  "fjall",
  "heed",
  "mktemp",
@@ -1516,6 +1501,7 @@ dependencies = [
  "r2d2",
  "r2d2_sqlite",
  "rusqlite",
+ "thiserror 2.0.12",
  "tracing",
 ]
 
@@ -1528,7 +1514,6 @@ dependencies = [
  "base64 0.21.7",
  "blake2",
  "chrono",
- "err-derive",
  "futures",
  "garage_block",
  "garage_db",
@@ -1542,6 +1527,7 @@ dependencies = [
  "rand 0.8.5",
  "serde",
  "serde_bytes",
+ "thiserror 2.0.12",
  "tokio",
  "tracing",
  "zstd",
@@ -1554,7 +1540,6 @@ dependencies = [
  "arc-swap",
  "bytes",
  "cfg-if",
- "err-derive",
  "futures",
  "hex",
  "kuska-handshake",
@@ -1567,6 +1552,7 @@ dependencies = [
  "rand 0.8.5",
  "rmp-serde",
  "serde",
+ "thiserror 2.0.12",
  "tokio",
  "tokio-stream",
  "tokio-util 0.7.14",
@@ -1579,7 +1565,6 @@ dependencies = [
  "arc-swap",
  "async-trait",
  "bytesize",
- "err-derive",
  "format_table",
  "futures",
  "garage_net",
@@ -1600,6 +1585,7 @@ dependencies = [
  "serde",
  "serde_bytes",
  "serde_json",
+ "thiserror 2.0.12",
  "tokio",
  "tracing",
 ]
@@ -1634,7 +1620,6 @@ dependencies = [
  "blake2",
  "bytesize",
  "chrono",
- "err-derive",
  "futures",
  "garage_db",
  "garage_net",
@@ -1651,6 +1636,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2",
+ "thiserror 2.0.12",
  "tokio",
  "toml",
  "tracing",
@@ -1661,7 +1647,6 @@ dependencies = [
 name = "garage_web"
 version = "2.1.0"
 dependencies = [
- "err-derive",
  "garage_api_common",
  "garage_api_s3",
  "garage_model",
@@ -1672,6 +1657,7 @@ dependencies = [
  "hyper 1.6.0",
  "opentelemetry",
  "percent-encoding",
+ "thiserror 2.0.12",
  "tokio",
  "tracing",
 ]
@@ -2464,7 +2450,7 @@ dependencies = [
  "serde",
  "serde_json",
  "sha2",
- "thiserror 1.0.69",
+ "thiserror 2.0.12",
  "tokio",
  "tracing-subscriber",
 ]
@@ -4283,18 +4269,6 @@ dependencies = [
 
 [[package]]
 name = "synstructure"
-version = "0.12.6"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "f36bdaa60a83aca3921b5259d5400cbf5e90fc51931376a9bd4a0eb79aa7210f"
-dependencies = [
- "proc-macro2",
- "quote",
- "syn 1.0.109",
- "unicode-xid",
-]
-
-[[package]]
-name = "synstructure"
 version = "0.13.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "c8af7666ab7b6390ab78131fb5b0fce11d6b7a6951602017c35fa82800708971"
@@ -4811,12 +4785,6 @@ name = "unicode-width"
 version = "0.1.14"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7dd6e30e90baa6f72411720665d41d89b9a3d039dc45b8faea1ddd07f617f6af"
-
-[[package]]
-name = "unicode-xid"
-version = "0.2.6"
-source = "registry+https://github.com/rust-lang/crates.io-index"
-checksum = "ebc1c04c71510c7f702b52b7c350734c9ff1295c464a03335b00bb84fc54f853"
 
 [[package]]
 name = "universal-hash"
@@ -5343,7 +5311,7 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.100",
- "synstructure 0.13.1",
+ "synstructure",
 ]
 
 [[package]]
@@ -5404,7 +5372,7 @@ dependencies = [
  "proc-macro2",
  "quote",
  "syn 2.0.100",
- "synstructure 0.13.1",
+ "synstructure",
 ]
 
 [[package]]

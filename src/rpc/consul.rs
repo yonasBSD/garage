@@ -3,8 +3,8 @@ use std::fs::File;
 use std::io::Read;
 use std::net::{IpAddr, SocketAddr};
 
-use err_derive::Error;
 use serde::{Deserialize, Serialize};
+use thiserror::Error;
 
 use garage_net::NodeID;
 
@@ -219,12 +219,12 @@ impl ConsulDiscovery {
 /// Regroup all Consul discovery errors
 #[derive(Debug, Error)]
 pub enum ConsulError {
-	#[error(display = "IO error: {}", _0)]
-	Io(#[error(source)] std::io::Error),
-	#[error(display = "HTTP error: {}", _0)]
-	Reqwest(#[error(source)] reqwest::Error),
-	#[error(display = "Invalid Consul TLS configuration")]
+	#[error("IO error: {0}")]
+	Io(#[from] std::io::Error),
+	#[error("HTTP error: {0}")]
+	Reqwest(#[from] reqwest::Error),
+	#[error("Invalid Consul TLS configuration")]
 	InvalidTLSConfig,
-	#[error(display = "Token error: {}", _0)]
-	Token(#[error(source)] reqwest::header::InvalidHeaderValue),
+	#[error("Token error: {0}")]
+	Token(#[from] reqwest::header::InvalidHeaderValue),
 }

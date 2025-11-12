@@ -321,15 +321,15 @@ impl Garage {
 		Ok(())
 	}
 
-	pub fn bucket_helper(&self) -> helper::bucket::BucketHelper {
+	pub fn bucket_helper(&self) -> helper::bucket::BucketHelper<'_> {
 		helper::bucket::BucketHelper(self)
 	}
 
-	pub fn key_helper(&self) -> helper::key::KeyHelper {
+	pub fn key_helper(&self) -> helper::key::KeyHelper<'_> {
 		helper::key::KeyHelper(self)
 	}
 
-	pub async fn locked_helper(&self) -> helper::locked::LockedHelper {
+	pub async fn locked_helper(&self) -> helper::locked::LockedHelper<'_> {
 		let lock = self.bucket_lock.lock().await;
 		helper::locked::LockedHelper(self, Some(lock))
 	}
