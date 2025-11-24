@@ -190,4 +190,15 @@ in rec {
       pkgs.cacert
     ];
   } // extraTestEnv);
+
+  # ---- source code linting ----
+
+  garage-cargo-fmt = craneLib.cargoFmt (commonArgs // {
+    cargoExtraArgs = "";
+  });
+
+  garage-cargo-clippy = craneLib.cargoClippy (commonArgs // {
+    cargoArtifacts = garage-deps;
+    cargoClippyExtraArgs = "--all-targets -- -D warnings";
+  });
 }

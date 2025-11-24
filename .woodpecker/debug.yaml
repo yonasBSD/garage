@@ -14,7 +14,7 @@ steps:
   - name: check formatting
     image: nixpkgs/nix:nixos-24.05
     commands:
-      - nix-shell --attr devShell --run "cargo fmt -- --check"
+      - nix-build -j4 --attr flakePackages.fmt
 
   - name: build
     image: nixpkgs/nix:nixos-24.05

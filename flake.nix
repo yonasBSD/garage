@@ -30,6 +30,10 @@
           inherit system nixpkgs crane rust-overlay extraTestEnv;
           release = false;
         }).garage-test;
+        lints = (compile {
+          inherit system nixpkgs crane rust-overlay;
+          release = false;
+        });
       in
       {
         packages = {
@@ -56,6 +60,10 @@
           tests-fjall = testWith {
             GARAGE_TEST_INTEGRATION_DB_ENGINE = "fjall";
           };
+
+          # lints (fmt, clippy)
+          fmt = lints.garage-cargo-fmt;
+          clippy = lints.garage-cargo-clippy;
         };
 
         # ---- developpment shell, for making native builds only ----
