@@ -27,7 +27,7 @@ If release name contains chart name it will be used as a full name.
 Create the name of the rpc secret
 */}}
 {{- define "garage.rpcSecretName" -}}
-{{- printf "%s-rpc-secret" (include "garage.fullname" .) -}}
+{{- .Values.garage.existingRpcSecret | default (printf "%s-rpc-secret" (include "garage.fullname" .)) -}}
 {{- end }}
 
 {{/*
