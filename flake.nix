@@ -2,13 +2,13 @@
   description =
     "Garage, an S3-compatible distributed object store for self-hosted deployments";
 
-  # Nixpkgs 24.11 as of 2025-01-12
+  # Nixpkgs 25.05 as of 2025-11-24
   inputs.nixpkgs.url =
-    "github:NixOS/nixpkgs/7c4869c47090dd7f9f1bdfb49a22aea026996815";
+    "github:NixOS/nixpkgs/cfe2c7d5b5d3032862254e68c37a6576b633d632";
 
-  # Rust overlay as of 2025-02-03
+  # Rust overlay as of 2025-11-24
   inputs.rust-overlay.url =
-  "github:oxalica/rust-overlay/35c6f8c4352f995ecd53896200769f80a3e8f22d";
+  "github:oxalica/rust-overlay/ab726555a9a72e6dc80649809147823a813fa95b";
   inputs.rust-overlay.inputs.nixpkgs.follows = "nixpkgs";
 
   inputs.crane.url = "github:ipetkov/crane";
