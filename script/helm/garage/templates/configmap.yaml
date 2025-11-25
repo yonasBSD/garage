@@ -28,7 +28,11 @@ data:
     # rpc_secret will be populated by the init container from a k8s secret object
     rpc_secret = "__RPC_SECRET_REPLACE__"
 
-    bootstrap_peers = {{ .Values.garage.bootstrapPeers }}
+    bootstrap_peers = [
+    {{- range $index, $peer := .Values.garage.bootstrapPeers }}
+    {{- if $index}}, {{ end }}{{ $peer | quote }}
+    {{ end }} 
+    ]
 
     {{- if .Values.garage.additionalTopLevelConfig }}
     {{ .Values.garage.additionalTopLevelConfig | nindent 4 }}
