@@ -48,7 +48,7 @@ let
 
   inherit (pkgs) lib stdenv;
 
-  toolchainFn = (p: p.rust-bin.stable."1.82.0".default.override {
+  toolchainFn = (p: p.rust-bin.stable."1.91.0".default.override {
     targets = lib.optionals (target != null) [ rustTarget ];
     extensions = [
       "rust-src"
@@ -190,4 +190,15 @@ in rec {
       pkgs.cacert
     ];
   } // extraTestEnv);
+
+  # ---- source code linting ----
+
+  garage-cargo-fmt = craneLib.cargoFmt (commonArgs // {
+    cargoExtraArgs = "";
+  });
+
+  garage-cargo-clippy = craneLib.cargoClippy (commonArgs // {
+    cargoArtifacts = garage-deps;
+    cargoClippyExtraArgs = "--all-targets -- -D warnings";
+  });
 }

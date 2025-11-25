@@ -34,6 +34,8 @@ in
       jq
     ];
     shellHook = ''
+      export AWS_REQUEST_CHECKSUM_CALCULATION='when_required'
+
       function to_s3 {
         aws \
             --endpoint-url https://garage.deuxfleurs.fr \
