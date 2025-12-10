@@ -257,6 +257,8 @@ pub struct ConsulDiscoveryConfig {
 	/// Additional service metadata to add
 	#[serde(default)]
 	pub meta: Option<std::collections::HashMap<String, String>>,
+	#[serde(default)]
+	pub datacenters: Option<Vec<String>>,
 }
 
 #[derive(Deserialize, Debug, Clone)]
