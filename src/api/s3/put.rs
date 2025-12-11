@@ -491,7 +491,7 @@ pub(crate) async fn read_and_put_blocks<S: Stream<Item = Result<Bytes, Error>> +
 			};
 			let recv_next = async {
 				// If more than a maximum number of writes are in progress, don't add more for now
-				if currently_running >= ctx.garage.config.put_blocks_max_parallel {
+				if currently_running >= ctx.garage.config.block_max_concurrent_writes_per_request {
 					futures::future::pending().await
 				} else {
 					block_rx3.recv().await

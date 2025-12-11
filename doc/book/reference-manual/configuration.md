@@ -25,7 +25,7 @@ db_engine = "lmdb"
 block_size = "1M"
 block_ram_buffer_max = "256MiB"
 block_max_concurrent_reads = 16
-
+block_max_concurrent_writes_per_request =10
 lmdb_map_size = "1T"
 
 compression_level = 1
@@ -99,6 +99,7 @@ Top-level configuration options, in alphabetical order:
 [`allow_world_readable_secrets`](#allow_world_readable_secrets),
 [`block_max_concurrent_reads`](`block_max_concurrent_reads),
 [`block_ram_buffer_max`](#block_ram_buffer_max),
+[`block_max_concurrent_writes_per_request`](#block_max_concurrent_writes_per_request),
 [`block_size`](#block_size),
 [`bootstrap_peers`](#bootstrap_peers),
 [`compression_level`](#compression_level),
@@ -546,6 +547,14 @@ Timeout events can be monitored through the `block_read_semaphore_timeouts`
 metric in Prometheus: a non-zero number of such events indicates an I/O
 bottleneck on HDD read speed.
 
+
+#### `block_max_concurrent_writes_per_request` (since  `v2.1.0`) {#block_max_concurrent_writes_per_request}
+
+This parameter is designed to adapt to the concurrent write performance of 
+different storage media.Maximum number of parallel block writes per put request 
+Higher values improve throughput but increase memory usage.
+
+Default: 3, Recommended: 10-30 for NVMe, 3-10 for HDD
 
 #### `lmdb_map_size` {#lmdb_map_size}
 

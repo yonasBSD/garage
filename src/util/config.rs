@@ -48,8 +48,8 @@ pub struct Config {
 	/// Maximum number of parallel block writes per PUT request
 	/// Higher values improve throughput but increase memory usage
 	/// Default: 3, Recommended: 10-30 for NVMe, 3-10 for HDD
-	#[serde(default = "default_put_blocks_max_parallel")]
-	pub put_blocks_max_parallel: usize,
+	#[serde(default = "default_block_max_concurrent_writes_per_request")]
+	pub block_max_concurrent_writes_per_request: usize,
 	/// Number of replicas. Can be any positive integer, but uneven numbers are more favorable.
 	/// - 1 for single-node clusters, or to disable replication
 	/// - 3 is the recommended and supported setting.
@@ -272,7 +272,7 @@ pub struct KubernetesDiscoveryConfig {
 	pub skip_crd: bool,
 }
 
-pub fn default_put_blocks_max_parallel() -> usize {
+pub fn default_block_max_concurrent_writes_per_request() -> usize {
 	3
 }
 /// Read and parse configuration
