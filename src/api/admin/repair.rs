@@ -345,7 +345,7 @@ impl BlockRcRepair {
 #[async_trait]
 impl Worker for BlockRcRepair {
 	fn name(&self) -> String {
-		format!("Block refcount repair worker")
+		"Block refcount repair worker".into()
 	}
 
 	fn status(&self) -> WorkerStatus {

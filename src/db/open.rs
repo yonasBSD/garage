@@ -68,20 +68,11 @@ impl std::str::FromStr for Engine {
 	}
 }
 
+#[derive(Default)]
 pub struct OpenOpt {
 	pub fsync: bool,
 	pub lmdb_map_size: Option<usize>,
 	pub fjall_block_cache_size: Option<usize>,
-}
-
-impl Default for OpenOpt {
-	fn default() -> Self {
-		Self {
-			fsync: false,
-			lmdb_map_size: None,
-			fjall_block_cache_size: None,
-		}
-	}
 }
 
 pub fn open_db(path: &PathBuf, engine: Engine, opt: &OpenOpt) -> Result<Db> {

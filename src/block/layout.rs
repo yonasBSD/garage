@@ -325,7 +325,7 @@ fn make_data_dirs(dirs: &DataDirEnum) -> Result<Vec<DataDir>, Error> {
 			let mut ok = false;
 			for dir in dirs.iter() {
 				let state = match &dir.capacity {
-					Some(cap) if dir.read_only == false => {
+					Some(cap) if !dir.read_only => {
 						let capacity = cap.parse::<bytesize::ByteSize>()
 							.ok_or_message("invalid capacity value")?.as_u64();
 						if capacity == 0 {
@@ -336,7 +336,7 @@ fn make_data_dirs(dirs: &DataDirEnum) -> Result<Vec<DataDir>, Error> {
 							capacity,
 						}
 					}
-					None if dir.read_only == true => {
+					None if dir.read_only => {
 						DataDirState::ReadOnly
 					}
 					_ => return Err(Error::Message(format!("data directories in data_dir should have a capacity value or be marked read_only, not the case for {}", dir.path.to_string_lossy()))),

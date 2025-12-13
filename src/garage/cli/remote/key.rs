@@ -296,7 +296,7 @@ fn print_key_info(key: &GetKeyInfoResponse) {
 	]);
 	format_table(table);
 
-	println!("");
+	println!();
 	println!("==== BUCKETS FOR THIS KEY ====");
 	let mut bucket_info = vec!["Permissions\tID\tGlobal aliases\tLocal aliases".to_string()];
 	bucket_info.extend(key.buckets.iter().map(|bucket| {

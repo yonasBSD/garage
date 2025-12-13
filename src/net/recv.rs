@@ -79,7 +79,7 @@ pub(crate) trait RecvLoop: Sync + 'static {
 
 			if size == CANCEL_REQUEST {
 				if let Some(mut stream) = streams.remove(&id) {
-					let _ = stream.send(Err(std::io::Error::new(
+					stream.send(Err(std::io::Error::new(
 						std::io::ErrorKind::Other,
 						"netapp: cancel requested",
 					)));
@@ -135,7 +135,7 @@ pub(crate) trait RecvLoop: Sync + 'static {
 				// If we cannot put packet in channel, it means that the
 				// receiving end of the channel is disconnected.
 				// We still need to reach eos before dropping this sender
-				let _ = sender.send(packet);
+				sender.send(packet);
 			}
 
 			if has_cont {

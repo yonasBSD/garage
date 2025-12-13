@@ -90,11 +90,11 @@ impl FixedBytes32 {
 			if *byte == u8::MAX {
 				*byte = 0;
 			} else {
-				*byte = *byte + 1;
+				*byte += 1;
 				return Some(ret);
 			}
 		}
-		return None;
+		None
 	}
 }
 

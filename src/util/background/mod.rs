@@ -68,7 +68,6 @@ impl BackgroundRunner {
 	{
 		self.send_worker
 			.send(Box::new(worker))
-			.ok()
 			.expect("Could not put worker in queue");
 	}
 }

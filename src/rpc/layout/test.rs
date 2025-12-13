@@ -77,7 +77,7 @@ fn check_against_naive(cl: &LayoutVersion) -> Result<bool, Error> {
 		}
 	}
 
-	return Ok(false);
+	Ok(false)
 }
 
 fn show_msg(msg: &Message) {

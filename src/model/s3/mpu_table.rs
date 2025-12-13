@@ -160,8 +160,8 @@ impl Crdt for MpuPart {
 			(x, _) => x,
 		};
 		self.checksum = match (self.checksum.take(), &other.checksum) {
-			(None, Some(_)) => other.checksum.clone(),
-			(Some(x), Some(y)) if x < *y => other.checksum.clone(),
+			(None, Some(_)) => other.checksum,
+			(Some(x), Some(y)) if x < *y => other.checksum,
 			(x, _) => x,
 		};
 	}

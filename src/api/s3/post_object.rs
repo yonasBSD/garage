@@ -505,15 +505,15 @@ mod tests {
 		let mut conditions = policy_2.into_conditions().unwrap();
 
 		assert_eq!(
-			conditions.params.remove(&"acl".to_string()),
+			conditions.params.remove("acl"),
 			Some(vec![Operation::Equal("public-read".into())])
 		);
 		assert_eq!(
-			conditions.params.remove(&"bucket".to_string()),
+			conditions.params.remove("bucket"),
 			Some(vec![Operation::Equal("johnsmith".into())])
 		);
 		assert_eq!(
-			conditions.params.remove(&"key".to_string()),
+			conditions.params.remove("key"),
 			Some(vec![Operation::StartsWith("user/eric/".into())])
 		);
 		assert!(conditions.params.is_empty());
@@ -536,7 +536,7 @@ mod tests {
 		let mut conditions = policy_2.into_conditions().unwrap();
 
 		assert_eq!(
-			conditions.params.remove(&"acl".to_string()),
+			conditions.params.remove("acl"),
 			Some(vec![Operation::Equal("public-read".into())])
 		);
 		assert_eq!(
@@ -544,9 +544,7 @@ mod tests {
 			vec![Operation::StartsWith("image/".into())]
 		);
 		assert_eq!(
-			conditions
-				.params
-				.remove(&"success_action_redirect".to_string()),
+			conditions.params.remove("success_action_redirect"),
 			Some(vec![Operation::StartsWith("".into())])
 		);
 		assert!(conditions.params.is_empty());

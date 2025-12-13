@@ -569,12 +569,10 @@ impl BlockManager {
 		async {
 			match self.find_block(hash).await {
 				Some(p) => self.read_block_from(hash, &p).await,
-				None => {
-					return Err(Error::Message(format!(
-						"block {:?} not found on node",
-						hash
-					)));
-				}
+				None => Err(Error::Message(format!(
+					"block {:?} not found on node",
+					hash
+				))),
 			}
 		}
 		.bound_record_duration(&self.metrics.block_read_duration)

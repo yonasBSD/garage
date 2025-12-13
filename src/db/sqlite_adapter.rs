@@ -308,7 +308,7 @@ impl IDb for SqliteDb {
 
 		trace!("transaction done");
 		drop(lock);
-		return res;
+		res
 	}
 }
 

@@ -10,7 +10,7 @@ use crate::replication_mode::*;
 
 impl LayoutHistory {
 	pub fn new(replication_factor: ReplicationFactor) -> Self {
-		let version = LayoutVersion::new(replication_factor.into());
+		let version = LayoutVersion::new(replication_factor);
 
 		let staging = LayoutStaging {
 			parameters: Lww::<LayoutParameters>::new(version.parameters),

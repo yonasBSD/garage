@@ -18,7 +18,7 @@ where
 /// data formats)
 pub fn nonversioned_decode<T>(bytes: &[u8]) -> Result<T, rmp_serde::decode::Error>
 where
-	T: for<'de> Deserialize<'de> + ?Sized,
+	T: for<'de> Deserialize<'de>,
 {
 	rmp_serde::decode::from_slice::<_>(bytes)
 }

@@ -130,7 +130,7 @@ impl BytesBuf {
 	/// Return the content as a stream of individual chunks
 	pub fn into_stream(self) -> ByteStream {
 		use futures::stream::StreamExt;
-		Box::pin(futures::stream::iter(self.buf).map(|x| Ok(x)))
+		Box::pin(futures::stream::iter(self.buf).map(Ok))
 	}
 }
 
@@ -161,7 +161,6 @@ mod test {
 	#[test]
 	fn test_bytes_buf() {
 		let mut buf = BytesBuf::new();
-		assert!(buf.len() == 0);
 		assert!(buf.is_empty());
 
 		buf.extend(Bytes::from(b"Hello, world!".to_vec()));
@@ -176,7 +175,6 @@ mod test {
 			buf.take_all(),
 			Bytes::from(b"Hello, world!1234567890".to_vec())
 		);
-		assert!(buf.len() == 0);
 		assert!(buf.is_empty());
 
 		buf.extend(Bytes::from(b"1234567890".to_vec()));
@@ -193,7 +191,6 @@ mod test {
 			buf.take_exact(11),
 			Some(Bytes::from(b"llo, world!".to_vec()))
 		);
-		assert!(buf.len() == 0);
 		assert!(buf.is_empty());
 	}
 }

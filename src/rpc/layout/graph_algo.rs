@@ -355,7 +355,7 @@ impl Graph<WeightedEdge> {
 
 		// Remark that the cycle in prev is in the reverse order compared to the cycle
 		// in the graph. Thus the .rev().
-		return cycles_prev
+		cycles_prev
 			.iter()
 			.map(|cycle| {
 				cycle
@@ -364,7 +364,7 @@ impl Graph<WeightedEdge> {
 					.map(|id| self.id_to_vertex[*id])
 					.collect()
 			})
-			.collect();
+			.collect()
 	}
 }
 

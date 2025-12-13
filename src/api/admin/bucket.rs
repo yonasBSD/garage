@@ -183,7 +183,7 @@ impl RequestHandler for CreateBucketRequest {
 
 			let key = helper.key().get_existing_key(&la.access_key_id).await?;
 			let state = key.state.as_option().unwrap();
-			if matches!(state.local_aliases.get(&la.alias), Some(_)) {
+			if state.local_aliases.get(&la.alias).is_some() {
 				return Err(Error::bad_request("Local alias already exists"));
 			}
 		}

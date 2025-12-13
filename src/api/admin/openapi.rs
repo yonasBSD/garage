@@ -19,7 +19,7 @@ use crate::api::*;
             (status = 200, description = "Garage daemon metrics exported in Prometheus format"),
         ),
 )]
-fn Metrics() -> () {}
+fn Metrics() {}
 
 #[utoipa::path(get,
     path = "/health",
@@ -36,7 +36,7 @@ as long as it is able to have a quorum of nodes for read and write operations.
             (status = 503, description = "This Garage daemon is not able to handle requests")
         ),
 )]
-fn Health() -> () {}
+fn Health() {}
 
 #[utoipa::path(get,
     path = "/check",
@@ -54,7 +54,7 @@ do not correspond to an actual website.
             (status = 400, description = "No static website bucket exists for this domain")
         ),
 )]
-fn CheckDomain() -> () {}
+fn CheckDomain() {}
 
 // **********************************************
 //      Cluster operations
@@ -78,7 +78,7 @@ Returns the cluster's current status, including:
             (status = 500, description = "Internal server error")
         ),
 )]
-fn GetClusterStatus() -> () {}
+fn GetClusterStatus() {}
 
 #[utoipa::path(get,
     path = "/v2/GetClusterHealth",
@@ -88,7 +88,7 @@ fn GetClusterStatus() -> () {}
             (status = 200, description = "Cluster health report", body = GetClusterHealthResponse),
         ),
 )]
-fn GetClusterHealth() -> () {}
+fn GetClusterHealth() {}
 
 #[utoipa::path(get,
     path = "/v2/GetClusterStatistics",
@@ -103,7 +103,7 @@ Fetch global cluster statistics.
             (status = 500, description = "Internal server error")
         ),
 )]
-fn GetClusterStatistics() -> () {}
+fn GetClusterStatistics() {}
 
 #[utoipa::path(post,
     path = "/v2/ConnectClusterNodes",
@@ -115,7 +115,7 @@ fn GetClusterStatistics() -> () {}
             (status = 500, description = "Internal server error")
         ),
 )]
-fn ConnectClusterNodes() -> () {}
+fn ConnectClusterNodes() {}
 
 // **********************************************
 //      Admin API token operations
@@ -130,7 +130,7 @@ fn ConnectClusterNodes() -> () {}
             (status = 500, description = "Internal server error")
         ),
 )]
-fn ListAdminTokens() -> () {}
+fn ListAdminTokens() {}
 
 #[utoipa::path(get,
     path = "/v2/GetAdminTokenInfo",
@@ -145,7 +145,7 @@ You can search by specifying the exact token identifier (`id`) or by specifying 
             (status = 500, description = "Internal server error")
         ),
 )]
-fn GetAdminTokenInfo() -> () {}
+fn GetAdminTokenInfo() {}
 
 #[utoipa::path(post,
     path = "/v2/CreateAdminToken",
@@ -157,7 +157,7 @@ fn GetAdminTokenInfo() -> () {}
             (status = 500, description = "Internal server error")
         ),
 )]
-fn CreateAdminToken() -> () {}
+fn CreateAdminToken() {}
 
 #[utoipa::path(post,
     path = "/v2/UpdateAdminToken",
@@ -172,7 +172,7 @@ Updates information about the specified admin API token.
             (status = 500, description = "Internal server error")
         ),
 )]
-fn UpdateAdminToken() -> () {}
+fn UpdateAdminToken() {}
 
 #[utoipa::path(post,
     path = "/v2/DeleteAdminToken",
@@ -184,7 +184,7 @@ fn UpdateAdminToken() -> () {}
             (status = 500, description = "Internal server error")
         ),
 )]
-fn DeleteAdminToken() -> () {}
+fn DeleteAdminToken() {}
 
 #[utoipa::path(get,
     path = "/v2/GetCurrentAdminTokenInfo",
@@ -197,7 +197,7 @@ Return information about the calling admin API token.
             (status = 500, description = "Internal server error")
     ),
 )]
-fn GetCurrentAdminTokenInfo() -> () {}
+fn GetCurrentAdminTokenInfo() {}
 
 // **********************************************
 //      Layout operations
@@ -219,7 +219,7 @@ Returns the cluster's current layout, including:
             (status = 500, description = "Internal server error")
         ),
 )]
-fn GetClusterLayout() -> () {}
+fn GetClusterLayout() {}
 
 #[utoipa::path(get,
     path = "/v2/GetClusterLayoutHistory",
@@ -232,7 +232,7 @@ Returns the history of layouts in the cluster
             (status = 500, description = "Internal server error")
         ),
 )]
-fn GetClusterLayoutHistory() -> () {}
+fn GetClusterLayoutHistory() {}
 
 #[utoipa::path(post,
     path = "/v2/UpdateClusterLayout",
@@ -261,7 +261,7 @@ Contrary to the CLI that may update only a subset of the fields capacity, zone a
             (status = 500, description = "Internal server error")
         ),
 )]
-fn UpdateClusterLayout() -> () {}
+fn UpdateClusterLayout() {}
 
 // Hack: we cannot use the UpdateClusterLayoutRequest from api.rs,
 // as it contains (via NodeRoleChange) an untagged enum flattenned into
@@ -315,7 +315,7 @@ Computes a new layout taking into account the staged parameters, and returns it 
             (status = 500, description = "Internal server error")
         ),
 )]
-fn PreviewClusterLayoutChanges() -> () {}
+fn PreviewClusterLayoutChanges() {}
 
 #[utoipa::path(post,
     path = "/v2/ApplyClusterLayout",
@@ -331,7 +331,7 @@ Applies to the cluster the layout changes currently registered as staged layout 
             (status = 500, description = "Internal server error")
         ),
 )]
-fn ApplyClusterLayout() -> () {}
+fn ApplyClusterLayout() {}
 
 #[utoipa::path(post,
     path = "/v2/RevertClusterLayout",
@@ -342,7 +342,7 @@ fn ApplyClusterLayout() -> () {}
             (status = 500, description = "Internal server error")
         ),
 )]
-fn RevertClusterLayout() -> () {}
+fn RevertClusterLayout() {}
 
 #[utoipa::path(post,
     path = "/v2/ClusterLayoutSkipDeadNodes",
@@ -354,7 +354,7 @@ fn RevertClusterLayout() -> () {}
             (status = 500, description = "Internal server error")
         ),
 )]
-fn ClusterLayoutSkipDeadNodes() -> () {}
+fn ClusterLayoutSkipDeadNodes() {}
 
 // **********************************************
 //      Access key operations
@@ -369,7 +369,7 @@ fn ClusterLayoutSkipDeadNodes() -> () {}
             (status = 500, description = "Internal server error")
         ),
 )]
-fn ListKeys() -> () {}
+fn ListKeys() {}
 
 #[utoipa::path(get,
     path = "/v2/GetKeyInfo",
@@ -386,7 +386,7 @@ For confidentiality reasons, the secret key is not returned by default: you must
             (status = 500, description = "Internal server error")
         ),
 )]
-fn GetKeyInfo() -> () {}
+fn GetKeyInfo() {}
 
 #[utoipa::path(post,
     path = "/v2/CreateKey",
@@ -398,7 +398,7 @@ fn GetKeyInfo() -> () {}
             (status = 500, description = "Internal server error")
         ),
 )]
-fn CreateKey() -> () {}
+fn CreateKey() {}
 
 #[utoipa::path(post,
     path = "/v2/ImportKey",
@@ -414,7 +414,7 @@ Imports an existing API key. This feature must only be used for migrations and b
             (status = 500, description = "Internal server error")
         ),
 )]
-fn ImportKey() -> () {}
+fn ImportKey() {}
 
 #[utoipa::path(post,
     path = "/v2/UpdateKey",
@@ -431,7 +431,7 @@ Updates information about the specified API access key.
             (status = 500, description = "Internal server error")
         ),
 )]
-fn UpdateKey() -> () {}
+fn UpdateKey() {}
 
 #[utoipa::path(post,
     path = "/v2/DeleteKey",
@@ -443,7 +443,7 @@ fn UpdateKey() -> () {}
             (status = 500, description = "Internal server error")
         ),
 )]
-fn DeleteKey() -> () {}
+fn DeleteKey() {}
 
 // **********************************************
 //      Bucket operations
@@ -458,7 +458,7 @@ fn DeleteKey() -> () {}
             (status = 500, description = "Internal server error")
         ),
 )]
-fn ListBuckets() -> () {}
+fn ListBuckets() {}
 
 #[utoipa::path(get,
     path = "/v2/GetBucketInfo",
@@ -475,7 +475,7 @@ and its quotas (if any).
             (status = 500, description = "Internal server error")
         ),
 )]
-fn GetBucketInfo() -> () {}
+fn GetBucketInfo() {}
 
 #[utoipa::path(post,
     path = "/v2/CreateBucket",
@@ -490,7 +490,7 @@ Technically, you can also specify both `globalAlias` and `localAlias` and that w
             (status = 500, description = "Internal server error")
         ),
 )]
-fn CreateBucket() -> () {}
+fn CreateBucket() {}
 
 #[utoipa::path(post,
     path = "/v2/UpdateBucket",
@@ -516,7 +516,7 @@ to change only one of the two quotas.
             (status = 500, description = "Internal server error")
         ),
 )]
-fn UpdateBucket() -> () {}
+fn UpdateBucket() {}
 
 #[utoipa::path(post,
     path = "/v2/DeleteBucket",
@@ -534,7 +534,7 @@ Deletes a storage bucket. A bucket cannot be deleted if it is not empty.
             (status = 500, description = "Internal server error")
         ),
 )]
-fn DeleteBucket() -> () {}
+fn DeleteBucket() {}
 
 #[utoipa::path(post,
     path = "/v2/CleanupIncompleteUploads",
@@ -546,7 +546,7 @@ fn DeleteBucket() -> () {}
             (status = 500, description = "Internal server error")
         ),
 )]
-fn CleanupIncompleteUploads() -> () {}
+fn CleanupIncompleteUploads() {}
 
 #[utoipa::path(get,
     path = "/v2/InspectObject",
@@ -568,7 +568,7 @@ upload is in progress and not yet finished.
             (status = 500, description = "Internal server error")
         ),
 )]
-fn InspectObject() -> () {}
+fn InspectObject() {}
 
 // **********************************************
 //      Operations on permissions for keys on buckets
@@ -594,7 +594,7 @@ If you want to disallow read for the key, check the DenyBucketKey operation.
             (status = 500, description = "Internal server error")
         ),
 )]
-fn AllowBucketKey() -> () {}
+fn AllowBucketKey() {}
 
 #[utoipa::path(post,
     path = "/v2/DenyBucketKey",
@@ -616,7 +616,7 @@ If you want the key to have the reading permission, check the AllowBucketKey ope
             (status = 500, description = "Internal server error")
         ),
 )]
-fn DenyBucketKey() -> () {}
+fn DenyBucketKey() {}
 
 // **********************************************
 //      Operations on bucket aliases
@@ -632,7 +632,7 @@ fn DenyBucketKey() -> () {}
             (status = 500, description = "Internal server error")
         ),
 )]
-fn AddBucketAlias() -> () {}
+fn AddBucketAlias() {}
 
 #[utoipa::path(post,
     path = "/v2/RemoveBucketAlias",
@@ -644,7 +644,7 @@ fn AddBucketAlias() -> () {}
             (status = 500, description = "Internal server error")
         ),
 )]
-fn RemoveBucketAlias() -> () {}
+fn RemoveBucketAlias() {}
 
 // Hack for issue #1249 (see UpdateClusterLayout)
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
@@ -680,7 +680,7 @@ Return information about the Garage daemon running on one or several nodes.
             (status = 500, description = "Internal server error")
         ),
 )]
-fn GetNodeInfo() -> () {}
+fn GetNodeInfo() {}
 
 #[utoipa::path(get,
     path = "/v2/GetNodeStatistics",
@@ -696,7 +696,7 @@ Fetch statistics for one or several Garage nodes.
             (status = 500, description = "Internal server error")
         ),
 )]
-fn GetNodeStatistics() -> () {}
+fn GetNodeStatistics() {}
 
 #[utoipa::path(post,
     path = "/v2/CreateMetadataSnapshot",
@@ -710,7 +710,7 @@ Instruct one or several nodes to take a snapshot of their metadata databases.
             (status = 500, description = "Internal server error")
         ),
 )]
-fn CreateMetadataSnapshot() -> () {}
+fn CreateMetadataSnapshot() {}
 
 #[utoipa::path(post,
     path = "/v2/LaunchRepairOperation",
@@ -725,7 +725,7 @@ Launch a repair operation on one or several cluster nodes.
             (status = 500, description = "Internal server error")
         ),
 )]
-fn LaunchRepairOperation() -> () {}
+fn LaunchRepairOperation() {}
 
 // **********************************************
 //      Worker operations
@@ -744,7 +744,7 @@ List background workers currently running on one or several cluster nodes.
             (status = 500, description = "Internal server error")
         ),
 )]
-fn ListWorkers() -> () {}
+fn ListWorkers() {}
 
 #[utoipa::path(post,
     path = "/v2/GetWorkerInfo",
@@ -759,7 +759,7 @@ Get information about the specified background worker on one or several cluster 
             (status = 500, description = "Internal server error")
         ),
 )]
-fn GetWorkerInfo() -> () {}
+fn GetWorkerInfo() {}
 
 #[utoipa::path(post,
     path = "/v2/GetWorkerVariable",
@@ -774,7 +774,7 @@ Fetch values of one or several worker variables, from one or several cluster nod
             (status = 500, description = "Internal server error")
         ),
 )]
-fn GetWorkerVariable() -> () {}
+fn GetWorkerVariable() {}
 
 #[utoipa::path(post,
     path = "/v2/SetWorkerVariable",
@@ -789,7 +789,7 @@ Set the value for a worker variable, on one or several cluster nodes.
             (status = 500, description = "Internal server error")
         ),
 )]
-fn SetWorkerVariable() -> () {}
+fn SetWorkerVariable() {}
 
 // **********************************************
 //      Block operations
@@ -807,7 +807,7 @@ List data blocks that are currently in an errored state on one or several Garage
             (status = 500, description = "Internal server error")
         ),
 )]
-fn ListBlockErrors() -> () {}
+fn ListBlockErrors() {}
 
 #[utoipa::path(post,
     path = "/v2/GetBlockInfo",
@@ -822,7 +822,7 @@ Get detailed information about a data block stored on a Garage node, including a
             (status = 500, description = "Internal server error")
         ),
 )]
-fn GetBlockInfo() -> () {}
+fn GetBlockInfo() {}
 
 #[utoipa::path(post,
     path = "/v2/RetryBlockResync",
@@ -837,7 +837,7 @@ Instruct Garage node(s) to retry the resynchronization of one or several missing
             (status = 500, description = "Internal server error")
         ),
 )]
-fn RetryBlockResync() -> () {}
+fn RetryBlockResync() {}
 
 #[utoipa::path(post,
     path = "/v2/PurgeBlocks",
@@ -854,7 +854,7 @@ This will remove all objects and in-progress multipart uploads that contain the 
             (status = 500, description = "Internal server error")
         ),
 )]
-fn PurgeBlocks() -> () {}
+fn PurgeBlocks() {}
 
 // **********************************************
 // **********************************************

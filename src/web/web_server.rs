@@ -155,8 +155,8 @@ impl WebServer {
 			.span_builder(format!("Web {} request", req.method()))
 			.with_trace_id(gen_trace_id())
 			.with_attributes(vec![
-				KeyValue::new("host", format!("{}", host_header.clone())),
-				KeyValue::new("method", format!("{}", req.method())),
+				KeyValue::new("host", host_header.clone()),
+				KeyValue::new("method", req.method().to_string()),
 				KeyValue::new("uri", req.uri().to_string()),
 			])
 			.start(&tracer);

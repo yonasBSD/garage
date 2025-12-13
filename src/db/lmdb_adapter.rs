@@ -45,16 +45,14 @@ pub(crate) fn open_db(path: &PathBuf, opt: &OpenOpt) -> Result<Db> {
 		}
 	}
 	match env_builder.open(path) {
-		Err(heed::Error::Io(e)) if e.kind() == std::io::ErrorKind::OutOfMemory => {
-			return Err(Error(
-				"OutOfMemory error while trying to open LMDB database. This can happen \
+		Err(heed::Error::Io(e)) if e.kind() == std::io::ErrorKind::OutOfMemory => Err(Error(
+			"OutOfMemory error while trying to open LMDB database. This can happen \
                 if your operating system is not allowing you to use sufficient virtual \
                 memory address space. Please check that no limit is set (ulimit -v). \
                 You may also try to set a smaller `lmdb_map_size` configuration parameter. \
                 On 32-bit machines, you should probably switch to another database engine."
-					.into(),
-			))
-		}
+				.into(),
+		)),
 		Err(e) => Err(Error(format!("Cannot open LMDB database: {}", e).into())),
 		Ok(db) => Ok(LmdbDb::init(db)),
 	}

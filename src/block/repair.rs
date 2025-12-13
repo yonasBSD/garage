@@ -558,7 +558,7 @@ impl Worker for RebalanceWorker {
 	}
 
 	fn status(&self) -> WorkerStatus {
-		let t_cur = self.t_finished.unwrap_or_else(|| now_msec());
+		let t_cur = self.t_finished.unwrap_or_else(now_msec);
 		let rate = self.moved_bytes / std::cmp::max(1, (t_cur - self.t_started) / 1000);
 		let mut freeform = vec![
 			format!("Blocks moved: {}", self.moved),

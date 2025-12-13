@@ -154,7 +154,7 @@ impl<A: ApiHandler> ApiServer<A> {
 		{
 			format!("{forwarded_for_ip_addr} (via {addr})")
 		} else {
-			format!("{addr}")
+			addr
 		};
 		// we only do this to log the access key, so we can discard any error
 		let key = self

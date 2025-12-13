@@ -89,7 +89,7 @@ impl DataBlock {
 					return DataBlock::compressed(data_compressed.into());
 				}
 			}
-			DataBlock::plain(data.into())
+			DataBlock::plain(data)
 		})
 		.await
 		.unwrap()
