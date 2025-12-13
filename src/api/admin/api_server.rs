@@ -64,7 +64,7 @@ impl EndpointHandler<AdminRpc> for AdminApiServer {
 		match message {
 			AdminRpc::Proxy(req) => {
 				info!("Proxied admin API request: {}", req.name());
-				let res = req.clone().handle(&self.garage, &self).await;
+				let res = req.clone().handle(&self.garage, self).await;
 				match res {
 					Ok(res) => Ok(AdminRpcResponse::ProxyApiOkResponse(res.tagged())),
 					Err(e) => Ok(AdminRpcResponse::ApiErrorResponse {
@@ -76,7 +76,7 @@ impl EndpointHandler<AdminRpc> for AdminApiServer {
 			}
 			AdminRpc::Internal(req) => {
 				info!("Internal admin API request: {}", req.name());
-				let res = req.clone().handle(&self.garage, &self).await;
+				let res = req.clone().handle(&self.garage, self).await;
 				match res {
 					Ok(res) => Ok(AdminRpcResponse::InternalApiOkResponse(res)),
 					Err(e) => Ok(AdminRpcResponse::ApiErrorResponse {
@@ -173,12 +173,12 @@ impl AdminApiServer {
 		}
 
 		match request {
-			AdminApiRequest::Options(req) => req.handle(&self.garage, &self).await,
-			AdminApiRequest::CheckDomain(req) => req.handle(&self.garage, &self).await,
-			AdminApiRequest::Health(req) => req.handle(&self.garage, &self).await,
-			AdminApiRequest::Metrics(req) => req.handle(&self.garage, &self).await,
+			AdminApiRequest::Options(req) => req.handle(&self.garage, self).await,
+			AdminApiRequest::CheckDomain(req) => req.handle(&self.garage, self).await,
+			AdminApiRequest::Health(req) => req.handle(&self.garage, self).await,
+			AdminApiRequest::Metrics(req) => req.handle(&self.garage, self).await,
 			req => {
-				let res = req.handle(&self.garage, &self).await?;
+				let res = req.handle(&self.garage, self).await?;
 				let mut res = json_ok_response(&res)?;
 				res.headers_mut()
 					.insert(ACCESS_CONTROL_ALLOW_ORIGIN, HeaderValue::from_static("*"));

@@ -3,7 +3,7 @@ use core::ops::Bound;
 use std::collections::HashMap;
 use std::convert::TryInto;
 use std::marker::PhantomPinned;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::pin::Pin;
 use std::sync::{Arc, RwLock};
 
@@ -22,7 +22,7 @@ pub use heed;
 
 pub(crate) fn open_db(path: &PathBuf, opt: &OpenOpt) -> Result<Db> {
 	info!("Opening LMDB database at: {}", path.display());
-	if let Err(e) = std::fs::create_dir_all(&path) {
+	if let Err(e) = std::fs::create_dir_all(path) {
 		return Err(Error(
 			format!("Unable to create LMDB data directory: {}", e).into(),
 		));
@@ -44,7 +44,7 @@ pub(crate) fn open_db(path: &PathBuf, opt: &OpenOpt) -> Result<Db> {
 			env_builder.flag(heed::flags::Flags::MdbNoSync);
 		}
 	}
-	match env_builder.open(&path) {
+	match env_builder.open(path) {
 		Err(heed::Error::Io(e)) if e.kind() == std::io::ErrorKind::OutOfMemory => {
 			return Err(Error(
 				"OutOfMemory error while trying to open LMDB database. This can happen \
@@ -147,7 +147,7 @@ impl IDb for LmdbDb {
 		Ok(ret2)
 	}
 
-	fn snapshot(&self, base_path: &PathBuf) -> Result<()> {
+	fn snapshot(&self, base_path: &Path) -> Result<()> {
 		std::fs::create_dir_all(base_path)?;
 		let path = Engine::Lmdb.db_path(base_path);
 		self.db
@@ -399,7 +399,7 @@ where
 			// before the tx it is pointing  to.
 			unsafe { &*&raw const *tx }
 		};
-		let iter = iterfun(&tx_lifetime_overextended)?;
+		let iter = iterfun(tx_lifetime_overextended)?;
 
 		*boxed.as_mut().iter() = Some(iter);
 

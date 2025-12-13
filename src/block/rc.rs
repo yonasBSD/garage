@@ -89,7 +89,7 @@ impl BlockRc {
 				.transaction(|tx| {
 					let mut cnt = 0;
 					for f in recalc_fns.iter() {
-						cnt += f(&tx, hash)?;
+						cnt += f(tx, hash)?;
 					}
 					let old_rc = RcEntry::parse_opt(tx.get(&self.rc_table, hash)?);
 					trace!(

@@ -1,7 +1,7 @@
 use core::ops::Bound;
 
 use std::marker::PhantomPinned;
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::pin::Pin;
 use std::ptr::NonNull;
 use std::sync::{Arc, Mutex, RwLock};
@@ -110,7 +110,7 @@ impl IDb for SqliteDb {
 		let name = format!("tree_{}", name.replace(':', "_COLON_"));
 		let mut trees = self.trees.write().unwrap();
 
-		if let Some(i) = trees.iter().position(|x| x.as_ref() == &name) {
+		if let Some(i) = trees.iter().position(|x| x.as_ref() == name) {
 			Ok(i)
 		} else {
 			let db = self.db.get()?;
@@ -150,10 +150,10 @@ impl IDb for SqliteDb {
 		Ok(trees)
 	}
 
-	fn snapshot(&self, base_path: &PathBuf) -> Result<()> {
+	fn snapshot(&self, base_path: &Path) -> Result<()> {
 		std::fs::create_dir_all(base_path)?;
 		let path = Engine::Sqlite
-			.db_path(&base_path)
+			.db_path(base_path)
 			.into_os_string()
 			.into_string()
 			.map_err(|_| Error("invalid sqlite path string".into()))?;

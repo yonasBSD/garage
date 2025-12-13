@@ -73,7 +73,7 @@ impl Cli {
 		let mut actions = vec![];
 
 		for node in opt.replace.iter() {
-			let id = find_matching_node(&status, &layout, &node)?;
+			let id = find_matching_node(&status, &layout, node)?;
 
 			actions.push(NodeRoleChange {
 				id,
@@ -82,7 +82,7 @@ impl Cli {
 		}
 
 		for node in opt.node_ids.iter() {
-			let id = find_matching_node(&status, &layout, &node)?;
+			let id = find_matching_node(&status, &layout, node)?;
 
 			let current = get_staged_or_current_role(&id, &layout);
 

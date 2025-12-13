@@ -143,7 +143,7 @@ impl RequestHandler for GetClusterLayoutHistoryRequest {
 					.iter()
 					.map(|node| {
 						(
-							hex::encode(&node),
+							hex::encode(node),
 							NodeUpdateTrackers {
 								ack: layout.update_trackers.ack_map.get(node, min_stored),
 								sync: layout.update_trackers.sync_map.get(node, min_stored),

@@ -33,7 +33,7 @@ pub async fn handle_read_index(
 
 	let (partition_keys, more, next_start) = read_range(
 		&garage.k2v.counter_table.table,
-		&bucket_id,
+		bucket_id,
 		&prefix,
 		&start,
 		&end,

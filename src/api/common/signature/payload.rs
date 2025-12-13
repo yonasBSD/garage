@@ -187,7 +187,7 @@ fn check_presigned_signature(
 	let headers_mut = request.headers_mut();
 	for (name, value) in query.iter() {
 		if let Some(existing) = headers_mut.get(name) {
-			if signed_headers.contains(&name) && existing.as_bytes() != value.value.as_bytes() {
+			if signed_headers.contains(name) && existing.as_bytes() != value.value.as_bytes() {
 				return Err(Error::bad_request(format!(
 					"Conflicting values for `{}` in query parameters and request headers",
 					name
@@ -343,7 +343,7 @@ pub fn canonical_request(
 	let canonical_query_string = {
 		let mut items = Vec::with_capacity(query.len());
 		for (_, QueryValue { key, value }) in query.iter() {
-			items.push(uri_encode(&key, true) + "=" + &uri_encode(&value, true));
+			items.push(uri_encode(key, true) + "=" + &uri_encode(value, true));
 		}
 		items.sort();
 		items.join("&")

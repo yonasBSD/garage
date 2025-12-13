@@ -159,7 +159,7 @@ impl Key {
 			return Err("The specified key ID is not a valid Garage key ID (starts with `GK`, followed by 12 hex-encoded bytes)");
 		}
 
-		if secret_key.len() != 64 || hex::decode(&secret_key).is_err() {
+		if secret_key.len() != 64 || hex::decode(secret_key).is_err() {
 			return Err("The specified secret key is not a valid Garage secret key (composed of 32 hex-encoded bytes)");
 		}
 

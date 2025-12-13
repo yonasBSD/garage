@@ -466,7 +466,7 @@ impl BlockResyncManager {
 
 			// First, check whether we are still supposed to store that
 			// block in the latest cluster layout version.
-			let storage_nodes = manager.storage_nodes_of(&hash)?;
+			let storage_nodes = manager.storage_nodes_of(hash)?;
 
 			if !storage_nodes.contains(&manager.system.id) {
 				info!(

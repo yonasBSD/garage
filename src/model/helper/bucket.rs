@@ -95,7 +95,7 @@ impl<'a> BucketHelper<'a> {
 			if let Some(Some(bucket_id)) = api_key_params.local_aliases.get(bucket_name) {
 				self.0
 					.bucket_table
-					.get_local(&EmptyKey, &bucket_id)?
+					.get_local(&EmptyKey, bucket_id)?
 					.filter(|x| !x.state.is_deleted())
 			} else {
 				self.resolve_global_bucket_fast(bucket_name)?
@@ -157,7 +157,7 @@ impl<'a> BucketHelper<'a> {
 		let local_alias = self
 			.0
 			.key_table
-			.get(&EmptyKey, &key_id)
+			.get(&EmptyKey, key_id)
 			.await?
 			.and_then(|k| k.state.into_option())
 			.ok_or_else(|| GarageError::Message(format!("access key {} has been deleted", key_id)))?

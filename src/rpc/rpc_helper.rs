@@ -592,7 +592,7 @@ impl RpcHelper {
 			for i in 0..current_layout.replication_factor {
 				for vn in vernodes.iter() {
 					if let Some(n) = vn.get(i) {
-						if !nodes.contains(&n) {
+						if !nodes.contains(n) {
 							if *n == self.0.our_node_id {
 								// it's always fast (almost free) to ask locally,
 								// so always put that as first choice

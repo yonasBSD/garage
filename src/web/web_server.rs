@@ -429,11 +429,11 @@ async fn handle_inner(
 		// - Caching directives such as If-None-Match, etc, which are not relevant
 		let cleaned_req = Request::builder().uri(req.uri()).body(()).unwrap();
 
-		let mut ret = match req.method() {
-			&Method::HEAD => {
+		let mut ret = match *req.method() {
+			Method::HEAD => {
 				handle_head_without_ctx(garage, &cleaned_req, bucket_id, key, None).await?
 			}
-			&Method::GET => {
+			Method::GET => {
 				handle_get_without_ctx(
 					garage,
 					&cleaned_req,
@@ -451,9 +451,9 @@ async fn handle_inner(
 
 		Ok(ret)
 	} else {
-		match req.method() {
-			&Method::HEAD => handle_head_without_ctx(garage, req, bucket_id, key, None).await,
-			&Method::GET => {
+		match *req.method() {
+			Method::HEAD => handle_head_without_ctx(garage, req, bucket_id, key, None).await,
+			Method::GET => {
 				handle_get_without_ctx(garage, req, bucket_id, key, None, Default::default()).await
 			}
 			_ => Err(ApiError::bad_request("HTTP method not supported")),

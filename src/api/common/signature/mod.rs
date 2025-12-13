@@ -69,7 +69,7 @@ pub fn verify_request(
 	mut req: Request<IncomingBody>,
 	service: &'static str,
 ) -> Result<VerifiedRequest, Error> {
-	let checked_signature = payload::check_payload_signature(&garage, &mut req, service)?;
+	let checked_signature = payload::check_payload_signature(garage, &mut req, service)?;
 
 	let request = streaming::parse_streaming_body(
 		req,

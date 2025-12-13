@@ -57,23 +57,23 @@ pub fn handle_get_bucket_acl(ctx: ReqCtx) -> Result<Response<ResBody>, Error> {
 
 	if kp.allow_owner {
 		grants.push(s3_xml::Grant {
-			grantee: create_grantee(&key_p, &api_key),
+			grantee: create_grantee(key_p, &api_key),
 			permission: s3_xml::Value("FULL_CONTROL".to_string()),
 		});
 	} else {
 		if kp.allow_read {
 			grants.push(s3_xml::Grant {
-				grantee: create_grantee(&key_p, &api_key),
+				grantee: create_grantee(key_p, &api_key),
 				permission: s3_xml::Value("READ".to_string()),
 			});
 			grants.push(s3_xml::Grant {
-				grantee: create_grantee(&key_p, &api_key),
+				grantee: create_grantee(key_p, &api_key),
 				permission: s3_xml::Value("READ_ACP".to_string()),
 			});
 		}
 		if kp.allow_write {
 			grants.push(s3_xml::Grant {
-				grantee: create_grantee(&key_p, &api_key),
+				grantee: create_grantee(key_p, &api_key),
 				permission: s3_xml::Value("WRITE".to_string()),
 			});
 		}

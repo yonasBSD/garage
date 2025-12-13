@@ -113,7 +113,7 @@ impl ConsulDiscovery {
 					let mut headers = reqwest::header::HeaderMap::new();
 					headers.insert(
 						"x-consul-token",
-						reqwest::header::HeaderValue::from_str(&token)?,
+						reqwest::header::HeaderValue::from_str(token)?,
 					);
 					builder = builder.default_headers(headers);
 				}

@@ -1,5 +1,5 @@
 use std::fs;
-use std::path::PathBuf;
+use std::path::Path;
 use std::sync::Arc;
 use std::sync::Mutex;
 use std::time::{Duration, Instant};
@@ -67,9 +67,9 @@ pub fn snapshot_metadata(garage: &Garage) -> Result<(), Error> {
 	Ok(())
 }
 
-fn cleanup_snapshots(snapshots_dir: &PathBuf) -> Result<(), Error> {
+fn cleanup_snapshots(snapshots_dir: &Path) -> Result<(), Error> {
 	let mut snapshots =
-		fs::read_dir(&snapshots_dir)?.collect::<Result<Vec<fs::DirEntry>, std::io::Error>>()?;
+		fs::read_dir(snapshots_dir)?.collect::<Result<Vec<fs::DirEntry>, std::io::Error>>()?;
 
 	snapshots.retain(|x| x.file_name().len() > 8);
 	snapshots.sort_by_key(|x| x.file_name());

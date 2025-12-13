@@ -29,7 +29,7 @@ impl RequestHandler for LocalListBlockErrorsRequest {
 		let errors = errors
 			.into_iter()
 			.map(|e| BlockError {
-				block_hash: hex::encode(&e.hash),
+				block_hash: hex::encode(e.hash),
 				refcount: e.refcount,
 				error_count: e.error_count,
 				last_try_secs_ago: now.saturating_sub(e.last_try) / 1000,
@@ -61,15 +61,15 @@ impl RequestHandler for LocalGetBlockInfoRequest {
 					VersionBacklink::MultipartUpload { upload_id } => {
 						if let Some(u) = garage.mpu_table.get(upload_id, &EmptyKey).await? {
 							BlockVersionBacklink::Upload {
-								upload_id: hex::encode(&upload_id),
+								upload_id: hex::encode(upload_id),
 								upload_deleted: u.deleted.get(),
 								upload_garbage_collected: false,
-								bucket_id: Some(hex::encode(&u.bucket_id)),
+								bucket_id: Some(hex::encode(u.bucket_id)),
 								key: Some(u.key.to_string()),
 							}
 						} else {
 							BlockVersionBacklink::Upload {
-								upload_id: hex::encode(&upload_id),
+								upload_id: hex::encode(upload_id),
 								upload_deleted: true,
 								upload_garbage_collected: true,
 								bucket_id: None,
@@ -78,12 +78,12 @@ impl RequestHandler for LocalGetBlockInfoRequest {
 						}
 					}
 					VersionBacklink::Object { bucket_id, key } => BlockVersionBacklink::Object {
-						bucket_id: hex::encode(&bucket_id),
+						bucket_id: hex::encode(bucket_id),
 						key: key.to_string(),
 					},
 				};
 				versions.push(BlockVersion {
-					version_id: hex::encode(&br.version),
+					version_id: hex::encode(br.version),
 					ref_deleted: br.deleted.get(),
 					version_deleted: v.deleted.get(),
 					garbage_collected: false,
@@ -91,7 +91,7 @@ impl RequestHandler for LocalGetBlockInfoRequest {
 				});
 			} else {
 				versions.push(BlockVersion {
-					version_id: hex::encode(&br.version),
+					version_id: hex::encode(br.version),
 					ref_deleted: br.deleted.get(),
 					version_deleted: true,
 					garbage_collected: true,
@@ -100,7 +100,7 @@ impl RequestHandler for LocalGetBlockInfoRequest {
 			}
 		}
 		Ok(LocalGetBlockInfoResponse {
-			block_hash: hex::encode(&hash),
+			block_hash: hex::encode(hash),
 			refcount,
 			versions,
 		})
@@ -215,7 +215,7 @@ fn find_block_hash_by_prefix(garage: &Arc<Garage>, prefix: &str) -> Result<Hash,
 	for item in iter {
 		let (k, _v) = item.map_err(GarageError::from)?;
 		let hash = Hash::try_from(&k[..32]).unwrap();
-		if &hash.as_slice()[..prefix_bin.len()] != prefix_bin {
+		if hash.as_slice()[..prefix_bin.len()] != prefix_bin {
 			break;
 		}
 		if hex::encode(hash.as_slice()).starts_with(prefix) {

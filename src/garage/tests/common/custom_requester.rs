@@ -244,7 +244,7 @@ impl<'a> RequestBuilder<'a> {
 				);
 				all_headers.insert(
 					HeaderName::from_static("x-amz-trailer"),
-					HeaderValue::from_str(&trailer_algorithm).unwrap(),
+					HeaderValue::from_str(trailer_algorithm).unwrap(),
 				);
 
 				all_headers.insert(
@@ -252,8 +252,8 @@ impl<'a> RequestBuilder<'a> {
 					to_streaming_unsigned_trailer_body(
 						&self.body,
 						*chunk_size,
-						&trailer_algorithm,
-						&trailer_value,
+						trailer_algorithm,
+						trailer_value,
 					)
 					.len()
 					.to_string()
@@ -330,8 +330,8 @@ impl<'a> RequestBuilder<'a> {
 			} => to_streaming_unsigned_trailer_body(
 				&self.body,
 				*chunk_size,
-				&trailer_algorithm,
-				&trailer_value,
+				trailer_algorithm,
+				trailer_value,
 			),
 			_ => self.body.clone(),
 		};

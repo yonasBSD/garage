@@ -1,4 +1,4 @@
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 
 use crate::{Db, Error, Result};
 
@@ -25,8 +25,8 @@ impl Engine {
 	}
 
 	/// Return engine-specific DB path from base path
-	pub fn db_path(&self, base_path: &PathBuf) -> PathBuf {
-		let mut ret = base_path.clone();
+	pub fn db_path(&self, base_path: &Path) -> PathBuf {
+		let mut ret = base_path.to_path_buf();
 		match self {
 			Self::Lmdb => {
 				ret.push("db.lmdb");

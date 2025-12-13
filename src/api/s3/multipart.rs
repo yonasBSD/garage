@@ -43,7 +43,7 @@ pub async fn handle_create_multipart_upload(
 		bucket_name,
 		..
 	} = &ctx;
-	let existing_object = garage.object_table.get(&bucket_id, &key).await?;
+	let existing_object = garage.object_table.get(bucket_id, key).await?;
 
 	let upload_id = gen_uuid();
 	let timestamp = next_timestamp(existing_object.as_ref());
@@ -57,12 +57,12 @@ pub async fn handle_create_multipart_upload(
 
 	// Determine whether object should be encrypted, and if so the key
 	let encryption = EncryptionParams::new_from_headers(
-		&garage,
+		garage,
 		req.headers(),
 		OekDerivationInfo {
 			bucket_id: *bucket_id,
 			version_id: upload_id,
-			object_key: &key,
+			object_key: key,
 		},
 	)?;
 	let object_encryption = encryption.encrypt_meta(meta)?;
@@ -157,12 +157,8 @@ pub async fn handle_put_part(
 		} => (encryption, checksum_algorithm),
 		_ => unreachable!(),
 	};
-	let (encryption, _) = EncryptionParams::check_decrypt(
-		&garage,
-		&req_head.headers,
-		&object_encryption,
-		oek_params,
-	)?;
+	let (encryption, _) =
+		EncryptionParams::check_decrypt(garage, &req_head.headers, &object_encryption, oek_params)?;
 
 	// Check object is valid and part can be accepted
 	let first_block = first_block.ok_or_bad_request("Empty body")?;
@@ -459,7 +455,7 @@ pub async fn handle_complete_multipart_upload(
 		None => object_encryption,
 		Some(_) => {
 			let (encryption, meta) = EncryptionParams::check_decrypt(
-				&garage,
+				garage,
 				&req_head.headers,
 				&object_encryption,
 				oek_params,
@@ -503,23 +499,23 @@ pub async fn handle_complete_multipart_upload(
 		key: s3_xml::Value(key),
 		etag: s3_xml::Value(format!("\"{}\"", etag)),
 		checksum_crc32: match &checksum_extra {
-			Some(ChecksumValue::Crc32(x)) => Some(s3_xml::Value(BASE64_STANDARD.encode(&x))),
+			Some(ChecksumValue::Crc32(x)) => Some(s3_xml::Value(BASE64_STANDARD.encode(x))),
 			_ => None,
 		},
 		checksum_crc32c: match &checksum_extra {
-			Some(ChecksumValue::Crc32c(x)) => Some(s3_xml::Value(BASE64_STANDARD.encode(&x))),
+			Some(ChecksumValue::Crc32c(x)) => Some(s3_xml::Value(BASE64_STANDARD.encode(x))),
 			_ => None,
 		},
 		checksum_crc64nvme: match &checksum_extra {
-			Some(ChecksumValue::Crc64Nvme(x)) => Some(s3_xml::Value(BASE64_STANDARD.encode(&x))),
+			Some(ChecksumValue::Crc64Nvme(x)) => Some(s3_xml::Value(BASE64_STANDARD.encode(x))),
 			_ => None,
 		},
 		checksum_sha1: match &checksum_extra {
-			Some(ChecksumValue::Sha1(x)) => Some(s3_xml::Value(BASE64_STANDARD.encode(&x))),
+			Some(ChecksumValue::Sha1(x)) => Some(s3_xml::Value(BASE64_STANDARD.encode(x))),
 			_ => None,
 		},
 		checksum_sha256: match &checksum_extra {
-			Some(ChecksumValue::Sha256(x)) => Some(s3_xml::Value(BASE64_STANDARD.encode(&x))),
+			Some(ChecksumValue::Sha256(x)) => Some(s3_xml::Value(BASE64_STANDARD.encode(x))),
 			_ => None,
 		},
 		checksum_type: match checksum_algorithm {
@@ -735,7 +731,7 @@ impl MultipartChecksummer {
 		part_len: u64,
 	) -> Result<(), Error> {
 		self.md5
-			.update(&hex::decode(&etag).ok_or_message("invalid etag hex")?);
+			.update(&hex::decode(etag).ok_or_message("invalid etag hex")?);
 		if let Some(extra) = &mut self.extra {
 			extra.update(checksum, part_len)?;
 		}
@@ -815,10 +811,10 @@ impl MultipartExtraChecksummer {
 				}
 			},
 			(Self::CompositeSha1(sha1), Some(ChecksumValue::Sha1(x))) => {
-				sha1.update(&x);
+				sha1.update(x);
 			}
 			(Self::CompositeSha256(sha256), Some(ChecksumValue::Sha256(x))) => {
-				sha256.update(&x);
+				sha256.update(x);
 			}
 			_ => {
 				return Err(Error::internal_error(format!(

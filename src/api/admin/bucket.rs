@@ -380,13 +380,13 @@ impl RequestHandler for InspectObjectRequest {
 						.map(|(vk, vb)| InspectObjectBlock {
 							part_number: vk.part_number,
 							offset: vk.offset,
-							hash: hex::encode(&vb.hash),
+							hash: hex::encode(vb.hash),
 							size: vb.size,
 						})
 						.collect::<Vec<_>>()
 				})
 				.unwrap_or_default();
-			let uuid = hex::encode(&obj_ver.uuid);
+			let uuid = hex::encode(obj_ver.uuid);
 			let timestamp = DateTime::from_timestamp_millis(obj_ver.timestamp as i64)
 				.expect("invalid timestamp in db");
 			match &obj_ver.state {
@@ -467,7 +467,7 @@ impl RequestHandler for InspectObjectRequest {
 		}
 
 		Ok(InspectObjectResponse {
-			bucket_id: hex::encode(&object.bucket_id),
+			bucket_id: hex::encode(object.bucket_id),
 			key: object.key,
 			versions,
 		})

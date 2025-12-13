@@ -143,7 +143,7 @@ impl RequestHandler for UpdateAdminTokenRequest {
 		garage: &Arc<Garage>,
 		_admin: &Admin,
 	) -> Result<UpdateAdminTokenResponse, Error> {
-		let mut token = get_existing_admin_token(&garage, &self.id).await?;
+		let mut token = get_existing_admin_token(garage, &self.id).await?;
 
 		apply_token_updates(&mut token, self.body)?;
 
@@ -164,7 +164,7 @@ impl RequestHandler for DeleteAdminTokenRequest {
 		garage: &Arc<Garage>,
 		_admin: &Admin,
 	) -> Result<DeleteAdminTokenResponse, Error> {
-		let token = get_existing_admin_token(&garage, &self.id).await?;
+		let token = get_existing_admin_token(garage, &self.id).await?;
 
 		garage
 			.admin_token_table
@@ -224,7 +224,7 @@ impl RequestHandler for GetCurrentAdminTokenInfoRequest {
 		}
 
 		let (prefix, _) = self.admin_token.split_once('.').unwrap();
-		let token = get_existing_admin_token(&garage, &prefix.to_string()).await?;
+		let token = get_existing_admin_token(garage, &prefix.to_string()).await?;
 
 		Ok(GetCurrentAdminTokenInfoResponse(admin_token_info_results(
 			&token, now,

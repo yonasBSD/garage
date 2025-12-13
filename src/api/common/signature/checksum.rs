@@ -187,7 +187,7 @@ impl Checksums {
 	pub fn verify(&self, expected: &ExpectedChecksums) -> Result<(), Error> {
 		if let Some(expected_md5) = &expected.md5 {
 			match self.md5 {
-				Some(md5) if BASE64_STANDARD.encode(&md5) == expected_md5.trim_matches('"') => (),
+				Some(md5) if BASE64_STANDARD.encode(md5) == expected_md5.trim_matches('"') => (),
 				_ => {
 					return Err(Error::InvalidDigest(
 						"MD5 checksum verification failed (from content-md5)".into(),
@@ -312,7 +312,7 @@ pub fn extract_checksum_value(
 		ChecksumAlgorithm::Crc32 => {
 			let crc32 = headers
 				.get(X_AMZ_CHECKSUM_CRC32)
-				.and_then(|x| BASE64_STANDARD.decode(&x).ok())
+				.and_then(|x| BASE64_STANDARD.decode(x).ok())
 				.and_then(|x| x.try_into().ok())
 				.ok_or_bad_request("invalid x-amz-checksum-crc32 header")?;
 			Ok(ChecksumValue::Crc32(crc32))
@@ -320,7 +320,7 @@ pub fn extract_checksum_value(
 		ChecksumAlgorithm::Crc32c => {
 			let crc32c = headers
 				.get(X_AMZ_CHECKSUM_CRC32C)
-				.and_then(|x| BASE64_STANDARD.decode(&x).ok())
+				.and_then(|x| BASE64_STANDARD.decode(x).ok())
 				.and_then(|x| x.try_into().ok())
 				.ok_or_bad_request("invalid x-amz-checksum-crc32c header")?;
 			Ok(ChecksumValue::Crc32c(crc32c))
@@ -328,7 +328,7 @@ pub fn extract_checksum_value(
 		ChecksumAlgorithm::Crc64Nvme => {
 			let crc64nvme = headers
 				.get(X_AMZ_CHECKSUM_CRC64NVME)
-				.and_then(|x| BASE64_STANDARD.decode(&x).ok())
+				.and_then(|x| BASE64_STANDARD.decode(x).ok())
 				.and_then(|x| x.try_into().ok())
 				.ok_or_bad_request("invalid x-amz-checksum-crc64nvme header")?;
 			Ok(ChecksumValue::Crc64Nvme(crc64nvme))
@@ -336,7 +336,7 @@ pub fn extract_checksum_value(
 		ChecksumAlgorithm::Sha1 => {
 			let sha1 = headers
 				.get(X_AMZ_CHECKSUM_SHA1)
-				.and_then(|x| BASE64_STANDARD.decode(&x).ok())
+				.and_then(|x| BASE64_STANDARD.decode(x).ok())
 				.and_then(|x| x.try_into().ok())
 				.ok_or_bad_request("invalid x-amz-checksum-sha1 header")?;
 			Ok(ChecksumValue::Sha1(sha1))
@@ -344,7 +344,7 @@ pub fn extract_checksum_value(
 		ChecksumAlgorithm::Sha256 => {
 			let sha256 = headers
 				.get(X_AMZ_CHECKSUM_SHA256)
-				.and_then(|x| BASE64_STANDARD.decode(&x).ok())
+				.and_then(|x| BASE64_STANDARD.decode(x).ok())
 				.and_then(|x| x.try_into().ok())
 				.ok_or_bad_request("invalid x-amz-checksum-sha256 header")?;
 			Ok(ChecksumValue::Sha256(sha256))
@@ -358,19 +358,19 @@ pub fn add_checksum_response_headers(
 ) -> http::response::Builder {
 	match checksum {
 		Some(ChecksumValue::Crc32(crc32)) => {
-			resp = resp.header(X_AMZ_CHECKSUM_CRC32, BASE64_STANDARD.encode(&crc32));
+			resp = resp.header(X_AMZ_CHECKSUM_CRC32, BASE64_STANDARD.encode(crc32));
 		}
 		Some(ChecksumValue::Crc32c(crc32c)) => {
-			resp = resp.header(X_AMZ_CHECKSUM_CRC32C, BASE64_STANDARD.encode(&crc32c));
+			resp = resp.header(X_AMZ_CHECKSUM_CRC32C, BASE64_STANDARD.encode(crc32c));
 		}
 		Some(ChecksumValue::Crc64Nvme(crc64nvme)) => {
-			resp = resp.header(X_AMZ_CHECKSUM_CRC64NVME, BASE64_STANDARD.encode(&crc64nvme));
+			resp = resp.header(X_AMZ_CHECKSUM_CRC64NVME, BASE64_STANDARD.encode(crc64nvme));
 		}
 		Some(ChecksumValue::Sha1(sha1)) => {
-			resp = resp.header(X_AMZ_CHECKSUM_SHA1, BASE64_STANDARD.encode(&sha1));
+			resp = resp.header(X_AMZ_CHECKSUM_SHA1, BASE64_STANDARD.encode(sha1));
 		}
 		Some(ChecksumValue::Sha256(sha256)) => {
-			resp = resp.header(X_AMZ_CHECKSUM_SHA256, BASE64_STANDARD.encode(&sha256));
+			resp = resp.header(X_AMZ_CHECKSUM_SHA256, BASE64_STANDARD.encode(sha256));
 		}
 		None => (),
 	}

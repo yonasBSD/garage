@@ -371,7 +371,7 @@ impl K2vClient {
 		use sha2::{Digest, Sha256};
 		let mut hasher = Sha256::new();
 		hasher.update(req.body());
-		let hash = hex::encode(&hasher.finalize());
+		let hash = hex::encode(hasher.finalize());
 		req.headers_mut()
 			.insert(AMZ_CONTENT_SHA256, hash.try_into().unwrap());
 

@@ -91,7 +91,7 @@ pub async fn handle_put(
 		OekDerivationInfo {
 			bucket_id: ctx.bucket_id,
 			version_id: version_uuid,
-			object_key: &key,
+			object_key: key,
 		},
 	)?;
 

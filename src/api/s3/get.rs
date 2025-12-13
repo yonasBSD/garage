@@ -124,7 +124,7 @@ fn handle_http_precondition(
 ) -> Result<Option<Response<ResBody>>, Error> {
 	let precondition_headers = PreconditionHeaders::parse(req)?;
 
-	if let Some(status_code) = precondition_headers.check(&version, &version_meta.etag)? {
+	if let Some(status_code) = precondition_headers.check(version, &version_meta.etag)? {
 		Ok(Some(
 			Response::builder()
 				.status(status_code)
@@ -189,7 +189,7 @@ pub async fn handle_head_without_ctx(
 		OekDerivationInfo::for_object(&object, object_version),
 	)?;
 
-	let checksum_mode = checksum_mode(&req);
+	let checksum_mode = checksum_mode(req);
 
 	if let Some(part_number) = part_number {
 		match version_data {
@@ -316,7 +316,7 @@ pub async fn handle_get_without_ctx(
 		OekDerivationInfo::for_object(&object, last_v),
 	)?;
 
-	let checksum_mode = checksum_mode(&req);
+	let checksum_mode = checksum_mode(req);
 
 	match (part_number, parse_range_header(req, last_v_meta.size)?) {
 		(Some(_), Some(_)) => Err(Error::bad_request(
@@ -403,7 +403,7 @@ async fn handle_get_full(
 	let mut resp_builder = object_headers(
 		version,
 		version_meta,
-		&meta_inner,
+		meta_inner,
 		encryption,
 		checksum_mode,
 	)
@@ -515,7 +515,7 @@ async fn handle_get_range(
 	match &version_data {
 		ObjectVersionData::DeleteMarker => unreachable!(),
 		ObjectVersionData::Inline(_meta, bytes) => {
-			let bytes = encryption.decrypt_blob(&bytes)?;
+			let bytes = encryption.decrypt_blob(bytes)?;
 			if end as usize <= bytes.len() {
 				let body = bytes_body(bytes[begin as usize..end as usize].to_vec().into());
 				Ok(resp_builder.body(body)?)
@@ -564,7 +564,7 @@ async fn handle_get_part(
 			if part_number != 1 {
 				return Err(Error::InvalidPart);
 			}
-			let bytes = encryption.decrypt_blob(&bytes)?;
+			let bytes = encryption.decrypt_blob(bytes)?;
 			assert_eq!(bytes.len() as u64, version_meta.size);
 			Ok(resp_builder
 				.header(CONTENT_LENGTH, format!("{}", bytes.len()))

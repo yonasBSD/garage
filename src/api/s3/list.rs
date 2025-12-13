@@ -324,31 +324,31 @@ pub async fn handle_list_parts(
 					size: s3_xml::IntValue(part.size as i64),
 					checksum_crc32: match &checksum {
 						Some(ChecksumValue::Crc32(x)) => {
-							Some(s3_xml::Value(BASE64_STANDARD.encode(&x)))
+							Some(s3_xml::Value(BASE64_STANDARD.encode(x)))
 						}
 						_ => None,
 					},
 					checksum_crc32c: match &checksum {
 						Some(ChecksumValue::Crc32c(x)) => {
-							Some(s3_xml::Value(BASE64_STANDARD.encode(&x)))
+							Some(s3_xml::Value(BASE64_STANDARD.encode(x)))
 						}
 						_ => None,
 					},
 					checksum_crc64nvme: match &checksum {
 						Some(ChecksumValue::Crc64Nvme(x)) => {
-							Some(s3_xml::Value(BASE64_STANDARD.encode(&x)))
+							Some(s3_xml::Value(BASE64_STANDARD.encode(x)))
 						}
 						_ => None,
 					},
 					checksum_sha1: match &checksum {
 						Some(ChecksumValue::Sha1(x)) => {
-							Some(s3_xml::Value(BASE64_STANDARD.encode(&x)))
+							Some(s3_xml::Value(BASE64_STANDARD.encode(x)))
 						}
 						_ => None,
 					},
 					checksum_sha256: match &checksum {
 						Some(ChecksumValue::Sha256(x)) => {
-							Some(s3_xml::Value(BASE64_STANDARD.encode(&x)))
+							Some(s3_xml::Value(BASE64_STANDARD.encode(x)))
 						}
 						_ => None,
 					},
