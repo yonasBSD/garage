@@ -29,7 +29,7 @@ async fn handle_delete_internal(ctx: &ReqCtx, key: &str) -> Result<(Uuid, Uuid),
 		.iter()
 		.rev()
 		.find(|v| !matches!(&v.state, ObjectVersionState::Aborted))
-		.or_else(|| object.versions().iter().rev().next());
+		.or_else(|| object.versions().iter().next_back());
 	let deleted_version = match deleted_version {
 		Some(dv) => dv.uuid,
 		None => {

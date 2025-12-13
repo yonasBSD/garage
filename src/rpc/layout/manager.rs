@@ -116,7 +116,7 @@ impl LayoutManager {
 	pub fn sync_table_until(self: &Arc<Self>, table_name: &'static str, version: u64) {
 		let mut table_sync_version = self.table_sync_version.lock().unwrap();
 		*table_sync_version.get_mut(table_name).unwrap() = version;
-		let sync_until = table_sync_version.iter().map(|(_, v)| *v).min().unwrap();
+		let sync_until = *table_sync_version.values().min().unwrap();
 		drop(table_sync_version);
 
 		let mut layout = self.layout.write().unwrap();

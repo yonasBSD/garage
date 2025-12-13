@@ -264,13 +264,13 @@ impl LayoutHelper {
 			.versions
 			.iter()
 			.map(|x| x.version)
-			.skip_while(|v| {
-				self.ack_lock
+			.find(|v| {
+				!self
+					.ack_lock
 					.get(v)
 					.map(|x| x.load(Ordering::Relaxed) == 0)
 					.unwrap_or(true)
 			})
-			.next()
 			.unwrap_or(self.inner().current().version);
 		let changed = self.update(|layout| {
 			layout

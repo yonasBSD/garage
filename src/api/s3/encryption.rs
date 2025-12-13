@@ -94,10 +94,7 @@ impl EncryptionParams {
 		// data blocks are reused as-is. Since Garage v2, we are using
 		// object-specific encryption keys, so we know that if both source
 		// and destination are encrypted, it can't be with the same key.
-		match (a, b) {
-			(Self::Plaintext, Self::Plaintext) => true,
-			_ => false,
-		}
+		matches!((a, b), (Self::Plaintext, Self::Plaintext))
 	}
 
 	pub fn new_from_headers(
@@ -587,8 +584,7 @@ impl Stream for DecryptStream {
 
 		if matches!(this.state, DecryptStreamState::Done) {
 			if !this.buf.is_empty() {
-				return Poll::Ready(Some(Err(std::io::Error::new(
-					std::io::ErrorKind::Other,
+				return Poll::Ready(Some(Err(std::io::Error::other(
 					"Decrypt: unexpected bytes after last encrypted chunk",
 				))));
 			}
@@ -622,10 +618,7 @@ impl Stream for DecryptStream {
 		match res {
 			Ok(bytes) if bytes.is_empty() => Poll::Ready(None),
 			Ok(bytes) => Poll::Ready(Some(Ok(bytes.into()))),
-			Err(_) => Poll::Ready(Some(Err(std::io::Error::new(
-				std::io::ErrorKind::Other,
-				"Decryption failed",
-			)))),
+			Err(_) => Poll::Ready(Some(Err(std::io::Error::other("Decryption failed")))),
 		}
 	}
 }

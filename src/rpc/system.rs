@@ -951,13 +951,13 @@ fn get_rpc_public_addr(config: &Config) -> Option<SocketAddr> {
 			let filter_subnet: Option<ipnet::IpNet> = config
 				.rpc_public_addr_subnet
 				.as_ref()
-				.and_then(|filter_subnet_str| match filter_subnet_str.parse::<ipnet::IpNet>() {
+				.map(|filter_subnet_str| match filter_subnet_str.parse::<ipnet::IpNet>() {
 					Ok(filter_subnet) => {
 						let filter_subnet_trunc = filter_subnet.trunc();
 						if filter_subnet_trunc != filter_subnet {
 							warn!("`rpc_public_addr_subnet` changed after applying netmask, continuing with {}", filter_subnet.trunc());
 						}
-						Some(filter_subnet_trunc)
+						filter_subnet_trunc
 					}
 					Err(e) => {
 						panic!(

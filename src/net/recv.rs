@@ -62,7 +62,7 @@ pub(crate) trait RecvLoop: Sync + 'static {
 			trace!(
 				"recv_loop({}): in_progress = {:?}",
 				debug_name,
-				streams.iter().map(|(id, _)| id).collect::<Vec<_>>()
+				streams.keys().collect::<Vec<_>>()
 			);
 
 			let mut header_id = [0u8; RequestID::BITS as usize / 8];
@@ -79,10 +79,7 @@ pub(crate) trait RecvLoop: Sync + 'static {
 
 			if size == CANCEL_REQUEST {
 				if let Some(mut stream) = streams.remove(&id) {
-					stream.send(Err(std::io::Error::new(
-						std::io::ErrorKind::Other,
-						"netapp: cancel requested",
-					)));
+					stream.send(Err(std::io::Error::other("netapp: cancel requested")));
 					stream.end();
 				}
 				self.cancel_handler(id);

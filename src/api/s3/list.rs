@@ -1014,12 +1014,12 @@ mod tests {
 
 		query.common.prefix = "a/".to_string();
 		assert_eq!(
-			common_prefix(objs.get(0).unwrap(), &query.common),
+			common_prefix(objs.first().unwrap(), &query.common),
 			Some("a/b/")
 		);
 
 		query.common.prefix = "a/b/".to_string();
-		assert_eq!(common_prefix(objs.get(0).unwrap(), &query.common), None);
+		assert_eq!(common_prefix(objs.first().unwrap(), &query.common), None);
 	}
 
 	#[test]

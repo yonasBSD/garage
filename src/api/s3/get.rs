@@ -400,15 +400,10 @@ async fn handle_get_full(
 	overrides: GetObjectOverrides,
 	checksum_mode: ChecksumMode,
 ) -> Result<Response<ResBody>, Error> {
-	let mut resp_builder = object_headers(
-		version,
-		version_meta,
-		meta_inner,
-		encryption,
-		checksum_mode,
-	)
-	.header(CONTENT_LENGTH, format!("{}", version_meta.size))
-	.status(StatusCode::OK);
+	let mut resp_builder =
+		object_headers(version, version_meta, meta_inner, encryption, checksum_mode)
+			.header(CONTENT_LENGTH, format!("{}", version_meta.size))
+			.status(StatusCode::OK);
 	getobject_override_headers(overrides, &mut resp_builder)?;
 
 	let stream = full_object_byte_stream(garage, version, version_data, encryption);
@@ -708,11 +703,7 @@ fn body_from_blocks_range(
 									Some(None)
 								} else {
 									// The chunk has an intersection with the requested range
-									let start_in_chunk = if *chunk_offset > begin {
-										0
-									} else {
-										begin - *chunk_offset
-									};
+									let start_in_chunk = begin.saturating_sub(*chunk_offset);
 									let end_in_chunk = if *chunk_offset + chunk_len < end {
 										chunk_len
 									} else {
@@ -773,10 +764,7 @@ fn error_stream_item<E: std::fmt::Display>(e: E) -> ByteStream {
 }
 
 fn std_error_from_read_error<E: std::fmt::Display>(e: E) -> std::io::Error {
-	std::io::Error::new(
-		std::io::ErrorKind::Other,
-		format!("Error while reading object data: {}", e),
-	)
+	std::io::Error::other(format!("Error while reading object data: {}", e))
 }
 
 // ----

@@ -493,10 +493,7 @@ impl RespEnc {
 				(res_stream, order_tag)
 			}
 			Err(err) => {
-				let err = std::io::Error::new(
-					std::io::ErrorKind::Other,
-					format!("netapp error: {}", err),
-				);
+				let err = std::io::Error::other(format!("netapp error: {}", err));
 				(
 					Box::pin(futures::stream::once(async move { Err(err) })),
 					None,

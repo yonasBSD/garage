@@ -92,12 +92,7 @@ impl Cli {
 			.await?;
 
 		// CLI-only checks: the bucket must not have other aliases
-		if bucket
-			.global_aliases
-			.iter()
-			.find(|a| **a != opt.name)
-			.is_some()
-		{
+		if bucket.global_aliases.iter().any(|a| *a != opt.name) {
 			return Err(Error::Message(format!("Bucket {} still has other global aliases. Use `bucket unalias` to delete them one by one.", opt.name)));
 		}
 

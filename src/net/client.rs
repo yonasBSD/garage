@@ -180,8 +180,7 @@ impl ClientConn {
 				"Too many inflight requests! RequestID collision. Interrupting previous request."
 			);
 			let _ = old_ch.send(Box::pin(futures::stream::once(async move {
-				Err(std::io::Error::new(
-					std::io::ErrorKind::Other,
+				Err(std::io::Error::other(
 					"RequestID collision, too many inflight requests",
 				))
 			})));

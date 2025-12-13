@@ -63,6 +63,7 @@ pub struct ExpectedChecksums {
 	pub extra: Option<ChecksumValue>,
 }
 
+#[derive(Default)]
 pub struct Checksummer {
 	pub crc32: Option<CrcDigest>,
 	pub crc32c: Option<CrcDigest>,
@@ -84,14 +85,7 @@ pub struct Checksums {
 
 impl Checksummer {
 	pub fn new() -> Self {
-		Self {
-			crc32: None,
-			crc32c: None,
-			crc64nvme: None,
-			md5: None,
-			sha1: None,
-			sha256: None,
-		}
+		Default::default()
 	}
 
 	pub fn init(expected: &ExpectedChecksums, add_md5: bool) -> Self {

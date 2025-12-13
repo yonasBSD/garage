@@ -380,9 +380,9 @@ impl From<layout::ZoneRedundancy> for ZoneRedundancy {
 	}
 }
 
-impl Into<layout::ZoneRedundancy> for ZoneRedundancy {
-	fn into(self) -> layout::ZoneRedundancy {
-		match self {
+impl From<ZoneRedundancy> for layout::ZoneRedundancy {
+	fn from(val: ZoneRedundancy) -> Self {
+		match val {
 			ZoneRedundancy::Maximum => layout::ZoneRedundancy::Maximum,
 			ZoneRedundancy::AtLeast(x) => layout::ZoneRedundancy::AtLeast(x),
 		}
@@ -397,10 +397,10 @@ impl From<layout::LayoutParameters> for LayoutParameters {
 	}
 }
 
-impl Into<layout::LayoutParameters> for LayoutParameters {
-	fn into(self) -> layout::LayoutParameters {
+impl From<LayoutParameters> for layout::LayoutParameters {
+	fn from(val: LayoutParameters) -> Self {
 		layout::LayoutParameters {
-			zone_redundancy: self.zone_redundancy.into(),
+			zone_redundancy: val.zone_redundancy.into(),
 		}
 	}
 }
