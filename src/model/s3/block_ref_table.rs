@@ -98,7 +98,7 @@ pub fn block_ref_recount_fn(
 			.upgrade()
 			.ok_or_message("cannot upgrade weak ptr to block_ref_table")
 			.map_err(db::TxError::Abort)?;
-		Ok(calculate_refcount(&table, tx, block)?)
+		calculate_refcount(&table, tx, block)
 	})
 }
 

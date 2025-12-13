@@ -23,7 +23,7 @@ pub use rusqlite;
 pub(crate) fn open_db(path: &PathBuf, opt: &OpenOpt) -> Result<Db> {
 	info!("Opening Sqlite database at: {}", path.display());
 	let manager = r2d2_sqlite::SqliteConnectionManager::file(path);
-	Ok(SqliteDb::new(manager, opt.fsync)?)
+	SqliteDb::new(manager, opt.fsync)
 }
 
 // ----

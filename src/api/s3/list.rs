@@ -725,10 +725,7 @@ impl<K: std::cmp::Ord, V> Accumulator<K, V> {
 		let object = objects.peek().expect("This iterator can not be empty as it is checked earlier in the code. This is a logic bug, please report it.");
 
 		// Check if this is a common prefix (requires a passed delimiter and its value in the key)
-		let pfx = match common_prefix(object, query) {
-			Some(p) => p,
-			None => return None,
-		};
+		let pfx = common_prefix(object, query)?;
 		assert!(pfx.starts_with(&query.prefix));
 
 		// Try to register this prefix

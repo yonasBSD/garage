@@ -105,12 +105,11 @@ impl IDb for FjallDb {
 	}
 
 	fn list_trees(&self) -> Result<Vec<String>> {
-		Ok(self
-			.keyspace
+		self.keyspace
 			.list_partitions()
 			.iter()
 			.map(|n| decode_name(n))
-			.collect::<Result<Vec<_>>>()?)
+			.collect::<Result<Vec<_>>>()
 	}
 
 	fn snapshot(&self, base_path: &Path) -> Result<()> {

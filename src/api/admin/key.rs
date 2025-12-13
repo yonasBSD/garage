@@ -91,7 +91,7 @@ impl RequestHandler for GetKeyInfoRequest {
 			}
 		};
 
-		Ok(key_info_results(garage, key, self.show_secret_key).await?)
+		key_info_results(garage, key, self.show_secret_key).await
 	}
 }
 

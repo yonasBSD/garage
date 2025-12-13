@@ -61,7 +61,7 @@ pub async fn handle_read_batch(
 		resps.push(resp?);
 	}
 
-	Ok(json_ok_response(&resps)?)
+	json_ok_response(&resps)
 }
 
 async fn handle_read_batch_query(
@@ -155,7 +155,7 @@ pub async fn handle_delete_batch(
 		resps.push(resp?);
 	}
 
-	Ok(json_ok_response(&resps)?)
+	json_ok_response(&resps)
 }
 
 async fn handle_delete_batch_query(
