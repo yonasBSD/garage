@@ -344,10 +344,10 @@ pub fn get_staged_or_current_role(
 	None
 }
 
-pub fn find_matching_node<'a>(
+pub fn find_matching_node(
 	status: &GetClusterStatusResponse,
 	layout: &GetClusterLayoutResponse,
-	pattern: &'a str,
+	pattern: &str,
 ) -> Result<String, Error> {
 	let all_node_ids_iter = status
 		.nodes

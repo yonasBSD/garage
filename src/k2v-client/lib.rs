@@ -647,7 +647,7 @@ struct PollRangeResponse {
 }
 
 impl<'a> Filter<'a> {
-	fn query_params(&self) -> Vec<(&'static str, std::borrow::Cow<str>)> {
+	fn query_params(&self) -> Vec<(&'static str, std::borrow::Cow<'_, str>)> {
 		let mut res = Vec::<(&'static str, std::borrow::Cow<str>)>::with_capacity(8);
 		if let Some(start) = self.start.as_deref() {
 			res.push(("start", start.into()));
