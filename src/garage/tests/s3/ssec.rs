@@ -19,7 +19,7 @@ async fn test_ssec_object() {
 		.map(|x| ((x * 3792) % 256) as u8)
 		.collect::<Vec<u8>>();
 
-	for data in vec![bytes1, bytes2] {
+	for data in [bytes1, bytes2] {
 		let stream = ByteStream::new(data.clone().into());
 
 		// Write encrypted object

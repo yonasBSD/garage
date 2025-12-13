@@ -314,7 +314,7 @@ async fn test_multipart_with_checksum() {
 		.build();
 
 	let expected_checksum = calculate_sha1(
-		&vec![
+		&[
 			BASE64_STANDARD.decode(&ck1).unwrap(),
 			BASE64_STANDARD.decode(&ck2).unwrap(),
 			BASE64_STANDARD.decode(&ck3).unwrap(),

@@ -598,7 +598,7 @@ impl ListObjectsQuery {
 					Some("[") => Ok(RangeBegin::IncludingKey {
 						key: String::from_utf8(
 							BASE64_STANDARD
-								.decode(token[1..].as_bytes())
+								.decode(&token.as_bytes()[1..])
 								.ok_or_bad_request("Invalid continuation token")?,
 						)?,
 						fallback_key: None,
@@ -606,7 +606,7 @@ impl ListObjectsQuery {
 					Some("]") => Ok(RangeBegin::AfterKey {
 						key: String::from_utf8(
 							BASE64_STANDARD
-								.decode(token[1..].as_bytes())
+								.decode(&token.as_bytes()[1..])
 								.ok_or_bad_request("Invalid continuation token")?,
 						)?,
 					}),
@@ -1043,7 +1043,7 @@ mod tests {
 
 	#[test]
 	fn test_extract_upload() {
-		let objs = vec![
+		let objs = [
 			Object::new(
 				bucket(),
 				"b".to_string(),

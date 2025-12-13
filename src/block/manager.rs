@@ -173,7 +173,7 @@ impl BlockManager {
 			data_fsync: config.data_fsync,
 			disable_scrub: config.disable_scrub,
 			compression_level: config.compression_level,
-			mutation_lock: vec![(); MUTEX_COUNT]
+			mutation_lock: [(); MUTEX_COUNT]
 				.iter()
 				.map(|_| Mutex::new(BlockManagerLocked()))
 				.collect::<Vec<_>>(),

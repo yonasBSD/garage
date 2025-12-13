@@ -668,7 +668,7 @@ pub(crate) fn extract_metadata_headers(
 	let mut ret = Vec::new();
 
 	// Preserve standard headers
-	let standard_header = vec![
+	let standard_header = [
 		hyper::header::CONTENT_TYPE,
 		hyper::header::CACHE_CONTROL,
 		hyper::header::CONTENT_DISPOSITION,
