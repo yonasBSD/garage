@@ -318,18 +318,22 @@ pub async fn handle_get_without_ctx(
 
 	let checksum_mode = checksum_mode(req);
 
+	let handle_get_info = HandleGetInfo {
+		garage,
+		version: last_v,
+		version_data: last_v_data,
+		version_meta: last_v_meta,
+		encryption: enc,
+		meta_inner: &headers,
+	};
+
 	match (part_number, parse_range_header(req, last_v_meta.size)?) {
 		(Some(_), Some(_)) => Err(Error::bad_request(
 			"Cannot specify both partNumber and Range header",
 		)),
 		(Some(pn), None) => {
 			handle_get_part(
-				garage,
-				last_v,
-				last_v_data,
-				last_v_meta,
-				enc,
-				&headers,
+				handle_get_info,
 				pn,
 				ChecksumMode {
 					// TODO: for multipart uploads, checksums of each part should be stored
@@ -342,12 +346,7 @@ pub async fn handle_get_without_ctx(
 		}
 		(None, Some(range)) => {
 			handle_get_range(
-				garage,
-				last_v,
-				last_v_data,
-				last_v_meta,
-				enc,
-				&headers,
+				handle_get_info,
 				range.start,
 				range.start + range.length,
 				ChecksumMode {
@@ -359,19 +358,7 @@ pub async fn handle_get_without_ctx(
 			)
 			.await
 		}
-		(None, None) => {
-			handle_get_full(
-				garage,
-				last_v,
-				last_v_data,
-				last_v_meta,
-				enc,
-				&headers,
-				overrides,
-				checksum_mode,
-			)
-			.await
-		}
+		(None, None) => handle_get_full(handle_get_info, overrides, checksum_mode).await,
 	}
 }
 
@@ -390,23 +377,37 @@ pub(crate) fn check_version_not_deleted(version: &Version) -> Result<(), Error> 
 	Ok(())
 }
 
-async fn handle_get_full(
+struct HandleGetInfo<'a> {
 	garage: Arc<Garage>,
-	version: &ObjectVersion,
-	version_data: &ObjectVersionData,
-	version_meta: &ObjectVersionMeta,
+	version: &'a ObjectVersion,
+	version_data: &'a ObjectVersionData,
+	version_meta: &'a ObjectVersionMeta,
 	encryption: EncryptionParams,
-	meta_inner: &ObjectVersionMetaInner,
+	meta_inner: &'a ObjectVersionMetaInner,
+}
+
+async fn handle_get_full(
+	info: HandleGetInfo<'_>,
 	overrides: GetObjectOverrides,
 	checksum_mode: ChecksumMode,
 ) -> Result<Response<ResBody>, Error> {
-	let mut resp_builder =
-		object_headers(version, version_meta, meta_inner, encryption, checksum_mode)
-			.header(CONTENT_LENGTH, format!("{}", version_meta.size))
-			.status(StatusCode::OK);
+	let mut resp_builder = object_headers(
+		info.version,
+		info.version_meta,
+		info.meta_inner,
+		info.encryption,
+		checksum_mode,
+	)
+	.header(CONTENT_LENGTH, format!("{}", info.version_meta.size))
+	.status(StatusCode::OK);
 	getobject_override_headers(overrides, &mut resp_builder)?;
 
-	let stream = full_object_byte_stream(garage, version, version_data, encryption);
+	let stream = full_object_byte_stream(
+		info.garage,
+		info.version,
+		info.version_data,
+		info.encryption,
+	);
 
 	Ok(resp_builder.body(response_body_from_stream(stream))?)
 }
@@ -486,12 +487,7 @@ pub fn full_object_byte_stream(
 }
 
 async fn handle_get_range(
-	garage: Arc<Garage>,
-	version: &ObjectVersion,
-	version_data: &ObjectVersionData,
-	version_meta: &ObjectVersionMeta,
-	encryption: EncryptionParams,
-	meta_inner: &ObjectVersionMetaInner,
+	info: HandleGetInfo<'_>,
 	begin: u64,
 	end: u64,
 	checksum_mode: ChecksumMode,
@@ -499,18 +495,24 @@ async fn handle_get_range(
 	// Here we do not use getobject_override_headers because we don't
 	// want to add any overridden headers (those should not be added
 	// when returning PARTIAL_CONTENT)
-	let resp_builder = object_headers(version, version_meta, meta_inner, encryption, checksum_mode)
-		.header(CONTENT_LENGTH, format!("{}", end - begin))
-		.header(
-			CONTENT_RANGE,
-			format!("bytes {}-{}/{}", begin, end - 1, version_meta.size),
-		)
-		.status(StatusCode::PARTIAL_CONTENT);
+	let resp_builder = object_headers(
+		info.version,
+		info.version_meta,
+		info.meta_inner,
+		info.encryption,
+		checksum_mode,
+	)
+	.header(CONTENT_LENGTH, format!("{}", end - begin))
+	.header(
+		CONTENT_RANGE,
+		format!("bytes {}-{}/{}", begin, end - 1, info.version_meta.size),
+	)
+	.status(StatusCode::PARTIAL_CONTENT);
 
-	match &version_data {
+	match &info.version_data {
 		ObjectVersionData::DeleteMarker => unreachable!(),
 		ObjectVersionData::Inline(_meta, bytes) => {
-			let bytes = encryption.decrypt_blob(bytes)?;
+			let bytes = info.encryption.decrypt_blob(bytes)?;
 			if end as usize <= bytes.len() {
 				let body = bytes_body(bytes[begin as usize..end as usize].to_vec().into());
 				Ok(resp_builder.body(body)?)
@@ -521,46 +523,47 @@ async fn handle_get_range(
 			}
 		}
 		ObjectVersionData::FirstBlock(_meta, _first_block_hash) => {
-			let version = garage
+			let version = info
+				.garage
 				.version_table
-				.get(&version.uuid, &EmptyKey)
+				.get(&info.version.uuid, &EmptyKey)
 				.await?
 				.ok_or(Error::NoSuchKey)?;
 			check_version_not_deleted(&version)?;
-			let body =
-				body_from_blocks_range(garage, encryption, version.blocks.items(), begin, end);
+			let body = body_from_blocks_range(
+				info.garage,
+				info.encryption,
+				version.blocks.items(),
+				begin,
+				end,
+			);
 			Ok(resp_builder.body(body)?)
 		}
 	}
 }
 
 async fn handle_get_part(
-	garage: Arc<Garage>,
-	object_version: &ObjectVersion,
-	version_data: &ObjectVersionData,
-	version_meta: &ObjectVersionMeta,
-	encryption: EncryptionParams,
-	meta_inner: &ObjectVersionMetaInner,
+	info: HandleGetInfo<'_>,
 	part_number: u64,
 	checksum_mode: ChecksumMode,
 ) -> Result<Response<ResBody>, Error> {
 	// Same as for get_range, no getobject_override_headers
 	let resp_builder = object_headers(
-		object_version,
-		version_meta,
-		meta_inner,
-		encryption,
+		info.version,
+		info.version_meta,
+		info.meta_inner,
+		info.encryption,
 		checksum_mode,
 	)
 	.status(StatusCode::PARTIAL_CONTENT);
 
-	match version_data {
+	match info.version_data {
 		ObjectVersionData::Inline(_, bytes) => {
 			if part_number != 1 {
 				return Err(Error::InvalidPart);
 			}
-			let bytes = encryption.decrypt_blob(bytes)?;
-			assert_eq!(bytes.len() as u64, version_meta.size);
+			let bytes = info.encryption.decrypt_blob(bytes)?;
+			assert_eq!(bytes.len() as u64, info.version_meta.size);
 			Ok(resp_builder
 				.header(CONTENT_LENGTH, format!("{}", bytes.len()))
 				.header(
@@ -571,9 +574,10 @@ async fn handle_get_part(
 				.body(bytes_body(bytes.into_owned().into()))?)
 		}
 		ObjectVersionData::FirstBlock(_, _) => {
-			let version = garage
+			let version = info
+				.garage
 				.version_table
-				.get(&object_version.uuid, &EmptyKey)
+				.get(&info.version.uuid, &EmptyKey)
 				.await?
 				.ok_or(Error::NoSuchKey)?;
 
@@ -582,14 +586,19 @@ async fn handle_get_part(
 			let (begin, end) =
 				calculate_part_bounds(&version, part_number).ok_or(Error::InvalidPart)?;
 
-			let body =
-				body_from_blocks_range(garage, encryption, version.blocks.items(), begin, end);
+			let body = body_from_blocks_range(
+				info.garage,
+				info.encryption,
+				version.blocks.items(),
+				begin,
+				end,
+			);
 
 			Ok(resp_builder
 				.header(CONTENT_LENGTH, format!("{}", end - begin))
 				.header(
 					CONTENT_RANGE,
-					format!("bytes {}-{}/{}", begin, end - 1, version_meta.size),
+					format!("bytes {}-{}/{}", begin, end - 1, info.version_meta.size),
 				)
 				.header(X_AMZ_MP_PARTS_COUNT, format!("{}", version.n_parts()?))
 				.body(body)?)

@@ -148,14 +148,18 @@ pub async fn handle_copy(
 			&& (was_multipart || checksum_algorithm != source_checksum_algorithm));
 
 	let res = if !must_recopy {
+		let dest_info = DestInfo {
+			key: dest_key,
+			uuid: dest_uuid,
+			object_meta: dest_object_meta,
+			encryption: dest_encryption,
+		};
+
 		// In most cases, we can just copy the metadata and link blocks of the
 		// old object from the new object.
 		handle_copy_metaonly(
 			ctx,
-			dest_key,
-			dest_uuid,
-			dest_object_meta,
-			dest_encryption,
+			dest_info,
 			source_version,
 			source_version_data,
 			source_version_meta,
@@ -177,12 +181,16 @@ pub async fn handle_copy(
 			checksum_type: checksum_algorithm.map(|_| ChecksumType::FullObject),
 			..dest_object_meta
 		};
+
+		let dest_info = DestInfo {
+			key: dest_key,
+			uuid: dest_uuid,
+			object_meta: dest_object_meta,
+			encryption: dest_encryption,
+		};
 		handle_copy_reencrypt(
 			ctx,
-			dest_key,
-			dest_uuid,
-			dest_object_meta,
-			dest_encryption,
+			dest_info,
 			source_version,
 			source_version_data,
 			source_encryption,
@@ -209,12 +217,16 @@ pub async fn handle_copy(
 	Ok(resp.body(string_body(xml))?)
 }
 
+struct DestInfo<'a> {
+	key: &'a str,
+	uuid: Uuid,
+	object_meta: ObjectVersionMetaInner,
+	encryption: EncryptionParams,
+}
+
 async fn handle_copy_metaonly(
 	ctx: ReqCtx,
-	dest_key: &str,
-	dest_uuid: Uuid,
-	dest_object_meta: ObjectVersionMetaInner,
-	dest_encryption: EncryptionParams,
+	dest_info: DestInfo<'_>,
 	source_version: &ObjectVersion,
 	source_version_data: &ObjectVersionData,
 	source_version_meta: &ObjectVersionMeta,
@@ -229,13 +241,13 @@ async fn handle_copy_metaonly(
 	let new_timestamp = now_msec();
 
 	let new_meta = ObjectVersionMeta {
-		encryption: dest_encryption.encrypt_meta(dest_object_meta)?,
+		encryption: dest_info.encryption.encrypt_meta(dest_info.object_meta)?,
 		size: source_version_meta.size,
 		etag: source_version_meta.etag.clone(),
 	};
 
 	let res = SaveStreamResult {
-		version_uuid: dest_uuid,
+		version_uuid: dest_info.uuid,
 		version_timestamp: new_timestamp,
 		etag: new_meta.etag.clone(),
 	};
@@ -247,7 +259,7 @@ async fn handle_copy_metaonly(
 			// bytes is either plaintext before&after or encrypted with the
 			// same keys, so it's ok to just copy it as is
 			let dest_object_version = ObjectVersion {
-				uuid: dest_uuid,
+				uuid: dest_info.uuid,
 				timestamp: new_timestamp,
 				state: ObjectVersionState::Complete(ObjectVersionData::Inline(
 					new_meta,
@@ -256,7 +268,7 @@ async fn handle_copy_metaonly(
 			};
 			let dest_object = Object::new(
 				dest_bucket_id,
-				dest_key.to_string(),
+				dest_info.key.to_string(),
 				vec![dest_object_version],
 			);
 			garage.object_table.insert(&dest_object).await?;
@@ -274,7 +286,7 @@ async fn handle_copy_metaonly(
 			// This holds a reference to the object in the Version table
 			// so that it won't be deleted, e.g. by repair_versions.
 			let tmp_dest_object_version = ObjectVersion {
-				uuid: dest_uuid,
+				uuid: dest_info.uuid,
 				timestamp: new_timestamp,
 				state: ObjectVersionState::Uploading {
 					encryption: new_meta.encryption.clone(),
@@ -284,10 +296,12 @@ async fn handle_copy_metaonly(
 			};
 			let tmp_dest_object = Object::new(
 				dest_bucket_id,
-				dest_key.to_string(),
+				dest_info.key.to_string(),
 				vec![tmp_dest_object_version],
 			);
 			garage.object_table.insert(&tmp_dest_object).await?;
+
+			let dest_uuid = dest_info.uuid;
 
 			// Write version in the version table. Even with empty block list,
 			// this means that the BlockRef entries linked to this version cannot be
@@ -297,7 +311,7 @@ async fn handle_copy_metaonly(
 				dest_uuid,
 				VersionBacklink::Object {
 					bucket_id: dest_bucket_id,
-					key: dest_key.to_string(),
+					key: dest_info.key.to_string(),
 				},
 				false,
 			);
@@ -329,7 +343,7 @@ async fn handle_copy_metaonly(
 			// with the stuff before, the block's reference counts could be decremented before
 			// they are incremented again for the new version, leading to data being deleted.
 			let dest_object_version = ObjectVersion {
-				uuid: dest_uuid,
+				uuid: dest_info.uuid,
 				timestamp: new_timestamp,
 				state: ObjectVersionState::Complete(ObjectVersionData::FirstBlock(
 					new_meta,
@@ -338,7 +352,7 @@ async fn handle_copy_metaonly(
 			};
 			let dest_object = Object::new(
 				dest_bucket_id,
-				dest_key.to_string(),
+				dest_info.key.to_string(),
 				vec![dest_object_version],
 			);
 			garage.object_table.insert(&dest_object).await?;
@@ -350,10 +364,7 @@ async fn handle_copy_metaonly(
 
 async fn handle_copy_reencrypt(
 	ctx: ReqCtx,
-	dest_key: &str,
-	dest_uuid: Uuid,
-	dest_object_meta: ObjectVersionMetaInner,
-	dest_encryption: EncryptionParams,
+	dest_info: DestInfo<'_>,
 	source_version: &ObjectVersion,
 	source_version_data: &ObjectVersionData,
 	source_encryption: EncryptionParams,
@@ -371,11 +382,11 @@ async fn handle_copy_reencrypt(
 
 	save_stream(
 		&ctx,
-		dest_uuid,
-		dest_object_meta,
-		dest_encryption,
+		dest_info.uuid,
+		dest_info.object_meta,
+		dest_info.encryption,
 		source_stream.map_err(|e| Error::from(GarageError::from(e))),
-		&dest_key.to_string(),
+		&dest_info.key.to_string(),
 		checksum_mode,
 	)
 	.await
