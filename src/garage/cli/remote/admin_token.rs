@@ -230,7 +230,7 @@ fn print_token_info(token: &GetAdminTokenInfoResponse) {
 		format!("Created:\t{}", token.created.unwrap().with_timezone(&Local)),
 		format!(
 			"Validity:\t{}",
-			token.expired.then_some("EXPIRED").unwrap_or("valid")
+			if token.expired { "EXPIRED" } else { "valid" }
 		),
 		format!(
 			"Expiration:\t{}",

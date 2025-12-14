@@ -283,7 +283,7 @@ fn print_key_info(key: &GetKeyInfoResponse) {
 	table.extend([
 		format!(
 			"Validity:\t{}",
-			key.expired.then_some("EXPIRED").unwrap_or("valid")
+			if key.expired { "EXPIRED" } else { "valid" }
 		),
 		format!(
 			"Expiration:\t{}",

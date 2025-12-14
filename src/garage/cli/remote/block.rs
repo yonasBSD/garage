@@ -67,11 +67,9 @@ impl Cli {
 				Some(BlockVersionBacklink::Object { bucket_id, key }) => {
 					table.push(format!(
 						"{}\t{:.16}{}\t{:.16}\t{}",
-						ver.ref_deleted.then_some("deleted").unwrap_or("active"),
+						if ver.ref_deleted { "deleted" } else { "active" },
 						ver.version_id,
-						ver.version_deleted
-							.then_some(" (deleted)")
-							.unwrap_or_default(),
+						deleted_to_str(ver.version_deleted),
 						bucket_id,
 						key
 					));
@@ -85,15 +83,13 @@ impl Cli {
 				}) => {
 					table.push(format!(
 						"{}\t{:.16}{}\t{:.16}\t{}\t{:.16}{}",
-						ver.ref_deleted.then_some("deleted").unwrap_or("active"),
+						if ver.ref_deleted { "deleted" } else { "active" },
 						ver.version_id,
-						ver.version_deleted
-							.then_some(" (deleted)")
-							.unwrap_or_default(),
+						deleted_to_str(ver.version_deleted),
 						bucket_id.as_deref().unwrap_or(""),
 						key.as_deref().unwrap_or(""),
 						upload_id,
-						upload_deleted.then_some(" (deleted)").unwrap_or_default(),
+						deleted_to_str(*upload_deleted),
 					));
 				}
 				None => {
@@ -165,5 +161,14 @@ impl Cli {
 		);
 
 		Ok(())
+	}
+}
+
+#[must_use]
+const fn deleted_to_str(deleted: bool) -> &'static str {
+	if deleted {
+		" (deleted)"
+	} else {
+		""
 	}
 }
