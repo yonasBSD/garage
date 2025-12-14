@@ -93,7 +93,7 @@ fn object_headers(
 
 /// Override headers according to specific query parameters, see
 /// section "Overriding response header values through the request" in
-/// https://docs.aws.amazon.com/AmazonS3/latest/API/API_GetObject.html
+/// <https://docs.aws.amazon.com/AmazonS3/latest/API/API_GetObject.html>
 fn getobject_override_headers(
 	overrides: GetObjectOverrides,
 	resp: &mut http::response::Builder,

@@ -44,7 +44,7 @@ use secrets::Secrets;
 	about = "S3-compatible object store for self-hosted geo-distributed deployments"
 )]
 struct Opt {
-	/// Host to connect to for admin operations, in the format: <full-node-id>@<ip>:<port>
+	/// Host to connect to for admin operations, in the format: `<full-node-id>@<ip>:<port>`
 	#[structopt(short = "h", long = "rpc-host", env = "GARAGE_RPC_HOST")]
 	pub rpc_host: Option<String>,
 

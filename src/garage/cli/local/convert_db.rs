@@ -8,7 +8,7 @@ use garage_db::*;
 #[derive(StructOpt, Debug)]
 pub struct ConvertDbOpt {
 	/// Input database path (not the same as metadata_dir, see
-	/// https://garagehq.deuxfleurs.fr/documentation/reference-manual/configuration/#db-engine-since-v0-8-0)
+	/// <https://garagehq.deuxfleurs.fr/documentation/reference-manual/configuration/#db_engine>
 	#[structopt(short = "i")]
 	input_path: PathBuf,
 	/// Input database engine (lmdb or sqlite; limited by db engines

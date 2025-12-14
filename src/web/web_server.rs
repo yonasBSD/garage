@@ -543,7 +543,7 @@ impl RoutingResult {
 /// When a path ends with "/", we append the index name to match traditional web server behavior
 /// which is also AWS S3 behavior.
 ///
-/// Check: https://docs.aws.amazon.com/AmazonS3/latest/userguide/IndexDocumentSupport.html
+/// Check: <https://docs.aws.amazon.com/AmazonS3/latest/userguide/IndexDocumentSupport.html>
 fn path_to_keys(
 	path: &str,
 	index: &str,

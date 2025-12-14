@@ -339,12 +339,11 @@ impl<F: TableSchema, R: TableReplication> Worker for GcWorker<F, R> {
 /// such entry in the db
 ///
 /// Format of an entry:
-/// - key =    8 bytes: timestamp of tombstone
-///                     (used to implement GC delay)
-///            n bytes: key in the main data table
+/// - key =    8 bytes: timestamp of tombstone (used to implement GC delay)
+///   n bytes: key in the main data table
 /// - value =  hash of the table entry to delete (the tombstone)
-///            for verification purpose, because we don't want to delete
-///            things that aren't tombstones
+///   for verification purpose, because we don't want to delete
+///   things that aren't tombstones
 pub(crate) struct GcTodoEntry {
 	tombstone_timestamp: u64,
 	key: Vec<u8>,

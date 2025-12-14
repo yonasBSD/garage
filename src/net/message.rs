@@ -100,9 +100,9 @@ pub trait Message: Serialize + for<'de> Deserialize<'de> + Send + Sync + 'static
 
 // ----
 
-/// The Req<M> is a helper object used to create requests and attach them
+/// The `Req<M>` is a helper object used to create requests and attach them
 /// a stream of data. If the stream is a fixed Bytes and not a ByteStream,
-/// Req<M> is cheaply cloneable to allow the request to be sent to different
+/// `Req<M>` is cheaply cloneable to allow the request to be sent to different
 /// peers (Clone will panic if the stream is a ByteStream).
 pub struct Req<M: Message> {
 	pub(crate) msg: Arc<M>,
@@ -260,7 +260,7 @@ where
 
 // ----
 
-/// The Resp<M> represents a full response from a RPC that may have
+/// The `Resp<M>` represents a full response from a RPC that may have
 /// an attached stream.
 pub struct Resp<M: Message> {
 	pub(crate) _phantom: PhantomData<M>,
@@ -458,11 +458,13 @@ impl ReqEnc {
 }
 
 /// Encoding for responses into a ByteStream:
+///
 /// IF SUCCESS:
 /// - 0: u8
 /// - msg len: u32
 /// - msg [u8; ..]
 /// - the attached stream as the rest of the encoded stream
+///
 /// IF ERROR:
 /// - message length + 1: u8
 /// - error code: u8
