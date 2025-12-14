@@ -139,11 +139,7 @@ fn parse_delete_objects_xml(xml: &roxmltree::Document) -> Option<DeleteRequest> 
 				key: key_str.to_string(),
 			});
 		} else if item.has_tag_name("Quiet") {
-			if item.text()? == "true" {
-				ret.quiet = true;
-			} else {
-				ret.quiet = false;
-			}
+			ret.quiet = item.text()? == "true";
 		} else {
 			return None;
 		}

@@ -1011,7 +1011,7 @@ mod tests {
 		// no bucket, won't work with the rest of the test suite
 		assert!(matches!(
 			parse("GET", "/", None, None).0,
-			Endpoint::ListBuckets { .. }
+			Endpoint::ListBuckets
 		));
 		assert!(matches!(
 			parse("GET", "/", None, None).0.authorization_type(),

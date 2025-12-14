@@ -87,7 +87,7 @@ where
 {
 	pub(crate) fn new(netapp: Arc<NetApp>, path: String) -> Self {
 		Self {
-			_phantom: PhantomData::default(),
+			_phantom: PhantomData,
 			netapp,
 			path,
 			handler: ArcSwapOption::from(None),
