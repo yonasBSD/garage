@@ -554,6 +554,7 @@ pub(crate) async fn read_and_put_blocks<S: Stream<Item = Result<Bytes, Error>> +
 	Ok((total_size, checksums, first_block_hash))
 }
 
+#[expect(clippy::too_many_arguments)]
 async fn put_block_and_meta(
 	ctx: &ReqCtx,
 	version: &Version,

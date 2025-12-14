@@ -41,6 +41,7 @@ pub struct LifecycleWorker {
 	persister: PersisterShared<LifecycleWorkerPersisted>,
 }
 
+#[expect(clippy::large_enum_variant)]
 enum State {
 	Completed(NaiveDate),
 	Running {
@@ -368,6 +369,7 @@ async fn process_object(
 	Ok(Skip::NextObject)
 }
 
+#[expect(clippy::nonminimal_bool)]
 fn check_size_filter(version_data: &ObjectVersionData, filter: &LifecycleFilter) -> bool {
 	let size = match version_data {
 		ObjectVersionData::Inline(meta, _) | ObjectVersionData::FirstBlock(meta, _) => meta.size,

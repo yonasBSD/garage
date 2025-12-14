@@ -540,6 +540,8 @@ impl RpcHelper {
 	// ---- functions not related to MAKING RPCs, but just determining to what nodes
 	//      they should be made and in which order ----
 
+	#[expect(clippy::doc_overindented_list_items)]
+	#[expect(clippy::doc_lazy_continuation)]
 	/// Determine to what nodes, and in what order, requests to read a data block
 	/// should be sent. All nodes in the Vec returned by this function are tried
 	/// one by one until there is one that returns the block (in block/manager.rs).

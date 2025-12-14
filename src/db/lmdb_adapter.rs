@@ -395,7 +395,10 @@ where
 			// this reference will only be stored and accessed from the
 			// returned ValueIter which guarantees that it is destroyed
 			// before the tx it is pointing  to.
-			unsafe { &*&raw const *tx }
+			#[expect(clippy::deref_addrof)]
+			unsafe {
+				&*&raw const *tx
+			}
 		};
 		let iter = iterfun(tx_lifetime_overextended)?;
 

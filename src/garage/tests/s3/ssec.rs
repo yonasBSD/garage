@@ -399,6 +399,7 @@ async fn test_multipart_upload() {
 	}
 }
 
+#[expect(clippy::too_many_arguments)]
 async fn test_read_encrypted(
 	ctx: &Context,
 	bucket: &str,

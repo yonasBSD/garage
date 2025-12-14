@@ -508,6 +508,7 @@ struct DecryptStream {
 	state: DecryptStreamState,
 }
 
+#[expect(clippy::large_enum_variant)]
 enum DecryptStreamState {
 	Starting,
 	Running(DecryptorLE31<Aes256Gcm>),
