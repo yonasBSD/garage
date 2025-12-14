@@ -545,7 +545,7 @@ pub async fn handle_upload_part_copy(
 
 	// Now, actually copy the blocks
 	let mut checksummer = Checksummer::init(&Default::default(), !dest_encryption.is_encrypted())
-		.add(dest_object_checksum_algorithm.map(|(algo, _)| algo));
+		.add_algorithm(dest_object_checksum_algorithm.map(|(algo, _)| algo));
 
 	// First, create a stream that is able to read the source blocks
 	// and extract the subrange if necessary.

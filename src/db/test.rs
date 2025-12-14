@@ -145,7 +145,7 @@ fn test_sqlite_db() {
 	use crate::sqlite_adapter::SqliteDb;
 
 	let manager = r2d2_sqlite::SqliteConnectionManager::memory();
-	let db = SqliteDb::new(manager, false).unwrap();
+	let db = SqliteDb::open(manager, false).unwrap();
 	test_suite(db);
 }
 

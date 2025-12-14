@@ -122,7 +122,7 @@ impl Checksummer {
 		}
 	}
 
-	pub fn add(mut self, algo: Option<ChecksumAlgorithm>) -> Self {
+	pub fn add_algorithm(mut self, algo: Option<ChecksumAlgorithm>) -> Self {
 		match algo {
 			Some(ChecksumAlgorithm::Crc32) => {
 				self.crc32 = Some(new_crc32());

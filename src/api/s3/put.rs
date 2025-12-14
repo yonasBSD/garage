@@ -158,7 +158,7 @@ pub(crate) async fn save_stream<S: Stream<Item = Result<Bytes, Error>> + Unpin>(
 	let mut checksummer = match &checksum_mode {
 		ChecksumMode::Verify(expected) => Checksummer::init(expected, !encryption.is_encrypted()),
 		ChecksumMode::Calculate(algo) => {
-			Checksummer::init(&Default::default(), !encryption.is_encrypted()).add(*algo)
+			Checksummer::init(&Default::default(), !encryption.is_encrypted()).add_algorithm(*algo)
 		}
 		ChecksumMode::VerifyFrom { .. } => {
 			// Checksums are calculated by the garage_api_common::signature module
