@@ -163,7 +163,8 @@ impl LayoutManager {
 		let prev_layout_check = layout.is_check_ok();
 
 		if !prev_layout_check || adv.check().is_ok() {
-			if layout.update(|l| l.merge(adv)) {
+			let changed = layout.update(|l| l.merge(adv));
+			if changed {
 				layout.update_update_trackers(self.node_id);
 				if prev_layout_check && !layout.is_check_ok() {
 					panic!("Merged two correct layouts and got an incorrect layout.");
@@ -181,7 +182,8 @@ impl LayoutManager {
 		let prev_digest = layout.digest();
 
 		if layout.inner().update_trackers != *adv {
-			if layout.update(|l| l.update_trackers.merge(adv)) {
+			let changed = layout.update(|l| l.update_trackers.merge(adv));
+			if changed {
 				layout.update_update_trackers(self.node_id);
 				assert!(layout.digest() != prev_digest);
 				return Some(layout.inner().update_trackers.clone());

@@ -343,14 +343,16 @@ impl RequestHandler for ClusterLayoutSkipDeadNodesRequest {
 		for node in all_nodes.iter() {
 			// Update ACK tracker for dead nodes or for all nodes if --allow-missing-data
 			if self.allow_missing_data || !status.iter().any(|x| x.id == *node && x.is_up) {
-				if layout.update_trackers.ack_map.set_max(*node, self.version) {
+				let ack_changed = layout.update_trackers.ack_map.set_max(*node, self.version);
+				if ack_changed {
 					ack_updated.push(hex::encode(node));
 				}
 			}
 
 			// If --allow-missing-data, update SYNC tracker for all nodes.
 			if self.allow_missing_data {
-				if layout.update_trackers.sync_map.set_max(*node, self.version) {
+				let sync_changed = layout.update_trackers.sync_map.set_max(*node, self.version);
+				if sync_changed {
 					sync_updated.push(hex::encode(node));
 				}
 			}

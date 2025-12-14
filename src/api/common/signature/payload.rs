@@ -269,18 +269,22 @@ fn verify_signed_headers(headers: &HeaderMap, signed_headers: &[HeaderName]) -> 
 		return Err(Error::bad_request("Header `Host` should be signed"));
 	}
 	for (name, _) in headers.iter() {
-		// Enforce signature of all x-amz-* headers, except x-amz-content-sh256
-		// because it is included in the canonical request in all cases
-		if name.as_str().starts_with("x-amz-") && name != X_AMZ_CONTENT_SHA256 {
-			if !signed_headers.contains(name) {
-				return Err(Error::bad_request(format!(
-					"Header `{}` should be signed",
-					name
-				)));
-			}
+		// Enforce signature of some headers
+		if header_should_be_signed(name) && !signed_headers.contains(name) {
+			return Err(Error::bad_request(format!(
+				"Header `{}` should be signed",
+				name
+			)));
 		}
 	}
 	Ok(())
+}
+
+// Indicates whether a header is required to be signed
+fn header_should_be_signed(name: &HeaderName) -> bool {
+	// Enforce signature of all x-amz-* headers, except x-amz-content-sh256
+	// because it is included in the canonical request in all cases
+	name.as_str().starts_with("x-amz-") && name != X_AMZ_CONTENT_SHA256
 }
 
 pub fn string_to_sign(datetime: &DateTime<Utc>, scope_string: &str, canonical_req: &str) -> String {
