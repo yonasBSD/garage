@@ -7,7 +7,7 @@ The main reason to add a reverse proxy in front of Garage is to provide TLS to y
 
 In production you will likely need your certificates signed by a certificate authority.
 The most automated way is to use a provider supporting the [ACME protocol](https://datatracker.ietf.org/doc/html/rfc8555) 
-such as [Let's Encrypt](https://letsencrypt.org/), [ZeroSSL](https://zerossl.com/) or [Buypass Go SSL](https://www.buypass.com/ssl/products/acme).
+such as [Let's Encrypt](https://letsencrypt.org/) or [ZeroSSL](https://zerossl.com/).
 
 If you are only testing Garage, you can generate a self-signed certificate to follow the documentation:
 
