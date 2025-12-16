@@ -11,7 +11,7 @@ Firstly clone the repository:
 
 ```bash
 git clone https://git.deuxfleurs.fr/Deuxfleurs/garage
-cd garage/scripts/helm
+cd garage/script/helm
 ```
 
 Deploy with default options:
