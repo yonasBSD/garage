@@ -126,7 +126,17 @@ impl ConsulDiscovery {
 	}
 
 	// ---- READING FROM CONSUL CATALOG ----
-
+	/// Query Consul for Garage nodes registered under the configured service name.
+	///
+	/// This method supports querying multiple Consul datacenters for WAN or
+	/// multi-datacenter deployments. If `config.datacenters` is set and non-empty,
+	/// each listed datacenter is queried and the results are aggregated. Otherwise,
+	/// only the local datacenter is queried. `config.datacenters` does not need to be set
+	/// when all the datacenters are on the same LAN, in this case service discovery works normally
+	///
+	/// # Returns
+	/// A list of `(NodeID, SocketAddr)` pairs corresponding to all valid discovered
+	/// nodes across the queried datacenters.
 	pub async fn get_consul_nodes(&self) -> Result<Vec<(NodeID, SocketAddr)>, ConsulError> {
 		let mut ret = vec![];
 

@@ -61,8 +61,9 @@ client_key = "/etc/consul/consul-key.crt"
 tls_skip_verify = false
 tags = [ "dns-enabled" ]
 meta = { dns-acl = "allow trusted" }
-
-
+# If your consul cluster is in a WAN configuration, you can provide the datacenter names to allow garage to do discovery across a WAN federation.
+# This is not required for non-WAN consul instances. 
+# datacenters = ["dc1", "dc2", "dc3"] 
 [kubernetes_discovery]
 namespace = "garage"
 service_name = "garage-daemon"
@@ -127,11 +128,13 @@ The `[consul_discovery]` section:
 [`client_cert`](#consul_client_cert_and_key),
 [`client_key`](#consul_client_cert_and_key),
 [`consul_http_addr`](#consul_http_addr),
+[`datacenters`](#consul_datacenters)
 [`meta`](#consul_tags_and_meta),
 [`service_name`](#consul_service_name),
 [`tags`](#consul_tags_and_meta),
 [`tls_skip_verify`](#consul_tls_skip_verify),
 [`token`](#consul_token).
+
 
 The `[kubernetes_discovery]` section:
 [`namespace`](#kube_namespace),
@@ -726,8 +729,15 @@ node_prefix "" {
 }
 ```
 
-#### `tags` and `meta` {#consul_tags_and_meta}
 
+### `consul datacenters` {#consul_datacenters}
+
+Optional list of datacenters that allow garage to do service discovery when consul is configured in WAN federation.
+e.g datacenters = ["dc1", "dc2", "dc3"]
+In a WAN configuration the consul services API only responds with local `LAN` services.
+This queries the consul server API by datacenter directly, allowing for garage to discover nodes across consul WAN.
+
+#### `tags` and `meta` {#consul_tags_and_meta}
 Additional list of tags and map of service meta to add during service registration.
 
 ### The `[kubernetes_discovery]` section
