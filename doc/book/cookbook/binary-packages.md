@@ -39,3 +39,9 @@ pkg install garage
 ```bash
 nix-shell -p garage
 ```
+
+## conda-forge
+
+```bash
+pixi global install garage
+```
