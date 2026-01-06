@@ -141,7 +141,7 @@ impl ConsulDiscovery {
 		let mut ret = vec![];
 
 		let dcs_to_query: Vec<Option<&str>> = match &self.config.datacenters {
-			Some(dcs) if !dcs.is_empty() => dcs.iter().map(|dc| Some(dc.as_str())).collect(),
+			dcs if !dcs.is_empty() => dcs.iter().map(|dc| Some(dc.as_str())).collect(),
 			_ => vec![None],
 		};
 

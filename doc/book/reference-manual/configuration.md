@@ -51,19 +51,21 @@ allow_punycode = false
 
 [consul_discovery]
 api = "catalog"
-consul_http_addr = "http://127.0.0.1:8500"
+consul_http_addr = "https://127.0.0.1:8500"
+tls_skip_verify = false
 service_name = "garage-daemon"
+
 ca_cert = "/etc/consul/consul-ca.crt"
 client_cert = "/etc/consul/consul-client.crt"
 client_key = "/etc/consul/consul-key.crt"
+
 # for `agent` API mode, unset client_cert and client_key, and optionally enable `token`
 # token = "abcdef-01234-56789"
-tls_skip_verify = false
+
 tags = [ "dns-enabled" ]
 meta = { dns-acl = "allow trusted" }
-# If your consul cluster is in a WAN configuration, you can provide the datacenter names to allow garage to do discovery across a WAN federation.
-# This is not required for non-WAN consul instances. 
-# datacenters = ["dc1", "dc2", "dc3"] 
+datacenters = ["dc1", "dc2", "dc3"]
+
 [kubernetes_discovery]
 namespace = "garage"
 service_name = "garage-daemon"
@@ -730,14 +732,19 @@ node_prefix "" {
 ```
 
 
-### `consul datacenters` {#consul_datacenters}
+#### `datacenters` {#consul_datacenters}
 
-Optional list of datacenters that allow garage to do service discovery when consul is configured in WAN federation.
-e.g datacenters = ["dc1", "dc2", "dc3"]
-In a WAN configuration the consul services API only responds with local `LAN` services.
-This queries the consul server API by datacenter directly, allowing for garage to discover nodes across consul WAN.
+Optional list of datacenters that allow garage to do service discovery when Consul is configured in WAN federation.
+
+Example: `datacenters = ["dc1", "dc2", "dc3"]`
+
+In a WAN configuration, by default the Consul services API only responds with
+local LAN services.  When a list of datacenters is specified using this option,
+Garage will query the consul server API by datacenter directly, allowing for
+Garage to discover nodes across the Consul WAN.
 
 #### `tags` and `meta` {#consul_tags_and_meta}
+
 Additional list of tags and map of service meta to add during service registration.
 
 ### The `[kubernetes_discovery]` section

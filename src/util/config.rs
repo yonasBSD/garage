@@ -258,7 +258,7 @@ pub struct ConsulDiscoveryConfig {
 	#[serde(default)]
 	pub meta: Option<std::collections::HashMap<String, String>>,
 	#[serde(default)]
-	pub datacenters: Option<Vec<String>>,
+	pub datacenters: Vec<String>,
 }
 
 #[derive(Deserialize, Debug, Clone)]
