@@ -103,7 +103,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/AddBucketAliasRequest"
+                "$ref": "#/components/schemas/BucketAliasEnum"
               }
             }
           },
@@ -1409,7 +1409,7 @@
           "content": {
             "application/json": {
               "schema": {
-                "$ref": "#/components/schemas/RemoveBucketAliasRequest"
+                "$ref": "#/components/schemas/BucketAliasEnum"
               }
             }
           },
@@ -1722,24 +1722,6 @@
   },
   "components": {
     "schemas": {
-      "AddBucketAliasRequest": {
-        "allOf": [
-          {
-            "$ref": "#/components/schemas/BucketAliasEnum"
-          },
-          {
-            "type": "object",
-            "required": [
-              "bucketId"
-            ],
-            "properties": {
-              "bucketId": {
-                "type": "string"
-              }
-            }
-          }
-        ]
-      },
       "AddBucketAliasResponse": {
         "$ref": "#/components/schemas/GetBucketInfoResponse"
       },
@@ -1957,9 +1939,13 @@
           {
             "type": "object",
             "required": [
+              "bucketId",
               "globalAlias"
             ],
             "properties": {
+              "bucketId": {
+                "type": "string"
+              },
               "globalAlias": {
                 "type": "string"
               }
@@ -1968,11 +1954,15 @@
           {
             "type": "object",
             "required": [
+              "bucketId",
               "localAlias",
               "accessKeyId"
             ],
             "properties": {
               "accessKeyId": {
+                "type": "string"
+              },
+              "bucketId": {
                 "type": "string"
               },
               "localAlias": {
@@ -3912,6 +3902,46 @@
           }
         ]
       },
+      "NodeRoleChangeRequest": {
+        "oneOf": [
+          {
+            "type": "object",
+            "required": [
+              "id",
+              "remove"
+            ],
+            "properties": {
+              "id": {
+                "type": "string",
+                "description": "ID of the node for which this change applies"
+              },
+              "remove": {
+                "type": "boolean",
+                "description": "Set `remove` to `true` to remove the node from the layout"
+              }
+            }
+          },
+          {
+            "allOf": [
+              {
+                "$ref": "#/components/schemas/NodeAssignedRole"
+              },
+              {
+                "type": "object",
+                "required": [
+                  "id"
+                ],
+                "properties": {
+                  "id": {
+                    "type": "string",
+                    "description": "ID of the node for which this change applies"
+                  }
+                }
+              }
+            ]
+          }
+        ]
+      },
       "NodeUpdateTrackers": {
         "type": "object",
         "required": [
@@ -3968,24 +3998,6 @@
               "newLayout": {
                 "$ref": "#/components/schemas/GetClusterLayoutResponse",
                 "description": "Details about the new cluster layout"
-              }
-            }
-          }
-        ]
-      },
-      "RemoveBucketAliasRequest": {
-        "allOf": [
-          {
-            "$ref": "#/components/schemas/BucketAliasEnum"
-          },
-          {
-            "type": "object",
-            "required": [
-              "bucketId"
-            ],
-            "properties": {
-              "bucketId": {
-                "type": "string"
               }
             }
           }
@@ -4180,7 +4192,7 @@
           "roles": {
             "type": "array",
             "items": {
-              "$ref": "#/components/schemas/NodeRoleChange"
+              "$ref": "#/components/schemas/NodeRoleChangeRequest"
             },
             "description": "New node roles to assign or remove in the cluster layout"
           }

@@ -1,7 +1,8 @@
 #![allow(dead_code)]
 #![allow(non_snake_case)]
 
-use utoipa::{Modify, OpenApi};
+use serde::{Deserialize, Serialize};
+use utoipa::{Modify, OpenApi, ToSchema};
 
 use crate::api::*;
 
@@ -246,7 +247,7 @@ For example to declare 100GB, you must set `capacity: 100000000000`.
 Garage uses internally the International System of Units (SI), it assumes that 1kB = 1000 bytes, and displays storage as kB, MB, GB (and not KiB, MiB, GiB that assume 1KiB = 1024 bytes).
     ",
     request_body(
-        content=UpdateClusterLayoutRequest,
+        content=UpdateClusterLayoutRequestOpenapi,
         description="
 To add a new node to the layout or to change the configuration of an existing node, simply set the values you want (`zone`, `capacity`, and `tags`).
 To remove a node, simply pass the `remove: true` field.
@@ -261,6 +262,45 @@ Contrary to the CLI that may update only a subset of the fields capacity, zone a
         ),
 )]
 fn UpdateClusterLayout() -> () {}
+
+// Hack: we cannot use the UpdateClusterLayoutRequest from api.rs,
+// as it contains (via NodeRoleChange) an untagged enum flattenned into
+// a struct, which breaks the openapi generator.
+// See issue #1249.
+// Instead, we use a rewritten version of the NodeRoleChange struct where
+// the struct fields are distributed into the enum variants (this is an equivalent
+// representation, but this way we avoid having to rewrite all uses of the original
+// struct in the Garage codebase).
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[schema(as = UpdateClusterLayoutRequest)]
+pub struct UpdateClusterLayoutRequestOpenapi {
+	/// New node roles to assign or remove in the cluster layout
+	#[serde(default)]
+	pub roles: Vec<NodeRoleChangeOpenapi>,
+	/// New layout computation parameters to use
+	#[serde(default)]
+	pub parameters: Option<LayoutParameters>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[schema(as = NodeRoleChangeRequest)]
+#[serde(untagged)]
+pub enum NodeRoleChangeOpenapi {
+	#[serde(rename_all = "camelCase")]
+	Remove {
+		/// ID of the node for which this change applies
+		id: String,
+		/// Set `remove` to `true` to remove the node from the layout
+		remove: bool,
+	},
+	#[serde(rename_all = "camelCase")]
+	Update {
+		/// ID of the node for which this change applies
+		id: String,
+		#[serde(flatten)]
+		role: NodeAssignedRole,
+	},
+}
 
 #[utoipa::path(post,
     path = "/v2/PreviewClusterLayoutChanges",
@@ -586,7 +626,7 @@ fn DenyBucketKey() -> () {}
     path = "/v2/AddBucketAlias",
     tag = "Bucket alias",
     description = "Add an alias for the target bucket.  This can be either a global or a local alias, depending on which fields are specified.",
-    request_body = AddBucketAliasRequest,
+    request_body = BucketAliasEnumOpenapi,
 	responses(
             (status = 200, description = "Returns exhaustive information about the bucket", body = AddBucketAliasResponse),
             (status = 500, description = "Internal server error")
@@ -598,13 +638,31 @@ fn AddBucketAlias() -> () {}
     path = "/v2/RemoveBucketAlias",
     tag = "Bucket alias",
     description = "Remove an alias for the target bucket.  This can be either a global or a local alias, depending on which fields are specified.",
-    request_body = RemoveBucketAliasRequest,
+    request_body = BucketAliasEnumOpenapi,
 	responses(
             (status = 200, description = "Returns exhaustive information about the bucket", body = RemoveBucketAliasResponse),
             (status = 500, description = "Internal server error")
         ),
 )]
 fn RemoveBucketAlias() -> () {}
+
+// Hack for issue #1249 (see UpdateClusterLayout)
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[serde(untagged)]
+#[schema(as = BucketAliasEnum)]
+pub enum BucketAliasEnumOpenapi {
+	#[serde(rename_all = "camelCase")]
+	Global {
+		bucket_id: String,
+		global_alias: String,
+	},
+	#[serde(rename_all = "camelCase")]
+	Local {
+		bucket_id: String,
+		local_alias: String,
+		access_key_id: String,
+	},
+}
 
 // **********************************************
 //      Node operations
