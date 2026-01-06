@@ -169,6 +169,11 @@ impl ConsulDiscovery {
 					.and_then(|k| NodeID::from_slice(&k[..]));
 				if let (Some(ip), Some(pubkey)) = (ip, pubkey) {
 					ret.push((pubkey, SocketAddr::new(ip, ent.service_port)));
+				} else {
+					warn!(
+						"Could not process node spec from Consul: {:?} (invalid IP address or node ID/pubkey)",
+						ent
+					);
 				}
 			}
 		}
