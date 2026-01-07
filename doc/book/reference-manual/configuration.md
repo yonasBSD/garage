@@ -51,17 +51,20 @@ allow_punycode = false
 
 [consul_discovery]
 api = "catalog"
-consul_http_addr = "http://127.0.0.1:8500"
+consul_http_addr = "https://127.0.0.1:8500"
+tls_skip_verify = false
 service_name = "garage-daemon"
+
 ca_cert = "/etc/consul/consul-ca.crt"
 client_cert = "/etc/consul/consul-client.crt"
 client_key = "/etc/consul/consul-key.crt"
+
 # for `agent` API mode, unset client_cert and client_key, and optionally enable `token`
 # token = "abcdef-01234-56789"
-tls_skip_verify = false
+
 tags = [ "dns-enabled" ]
 meta = { dns-acl = "allow trusted" }
-
+datacenters = ["dc1", "dc2", "dc3"]
 
 [kubernetes_discovery]
 namespace = "garage"
@@ -127,11 +130,13 @@ The `[consul_discovery]` section:
 [`client_cert`](#consul_client_cert_and_key),
 [`client_key`](#consul_client_cert_and_key),
 [`consul_http_addr`](#consul_http_addr),
+[`datacenters`](#consul_datacenters)
 [`meta`](#consul_tags_and_meta),
 [`service_name`](#consul_service_name),
 [`tags`](#consul_tags_and_meta),
 [`tls_skip_verify`](#consul_tls_skip_verify),
 [`token`](#consul_token).
+
 
 The `[kubernetes_discovery]` section:
 [`namespace`](#kube_namespace),
@@ -725,6 +730,18 @@ node_prefix "" {
   policy = "read"
 }
 ```
+
+
+#### `datacenters` {#consul_datacenters}
+
+Optional list of datacenters that allow garage to do service discovery when Consul is configured in WAN federation.
+
+Example: `datacenters = ["dc1", "dc2", "dc3"]`
+
+In a WAN configuration, by default the Consul services API only responds with
+local LAN services.  When a list of datacenters is specified using this option,
+Garage will query the consul server API by datacenter directly, allowing for
+Garage to discover nodes across the Consul WAN.
 
 #### `tags` and `meta` {#consul_tags_and_meta}
 

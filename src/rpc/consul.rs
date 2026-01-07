@@ -126,38 +126,61 @@ impl ConsulDiscovery {
 	}
 
 	// ---- READING FROM CONSUL CATALOG ----
-
+	/// Query Consul for Garage nodes registered under the configured service name.
+	///
+	/// This method supports querying multiple Consul datacenters for WAN or
+	/// multi-datacenter deployments. If `config.datacenters` is set and non-empty,
+	/// each listed datacenter is queried and the results are aggregated. Otherwise,
+	/// only the local datacenter is queried. `config.datacenters` does not need to be set
+	/// when all the datacenters are on the same LAN, in this case service discovery works normally
+	///
+	/// # Returns
+	/// A list of `(NodeID, SocketAddr)` pairs corresponding to all valid discovered
+	/// nodes across the queried datacenters.
 	pub async fn get_consul_nodes(&self) -> Result<Vec<(NodeID, SocketAddr)>, ConsulError> {
-		let url = format!(
-			"{}/v1/catalog/service/{}",
-			self.config.consul_http_addr, self.config.service_name
-		);
-
-		let http = self.client.get(&url).send().await?;
-		let entries: Vec<ConsulQueryEntry> = http.json().await?;
-
 		let mut ret = vec![];
-		for ent in entries {
-			let ip = ent.address.parse::<IpAddr>().ok();
-			let pubkey = ent
-				.meta
-				.get(&format!("{}-pubkey", META_PREFIX))
-				.and_then(|k| hex::decode(k).ok())
-				.and_then(|k| NodeID::from_slice(&k[..]));
-			if let (Some(ip), Some(pubkey)) = (ip, pubkey) {
-				ret.push((pubkey, SocketAddr::new(ip, ent.service_port)));
-			} else {
-				warn!(
-					"Could not process node spec from Consul: {:?} (invalid IP address or node ID/pubkey)",
-					ent
-				);
+
+		let dcs_to_query: Vec<Option<&str>> = match &self.config.datacenters {
+			dcs if !dcs.is_empty() => dcs.iter().map(|dc| Some(dc.as_str())).collect(),
+			_ => vec![None],
+		};
+
+		for dc in dcs_to_query {
+			let url = match dc {
+				Some(datacenter) => format!(
+					"{}/v1/catalog/service/{}?dc={}",
+					self.config.consul_http_addr, self.config.service_name, datacenter
+				),
+				None => format!(
+					"{}/v1/catalog/service/{}",
+					self.config.consul_http_addr, self.config.service_name
+				),
+			};
+
+			let http = self.client.get(&url).send().await?;
+			let entries: Vec<ConsulQueryEntry> = http.json().await?;
+
+			for ent in entries {
+				let ip = ent.address.parse::<IpAddr>().ok();
+				let pubkey = ent
+					.meta
+					.get(&format!("{}-pubkey", META_PREFIX))
+					.and_then(|k| hex::decode(k).ok())
+					.and_then(|k| NodeID::from_slice(&k[..]));
+				if let (Some(ip), Some(pubkey)) = (ip, pubkey) {
+					ret.push((pubkey, SocketAddr::new(ip, ent.service_port)));
+				} else {
+					warn!(
+						"Could not process node spec from Consul: {:?} (invalid IP address or node ID/pubkey)",
+						ent
+					);
+				}
 			}
 		}
-		debug!("Got nodes from Consul: {:?}", ret);
 
+		debug!("Got {} nodes from Consul", ret.len());
 		Ok(ret)
 	}
-
 	// ---- PUBLISHING TO CONSUL CATALOG ----
 
 	pub async fn publish_consul_service(
