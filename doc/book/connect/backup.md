@@ -207,3 +207,13 @@ $ plakar at @garageS3 ls
 ```
 
 More information in Plakar documentation: https://www.plakar.io/docs/main/quickstart/
+
+## Synology HyperBackup
+
+HyperBackup can be configured to upload backups to garage using a custom S3 destination. However, the HyperBackup client hardcodes the `us-east-1` region that is a critical input to the v4 signature process. If garage is not set to `us-east-1`, HyperBackup will recognize available buckets, but fail during the final setup stage.
+
+In garage.toml:
+```toml
+[s3_api]
+s3_region = "us-east-1"
+```
