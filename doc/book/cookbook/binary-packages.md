@@ -28,6 +28,10 @@ it's stable).
 
 Garage is available in the official repositories under [extra](https://archlinux.org/packages/extra/x86_64/garage).
 
+```bash
+pacman -S garage
+```
+
 ## FreeBSD
 
 ```bash
