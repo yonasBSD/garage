@@ -72,6 +72,10 @@ async fn main() {
 		"bundled-libs",
 		#[cfg(feature = "consul-discovery")]
 		"consul-discovery",
+		#[cfg(feature = "fjall")]
+		"fjall",
+		#[cfg(feature = "journald")]
+		"journald",
 		#[cfg(feature = "k2v")]
 		"k2v",
 		#[cfg(feature = "kubernetes-discovery")]
@@ -82,6 +86,8 @@ async fn main() {
 		"metrics",
 		#[cfg(feature = "sqlite")]
 		"sqlite",
+		#[cfg(feature = "syslog")]
+		"syslog",
 		#[cfg(feature = "system-libs")]
 		"system-libs",
 		#[cfg(feature = "telemetry-otlp")]

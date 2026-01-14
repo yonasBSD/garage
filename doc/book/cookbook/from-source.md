@@ -85,11 +85,14 @@ The following feature flags are available in v0.8.0:
 | Feature flag | Enabled | Description |
 | ------------ | ------- | ----------- |
 | `bundled-libs` | *by default* | Use bundled version of sqlite3, zstd, lmdb and libsodium |
+| `consul-discovery` | optional | Enable automatic registration and discovery<br>of cluster nodes through the Consul API |
+| `fjall` | experimental | Enable using Fjall to store Garage's metadata |
+| `journald` | optional | Enable logging to systemd-journald with<br>`GARAGE_LOG_TO_JOURNALD=true` environment variable set |
 | `k2v` | optional | Enable the experimental K2V API (if used, all nodes on your<br>Garage cluster must have it enabled as well) |
 | `kubernetes-discovery` | optional | Enable automatic registration and discovery<br>of cluster nodes through the Kubernetes API |
 | `lmdb` | *by default* | Enable using LMDB to store Garage's metadata |
 | `metrics` | *by default* | Enable collection of metrics in Prometheus format on the admin API |
 | `sqlite` | *by default* | Enable using Sqlite3 to store Garage's metadata |
-| `syslog` | optional | Enable logging to Syslog |
+| `syslog` | optional | Enable logging to Syslog with<br>`GARAGE_LOG_TO_SYSLOG=true` environment variable set |
 | `system-libs` | optional | Use system version of sqlite3, zstd, lmdb and libsodium<br>if available (exclusive with `bundled-libs`, build using<br>`cargo build --no-default-features --features system-libs`) |
 | `telemetry-otlp` | optional | Enable collection of execution traces using OpenTelemetry |
