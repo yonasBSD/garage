@@ -68,24 +68,24 @@ struct Opt {
 async fn main() {
 	// Initialize version and features info
 	let features = &[
-		#[cfg(feature = "k2v")]
-		"k2v",
-		#[cfg(feature = "lmdb")]
-		"lmdb",
-		#[cfg(feature = "sqlite")]
-		"sqlite",
-		#[cfg(feature = "consul-discovery")]
-		"consul-discovery",
-		#[cfg(feature = "kubernetes-discovery")]
-		"kubernetes-discovery",
-		#[cfg(feature = "metrics")]
-		"metrics",
-		#[cfg(feature = "telemetry-otlp")]
-		"telemetry-otlp",
 		#[cfg(feature = "bundled-libs")]
 		"bundled-libs",
+		#[cfg(feature = "consul-discovery")]
+		"consul-discovery",
+		#[cfg(feature = "k2v")]
+		"k2v",
+		#[cfg(feature = "kubernetes-discovery")]
+		"kubernetes-discovery",
+		#[cfg(feature = "lmdb")]
+		"lmdb",
+		#[cfg(feature = "metrics")]
+		"metrics",
+		#[cfg(feature = "sqlite")]
+		"sqlite",
 		#[cfg(feature = "system-libs")]
 		"system-libs",
+		#[cfg(feature = "telemetry-otlp")]
+		"telemetry-otlp",
 	][..];
 	if let Some(git_version) = option_env!("GIT_VERSION") {
 		garage_util::version::init_version(git_version);

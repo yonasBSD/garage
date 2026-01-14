@@ -85,11 +85,11 @@ The following feature flags are available in v0.8.0:
 | Feature flag | Enabled | Description |
 | ------------ | ------- | ----------- |
 | `bundled-libs` | *by default* | Use bundled version of sqlite3, zstd, lmdb and libsodium |
-| `system-libs` | optional | Use system version of sqlite3, zstd, lmdb and libsodium<br>if available (exclusive with `bundled-libs`, build using<br>`cargo build --no-default-features --features system-libs`) |
 | `k2v` | optional | Enable the experimental K2V API (if used, all nodes on your<br>Garage cluster must have it enabled as well) |
 | `kubernetes-discovery` | optional | Enable automatic registration and discovery<br>of cluster nodes through the Kubernetes API |
-| `metrics` | *by default* | Enable collection of metrics in Prometheus format on the admin API |
-| `telemetry-otlp` | optional | Enable collection of execution traces using OpenTelemetry |
-| `syslog` | optional | Enable logging to Syslog |
 | `lmdb` | *by default* | Enable using LMDB to store Garage's metadata |
+| `metrics` | *by default* | Enable collection of metrics in Prometheus format on the admin API |
 | `sqlite` | *by default* | Enable using Sqlite3 to store Garage's metadata |
+| `syslog` | optional | Enable logging to Syslog |
+| `system-libs` | optional | Use system version of sqlite3, zstd, lmdb and libsodium<br>if available (exclusive with `bundled-libs`, build using<br>`cargo build --no-default-features --features system-libs`) |
+| `telemetry-otlp` | optional | Enable collection of execution traces using OpenTelemetry |
