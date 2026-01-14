@@ -20,10 +20,10 @@ sudo apt-get update
 sudo apt-get install build-essential
 ```
 
-## Building from source from the Gitea repository
+## Building from source from the Forgejo repository
 
 The primary location for Garage's source code is the
-[Gitea repository](https://git.deuxfleurs.fr/Deuxfleurs/garage),
+[Forgejo repository](https://git.deuxfleurs.fr/Deuxfleurs/garage),
 which contains all of the released versions as well as the code
 for the developpement of the next version.
 
