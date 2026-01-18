@@ -24,6 +24,7 @@ use crate::s3::mpu_table::*;
 use crate::s3::object_table::*;
 use crate::s3::version_table::*;
 
+use crate::admin_token_table::*;
 use crate::bucket_alias_table::*;
 use crate::bucket_table::*;
 use crate::helper;
@@ -50,6 +51,8 @@ pub struct Garage {
 	/// The block manager
 	pub block_manager: Arc<BlockManager>,
 
+	/// Table containing admin API keys
+	pub admin_token_table: Arc<Table<AdminApiTokenTable, TableFullReplication>>,
 	/// Table containing buckets
 	pub bucket_table: Arc<Table<BucketTable, TableFullReplication>>,
 	/// Table containing bucket aliases
@@ -116,18 +119,14 @@ impl Garage {
 		info!("Opening database...");
 		let db_engine = db::Engine::from_str(&config.db_engine)
 			.ok_or_message("Invalid `db_engine` value in configuration file")?;
-		let mut db_path = config.metadata_dir.clone();
-		match db_engine {
-			db::Engine::Sqlite => {
-				db_path.push("db.sqlite");
-			}
-			db::Engine::Lmdb => {
-				db_path.push("db.lmdb");
-			}
-		}
+		let db_path = db_engine.db_path(&config.metadata_dir);
 		let db_opt = db::OpenOpt {
 			fsync: config.metadata_fsync,
 			lmdb_map_size: match config.lmdb_map_size {
+				v if v == usize::default() => None,
+				v => Some(v),
+			},
+			fjall_block_cache_size: match config.fjall_block_cache_size {
 				v if v == usize::default() => None,
 				v => Some(v),
 			},
@@ -151,29 +150,30 @@ impl Garage {
 		info!("Initialize membership management system...");
 		let system = System::new(network_key, replication_factor, consistency_mode, &config)?;
 
-		let data_rep_param = TableShardedReplication {
-			system: system.clone(),
-			replication_factor: replication_factor.into(),
-			write_quorum: replication_factor.write_quorum(consistency_mode),
-			read_quorum: 1,
-		};
-
 		let meta_rep_param = TableShardedReplication {
-			system: system.clone(),
-			replication_factor: replication_factor.into(),
-			write_quorum: replication_factor.write_quorum(consistency_mode),
-			read_quorum: replication_factor.read_quorum(consistency_mode),
+			layout_manager: system.layout_manager.clone(),
+			consistency_mode,
 		};
 
 		let control_rep_param = TableFullReplication {
 			system: system.clone(),
+			consistency_mode,
 		};
 
 		info!("Initialize block manager...");
-		let block_manager = BlockManager::new(&db, &config, data_rep_param, system.clone())?;
+		let block_write_quorum = replication_factor.write_quorum(consistency_mode);
+		let block_manager = BlockManager::new(&db, &config, block_write_quorum, system.clone())?;
 		block_manager.register_bg_vars(&mut bg_vars);
 
 		// ---- admin tables ----
+		info!("Initialize admin_token_table...");
+		let admin_token_table = Table::new(
+			AdminApiTokenTable,
+			control_rep_param.clone(),
+			system.clone(),
+			&db,
+		);
+
 		info!("Initialize bucket_table...");
 		let bucket_table = Table::new(BucketTable, control_rep_param.clone(), system.clone(), &db);
 
@@ -263,6 +263,7 @@ impl Garage {
 			db,
 			system,
 			block_manager,
+			admin_token_table,
 			bucket_table,
 			bucket_alias_table,
 			key_table,
@@ -282,6 +283,7 @@ impl Garage {
 	pub fn spawn_workers(self: &Arc<Self>, bg: &BackgroundRunner) -> Result<(), Error> {
 		self.block_manager.spawn_workers(bg);
 
+		self.admin_token_table.spawn_workers(bg);
 		self.bucket_table.spawn_workers(bg);
 		self.bucket_alias_table.spawn_workers(bg);
 		self.key_table.spawn_workers(bg);
@@ -319,15 +321,15 @@ impl Garage {
 		Ok(())
 	}
 
-	pub fn bucket_helper(&self) -> helper::bucket::BucketHelper {
+	pub fn bucket_helper(&self) -> helper::bucket::BucketHelper<'_> {
 		helper::bucket::BucketHelper(self)
 	}
 
-	pub fn key_helper(&self) -> helper::key::KeyHelper {
+	pub fn key_helper(&self) -> helper::key::KeyHelper<'_> {
 		helper::key::KeyHelper(self)
 	}
 
-	pub async fn locked_helper(&self) -> helper::locked::LockedHelper {
+	pub async fn locked_helper(&self) -> helper::locked::LockedHelper<'_> {
 		let lock = self.bucket_lock.lock().await;
 		helper::locked::LockedHelper(self, Some(lock))
 	}

@@ -9,6 +9,7 @@ use sha2::{Digest, Sha256};
 
 use garage_table::*;
 use garage_util::data::Hash;
+use garage_util::time::now_msec;
 
 use garage_model::garage::Garage;
 use garage_model::key_table::*;
@@ -32,7 +33,7 @@ pub struct CheckedSignature {
 	pub signature_header: Option<String>,
 }
 
-pub async fn check_payload_signature(
+pub fn check_payload_signature(
 	garage: &Garage,
 	request: &mut Request<IncomingBody>,
 	service: &'static str,
@@ -43,9 +44,9 @@ pub async fn check_payload_signature(
 		// We check for presigned-URL-style authentication first, because
 		// the browser or something else could inject an Authorization header
 		// that is totally unrelated to AWS signatures.
-		check_presigned_signature(garage, service, request, query).await
+		check_presigned_signature(garage, service, request, query)
 	} else if request.headers().contains_key(AUTHORIZATION) {
-		check_standard_signature(garage, service, request, query).await
+		check_standard_signature(garage, service, request, query)
 	} else {
 		// Unsigned (anonymous) request
 		let content_sha256 = request
@@ -93,7 +94,7 @@ fn parse_x_amz_content_sha256(header: Option<&str>) -> Result<ContentSha256Heade
 	}
 }
 
-async fn check_standard_signature(
+fn check_standard_signature(
 	garage: &Garage,
 	service: &'static str,
 	request: &Request<IncomingBody>,
@@ -128,7 +129,7 @@ async fn check_standard_signature(
 	trace!("canonical request:\n{}", canonical_request);
 	trace!("string to sign:\n{}", string_to_sign);
 
-	let key = verify_v4(garage, service, &authorization, string_to_sign.as_bytes()).await?;
+	let key = verify_v4(garage, service, &authorization, string_to_sign.as_bytes())?;
 
 	let content_sha256_header = parse_x_amz_content_sha256(Some(&authorization.content_sha256))?;
 
@@ -139,7 +140,7 @@ async fn check_standard_signature(
 	})
 }
 
-async fn check_presigned_signature(
+fn check_presigned_signature(
 	garage: &Garage,
 	service: &'static str,
 	request: &mut Request<IncomingBody>,
@@ -178,7 +179,7 @@ async fn check_presigned_signature(
 	trace!("canonical request (presigned url):\n{}", canonical_request);
 	trace!("string to sign (presigned url):\n{}", string_to_sign);
 
-	let key = verify_v4(garage, service, &authorization, string_to_sign.as_bytes()).await?;
+	let key = verify_v4(garage, service, &authorization, string_to_sign.as_bytes())?;
 
 	// In the page on presigned URLs, AWS specifies that if a signed query
 	// parameter and a signed header of the same name have different values,
@@ -378,7 +379,7 @@ pub fn parse_date(date: &str) -> Result<DateTime<Utc>, Error> {
 	Ok(Utc.from_utc_datetime(&date))
 }
 
-pub async fn verify_v4(
+pub fn verify_v4(
 	garage: &Garage,
 	service: &str,
 	auth: &Authorization,
@@ -391,11 +392,17 @@ pub async fn verify_v4(
 
 	let key = garage
 		.key_table
-		.get(&EmptyKey, &auth.key_id)
-		.await?
+		.get_local(&EmptyKey, &auth.key_id)?
 		.filter(|k| !k.state.is_deleted())
 		.ok_or_else(|| Error::forbidden(format!("No such key: {}", &auth.key_id)))?;
 	let key_p = key.params().unwrap();
+
+	if key_p.is_expired(now_msec()) {
+		return Err(Error::forbidden(format!(
+			"Access key {} has expired",
+			key.key_id
+		)));
+	}
 
 	let mut hmac = signing_hmac(
 		&auth.date,
@@ -417,7 +424,7 @@ pub async fn verify_v4(
 // ============ Authorization header, or X-Amz-* query params =========
 
 pub struct Authorization {
-	key_id: String,
+	pub key_id: String,
 	scope: String,
 	signed_headers: String,
 	signature: String,
@@ -426,7 +433,7 @@ pub struct Authorization {
 }
 
 impl Authorization {
-	fn parse_header(headers: &HeaderMap) -> Result<Self, Error> {
+	pub fn parse_header(headers: &HeaderMap) -> Result<Self, Error> {
 		let authorization = headers
 			.get(AUTHORIZATION)
 			.ok_or_bad_request("Missing authorization header")?

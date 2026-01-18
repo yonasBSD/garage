@@ -1,6 +1,6 @@
 [package]
 name = "garage_api_s3"
-version = "1.2.0"
+version = "2.1.0"
 authors = ["Alex Auvolat <alex@adnab.me>"]
 edition = "2018"
 license = "AGPL-3.0"
@@ -27,10 +27,10 @@ async-compression.workspace = true
 base64.workspace = true
 bytes.workspace = true
 chrono.workspace = true
-crc32fast.workspace = true
-crc32c.workspace = true
-err-derive.workspace = true
+crc-fast.workspace = true
+thiserror.workspace = true
 hex.workspace = true
+hmac.workspace = true
 tracing.workspace = true
 md-5.workspace = true
 pin-project.workspace = true

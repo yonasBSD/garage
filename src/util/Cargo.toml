@@ -1,6 +1,6 @@
 [package]
 name = "garage_util"
-version = "1.2.0"
+version = "2.1.0"
 authors = ["Alex Auvolat <alex@adnab.me>"]
 edition = "2018"
 license = "AGPL-3.0"
@@ -21,7 +21,7 @@ arc-swap.workspace = true
 async-trait.workspace = true
 blake2.workspace = true
 bytesize.workspace = true
-err-derive.workspace = true
+thiserror.workspace = true
 hexdump.workspace = true
 xxhash-rust.workspace = true
 hex.workspace = true

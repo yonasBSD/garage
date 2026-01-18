@@ -1,6 +1,8 @@
 #[macro_use]
 extern crate tracing;
 
+#[cfg(feature = "fjall")]
+pub mod fjall_adapter;
 #[cfg(feature = "lmdb")]
 pub mod lmdb_adapter;
 #[cfg(feature = "sqlite")]
@@ -18,7 +20,7 @@ use std::cell::Cell;
 use std::path::PathBuf;
 use std::sync::Arc;
 
-use err_derive::Error;
+use thiserror::Error;
 
 pub use open::*;
 
@@ -42,7 +44,7 @@ pub type TxValueIter<'a> = Box<dyn std::iter::Iterator<Item = TxOpResult<(Value,
 // ----
 
 #[derive(Debug, Error)]
-#[error(display = "{}", _0)]
+#[error("{0}")]
 pub struct Error(pub Cow<'static, str>);
 
 impl From<std::io::Error> for Error {
@@ -54,7 +56,7 @@ impl From<std::io::Error> for Error {
 pub type Result<T> = std::result::Result<T, Error>;
 
 #[derive(Debug, Error)]
-#[error(display = "{}", _0)]
+#[error("{0}")]
 pub struct TxOpError(pub(crate) Error);
 pub type TxOpResult<T> = std::result::Result<T, TxOpError>;
 
@@ -104,32 +106,44 @@ impl Db {
 			result: Cell::new(None),
 		};
 		let tx_res = self.0.transaction(&f);
-		let ret = f
-			.result
-			.into_inner()
-			.expect("Transaction did not store result");
+		let fn_res = f.result.into_inner();
 
-		match tx_res {
-			Ok(on_commit) => match ret {
-				Ok(value) => {
-					on_commit.into_iter().for_each(|f| f());
-					Ok(value)
-				}
-				_ => unreachable!(),
-			},
-			Err(TxError::Abort(())) => match ret {
-				Err(TxError::Abort(e)) => Err(TxError::Abort(e)),
-				_ => unreachable!(),
-			},
-			Err(TxError::Db(e2)) => match ret {
-				// Ok was stored -> the error occurred when finalizing
-				// transaction
-				Ok(_) => Err(TxError::Db(e2)),
-				// An error was already stored: that's the one we want to
-				// return
-				Err(TxError::Db(e)) => Err(TxError::Db(e)),
-				_ => unreachable!(),
-			},
+		match (tx_res, fn_res) {
+			(Ok(on_commit), Some(Ok(value))) => {
+				// Transaction succeeded
+				// TxFn stored the value to return to the user in fn_res
+				// tx_res contains the on_commit list of callbacks, run them now
+				on_commit.into_iter().for_each(|f| f());
+				Ok(value)
+			}
+			(Err(TxError::Abort(())), Some(Err(TxError::Abort(e)))) => {
+				// Transaction was aborted by user code
+				// The abort error value is stored in fn_res
+				Err(TxError::Abort(e))
+			}
+			(Err(TxError::Db(_tx_e)), Some(Err(TxError::Db(fn_e)))) => {
+				// Transaction encountered a DB error in user code
+				// The error value encountered is the one in fn_res,
+				// tx_res contains only a dummy error message
+				Err(TxError::Db(fn_e))
+			}
+			(Err(TxError::Db(tx_e)), None) => {
+				// Transaction encounterred a DB error when initializing the transaction,
+				// before user code was called
+				Err(TxError::Db(tx_e))
+			}
+			(Err(TxError::Db(tx_e)), Some(Ok(_))) => {
+				// Transaction encounterred a DB error when commiting the transaction,
+				// after user code was called
+				Err(TxError::Db(tx_e))
+			}
+			(tx_res, fn_res) => {
+				panic!(
+					"unexpected error case: tx_res={:?}, fn_res={:?}",
+					tx_res.map(|_| "..."),
+					fn_res.map(|x| x.map(|_| "...").map_err(|_| "..."))
+				);
+			}
 		}
 	}
 
@@ -152,7 +166,7 @@ impl Db {
 		let tree_names = other.list_trees()?;
 		for name in tree_names {
 			let tree = self.open_tree(&name)?;
-			if tree.len()? > 0 {
+			if !tree.is_empty()? {
 				return Err(Error(format!("tree {} already contains data", name).into()));
 			}
 
@@ -194,8 +208,12 @@ impl Tree {
 		self.0.get(self.1, key.as_ref())
 	}
 	#[inline]
-	pub fn len(&self) -> Result<usize> {
-		self.0.len(self.1)
+	pub fn approximate_len(&self) -> Result<usize> {
+		self.0.approximate_len(self.1)
+	}
+	#[inline]
+	pub fn is_empty(&self) -> Result<bool> {
+		self.0.is_empty(self.1)
 	}
 
 	#[inline]
@@ -333,7 +351,8 @@ pub(crate) trait IDb: Send + Sync {
 	fn snapshot(&self, path: &PathBuf) -> Result<()>;
 
 	fn get(&self, tree: usize, key: &[u8]) -> Result<Option<Value>>;
-	fn len(&self, tree: usize) -> Result<usize>;
+	fn approximate_len(&self, tree: usize) -> Result<usize>;
+	fn is_empty(&self, tree: usize) -> Result<bool>;
 
 	fn insert(&self, tree: usize, key: &[u8], value: &[u8]) -> Result<()>;
 	fn remove(&self, tree: usize, key: &[u8]) -> Result<()>;

@@ -17,7 +17,7 @@ use garage_api_common::encoding::*;
 use garage_api_common::helpers::*;
 
 use crate::api_server::{ReqBody, ResBody};
-use crate::encryption::EncryptionParams;
+use crate::encryption::{EncryptionParams, OekDerivationInfo};
 use crate::error::*;
 use crate::multipart as s3_multipart;
 use crate::xml as s3_xml;
@@ -285,8 +285,16 @@ pub async fn handle_list_parts(
 		ObjectVersionState::Uploading { encryption, .. } => encryption,
 		_ => unreachable!(),
 	};
-	let encryption_res =
-		EncryptionParams::check_decrypt(&ctx.garage, req.headers(), &object_encryption);
+	let encryption_res = EncryptionParams::check_decrypt(
+		&ctx.garage,
+		req.headers(),
+		&object_encryption,
+		OekDerivationInfo {
+			bucket_id: ctx.bucket_id,
+			version_id: upload_id,
+			object_key: &query.key,
+		},
+	);
 
 	let (info, next) = fetch_part_info(query, &mpu)?;
 
@@ -322,6 +330,12 @@ pub async fn handle_list_parts(
 					},
 					checksum_crc32c: match &checksum {
 						Some(ChecksumValue::Crc32c(x)) => {
+							Some(s3_xml::Value(BASE64_STANDARD.encode(&x)))
+						}
+						_ => None,
+					},
+					checksum_crc64nvme: match &checksum {
+						Some(ChecksumValue::Crc64Nvme(x)) => {
 							Some(s3_xml::Value(BASE64_STANDARD.encode(&x)))
 						}
 						_ => None,
@@ -988,6 +1002,7 @@ mod tests {
 					inner: ObjectVersionMetaInner {
 						headers: vec![],
 						checksum: None,
+						checksum_type: None,
 					},
 				},
 				checksum_algorithm: None,

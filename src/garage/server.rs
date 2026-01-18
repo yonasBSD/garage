@@ -14,7 +14,6 @@ use garage_web::WebServer;
 #[cfg(feature = "k2v")]
 use garage_api_k2v::api_server::K2VApiServer;
 
-use crate::admin::*;
 use crate::secrets::{fill_secrets, Secrets};
 #[cfg(feature = "telemetry-otlp")]
 use crate::tracing_setup::*;
@@ -66,15 +65,13 @@ pub async fn run_server(config_file: PathBuf, secrets: Secrets) -> Result<(), Er
 	info!("Initialize Admin API server and metrics collector...");
 	let admin_server = AdminApiServer::new(
 		garage.clone(),
+		background.clone(),
 		#[cfg(feature = "metrics")]
 		metrics_exporter,
 	);
 
 	info!("Launching internal Garage cluster communications...");
 	let run_system = tokio::spawn(garage.system.clone().run(watch_cancel.clone()));
-
-	info!("Create admin RPC handler...");
-	AdminRpcHandler::new(garage.clone(), background.clone());
 
 	// ---- Launch public-facing API servers ----
 
@@ -183,10 +180,21 @@ fn watch_shutdown_signal() -> watch::Receiver<bool> {
 		let mut sigterm =
 			signal(SignalKind::terminate()).expect("Failed to install SIGTERM handler");
 		let mut sighup = signal(SignalKind::hangup()).expect("Failed to install SIGHUP handler");
-		tokio::select! {
-			_ = sigint.recv() => info!("Received SIGINT, shutting down."),
-			_ = sigterm.recv() => info!("Received SIGTERM, shutting down."),
-			_ = sighup.recv() => info!("Received SIGHUP, shutting down."),
+		loop {
+			tokio::select! {
+					_ = sigint.recv() => {
+						info!("Received SIGINT, shutting down.");
+						break
+					}
+					_ = sigterm.recv() => {
+						info!("Received SIGTERM, shutting down.");
+						break
+					}
+					_ = sighup.recv() => {
+						info!("Received SIGHUP, reload not supported.");
+						continue
+					}
+			}
 		}
 		send_cancel.send(true).unwrap();
 	});

@@ -42,7 +42,7 @@ You may pause an ongoing scrub using `garage repair scrub pause`, but note that
 the scrub will resume automatically 24 hours later as Garage will not let your
 cluster run without a regular scrub. If the scrub procedure is too intensive
 for your servers and is slowing down your workload, the recommended solution
-is to increase the "scrub tranquility" using `garage repair scrub set-tranquility`.
+is to increase the "scrub tranquility" using `garage worker set scrub-tranquility`.
 A higher tranquility value will make Garage take longer pauses between two block
 verifications. Of course, scrubbing the entire data store will also take longer.
 

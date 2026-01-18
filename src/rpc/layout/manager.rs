@@ -46,11 +46,11 @@ impl LayoutManager {
 
 		let cluster_layout = match persist_cluster_layout.load() {
 			Ok(x) => {
-				if x.current().replication_factor != replication_factor.replication_factor() {
+				if x.current().replication_factor() != replication_factor {
 					return Err(Error::Message(format!(
 						"Previous cluster layout has replication factor {}, which is different than the one specified in the config file ({}). The previous cluster layout can be purged, if you know what you are doing, simply by deleting the `cluster_layout` file in your metadata directory.",
-						x.current().replication_factor,
-						replication_factor.replication_factor()
+						x.current().replication_factor(),
+						replication_factor,
 					)));
 				}
 				x
@@ -64,12 +64,8 @@ impl LayoutManager {
 			}
 		};
 
-		let mut cluster_layout = LayoutHelper::new(
-			replication_factor,
-			consistency_mode,
-			cluster_layout,
-			Default::default(),
-		);
+		let mut cluster_layout =
+			LayoutHelper::new(consistency_mode, cluster_layout, Default::default());
 		cluster_layout.update_update_trackers(node_id.into());
 
 		let layout = Arc::new(RwLock::new(cluster_layout));
@@ -109,7 +105,7 @@ impl LayoutManager {
 	}
 
 	pub fn add_table(&self, table_name: &'static str) {
-		let first_version = self.layout().versions().first().unwrap().version;
+		let first_version = self.layout().inner().versions.first().unwrap().version;
 
 		self.table_sync_version
 			.lock()
@@ -143,16 +139,20 @@ impl LayoutManager {
 
 	// ---- ACK LOCKING ----
 
-	pub fn write_sets_of(self: &Arc<Self>, position: &Hash) -> WriteLock<Vec<Vec<Uuid>>> {
+	pub fn write_lock_with<T, F>(self: &Arc<Self>, f: F) -> Result<WriteLock<T>, Error>
+	where
+		F: FnOnce(&[LayoutVersion]) -> T,
+	{
 		let layout = self.layout();
-		let version = layout.current().version;
-		let nodes = layout.storage_sets_of(position);
+		let current_version = layout.current()?.version;
+		let versions = layout.versions()?;
+		let value = f(versions);
 		layout
 			.ack_lock
-			.get(&version)
+			.get(&current_version)
 			.unwrap()
 			.fetch_add(1, Ordering::Relaxed);
-		WriteLock::new(version, self, nodes)
+		Ok(WriteLock::new(current_version, self, value))
 	}
 
 	// ---- INTERNALS ---
@@ -229,13 +229,11 @@ impl LayoutManager {
 	}
 
 	/// Save cluster layout data to disk
-	async fn save_cluster_layout(&self) -> Result<(), Error> {
+	async fn save_cluster_layout(&self) {
 		let layout = self.layout.read().unwrap().inner().clone();
-		self.persist_cluster_layout
-			.save_async(&layout)
-			.await
-			.expect("Cannot save current cluster layout");
-		Ok(())
+		if let Err(e) = self.persist_cluster_layout.save_async(&layout).await {
+			error!("Failed to save cluster_layout: {}", e);
+		}
 	}
 
 	fn broadcast_update(self: &Arc<Self>, rpc: SystemRpc) {
@@ -298,11 +296,11 @@ impl LayoutManager {
 			adv.update_trackers
 		);
 
-		if adv.current().replication_factor != self.replication_factor.replication_factor() {
+		if adv.current().replication_factor() != self.replication_factor {
 			let msg = format!(
 				"Received a cluster layout from another node with replication factor {}, which is different from what we have in our configuration ({}). Discarding the cluster layout we received.",
-				adv.current().replication_factor,
-				self.replication_factor.replication_factor()
+				adv.current().replication_factor(),
+				self.replication_factor,
 			);
 			error!("{}", msg);
 			return Err(Error::Message(msg));
@@ -313,7 +311,7 @@ impl LayoutManager {
 
 			self.change_notify.notify_waiters();
 			self.broadcast_update(SystemRpc::AdvertiseClusterLayout(new_layout));
-			self.save_cluster_layout().await?;
+			self.save_cluster_layout().await;
 		}
 
 		Ok(SystemRpc::Ok)
@@ -328,7 +326,7 @@ impl LayoutManager {
 		if let Some(new_trackers) = self.merge_layout_trackers(trackers) {
 			self.change_notify.notify_waiters();
 			self.broadcast_update(SystemRpc::AdvertiseClusterLayoutTrackers(new_trackers));
-			self.save_cluster_layout().await?;
+			self.save_cluster_layout().await;
 		}
 
 		Ok(SystemRpc::Ok)
@@ -370,7 +368,7 @@ impl<T> Drop for WriteLock<T> {
 		let layout = self.layout_manager.layout(); // acquire read lock
 		if let Some(counter) = layout.ack_lock.get(&self.layout_version) {
 			let prev_lock = counter.fetch_sub(1, Ordering::Relaxed);
-			if prev_lock == 1 && layout.current().version > self.layout_version {
+			if prev_lock == 1 && layout.current().unwrap().version > self.layout_version {
 				drop(layout); // release read lock, write lock will be acquired
 				self.layout_manager.ack_new_version();
 			}

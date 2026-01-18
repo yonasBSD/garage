@@ -1,9 +1,9 @@
-use err_derive::Error;
 use hyper::header::HeaderValue;
 use hyper::{HeaderMap, StatusCode};
+use thiserror::Error;
 
+pub(crate) use garage_api_common::common_error::pass_helper_error;
 use garage_api_common::common_error::{commonErrorDerivative, CommonError};
-pub(crate) use garage_api_common::common_error::{helper_error_as_internal, pass_helper_error};
 pub use garage_api_common::common_error::{
 	CommonErrorDerivative, OkOrBadRequest, OkOrInternalError,
 };
@@ -14,38 +14,38 @@ use garage_api_common::signature::error::Error as SignatureError;
 /// Errors of this crate
 #[derive(Debug, Error)]
 pub enum Error {
-	#[error(display = "{}", _0)]
+	#[error("{0}")]
 	/// Error from common error
-	Common(#[error(source)] CommonError),
+	Common(#[from] CommonError),
 
 	// Category: cannot process
 	/// Authorization Header Malformed
-	#[error(display = "Authorization header malformed, unexpected scope: {}", _0)]
+	#[error("Authorization header malformed, unexpected scope: {0}")]
 	AuthorizationHeaderMalformed(String),
 
 	/// The provided digest (checksum) value was invalid
-	#[error(display = "Invalid digest: {}", _0)]
+	#[error("Invalid digest: {0}")]
 	InvalidDigest(String),
 
 	/// The object requested don't exists
-	#[error(display = "Key not found")]
+	#[error("Key not found")]
 	NoSuchKey,
 
 	/// Some base64 encoded data was badly encoded
-	#[error(display = "Invalid base64: {}", _0)]
-	InvalidBase64(#[error(source)] base64::DecodeError),
+	#[error("Invalid base64: {0}")]
+	InvalidBase64(#[from] base64::DecodeError),
 
 	/// Invalid causality token
-	#[error(display = "Invalid causality token")]
+	#[error("Invalid causality token")]
 	InvalidCausalityToken,
 
 	/// The client asked for an invalid return format (invalid Accept header)
-	#[error(display = "Not acceptable: {}", _0)]
+	#[error("Not acceptable: {0}")]
 	NotAcceptable(String),
 
 	/// The request contained an invalid UTF-8 sequence in its path or in other parameters
-	#[error(display = "Invalid UTF-8: {}", _0)]
-	InvalidUtf8Str(#[error(source)] std::str::Utf8Error),
+	#[error("Invalid UTF-8: {0}")]
+	InvalidUtf8Str(#[from] std::str::Utf8Error),
 }
 
 commonErrorDerivative!(Error);
@@ -99,6 +99,7 @@ impl ApiError for Error {
 	fn add_http_headers(&self, header_map: &mut HeaderMap<HeaderValue>) {
 		use hyper::header;
 		header_map.append(header::CONTENT_TYPE, "application/json".parse().unwrap());
+		header_map.append(header::ACCESS_CONTROL_ALLOW_ORIGIN, "*".parse().unwrap());
 	}
 
 	fn http_body(&self, garage_region: &str, path: &str) -> ErrorBody {

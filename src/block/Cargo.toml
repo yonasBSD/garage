@@ -1,6 +1,6 @@
 [package]
 name = "garage_block"
-version = "1.2.0"
+version = "2.1.0"
 authors = ["Alex Auvolat <alex@adnab.me>"]
 edition = "2018"
 license = "AGPL-3.0"
@@ -18,7 +18,6 @@ garage_db.workspace = true
 garage_net.workspace = true
 garage_rpc.workspace = true
 garage_util.workspace = true
-garage_table.workspace = true
 
 opentelemetry.workspace = true
 

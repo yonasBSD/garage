@@ -26,7 +26,7 @@ it's stable).
 
 ## Arch Linux
 
-Garage is available in the [AUR](https://aur.archlinux.org/packages/garage).
+Garage is available in the official repositories under [extra](https://archlinux.org/packages/extra/x86_64/garage).
 
 ## FreeBSD
 
@@ -38,4 +38,10 @@ pkg install garage
 
 ```bash
 nix-shell -p garage
+```
+
+## conda-forge
+
+```bash
+pixi global install garage
 ```

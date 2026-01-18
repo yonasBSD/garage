@@ -11,11 +11,22 @@ use r2d2_sqlite::SqliteConnectionManager;
 use rusqlite::{params, Rows, Statement, Transaction};
 
 use crate::{
+	open::{Engine, OpenOpt},
 	Db, Error, IDb, ITx, ITxFn, OnCommit, Result, TxError, TxFnResult, TxOpError, TxOpResult,
 	TxResult, TxValueIter, Value, ValueIter,
 };
 
 pub use rusqlite;
+
+// ---- top-level open function
+
+pub(crate) fn open_db(path: &PathBuf, opt: &OpenOpt) -> Result<Db> {
+	info!("Opening Sqlite database at: {}", path.display());
+	let manager = r2d2_sqlite::SqliteConnectionManager::file(path);
+	Ok(SqliteDb::new(manager, opt.fsync)?)
+}
+
+// ----
 
 type Connection = r2d2::PooledConnection<SqliteConnectionManager>;
 
@@ -139,17 +150,18 @@ impl IDb for SqliteDb {
 		Ok(trees)
 	}
 
-	fn snapshot(&self, to: &PathBuf) -> Result<()> {
-		fn progress(p: rusqlite::backup::Progress) {
-			let percent = (p.pagecount - p.remaining) * 100 / p.pagecount;
-			info!("Sqlite snapshot progress: {}%", percent);
-		}
-		std::fs::create_dir_all(to)?;
-		let mut path = to.clone();
-		path.push("db.sqlite");
-		self.db
-			.get()?
-			.backup(rusqlite::DatabaseName::Main, path, Some(progress))?;
+	fn snapshot(&self, base_path: &PathBuf) -> Result<()> {
+		std::fs::create_dir_all(base_path)?;
+		let path = Engine::Sqlite
+			.db_path(&base_path)
+			.into_os_string()
+			.into_string()
+			.map_err(|_| Error("invalid sqlite path string".into()))?;
+
+		info!("Start sqlite VACUUM INTO `{}`", path);
+		self.db.get()?.execute("VACUUM INTO ?1", params![path])?;
+		info!("Finished sqlite VACUUM INTO `{}`", path);
+
 		Ok(())
 	}
 
@@ -160,7 +172,7 @@ impl IDb for SqliteDb {
 		self.internal_get(&self.db.get()?, &tree, key)
 	}
 
-	fn len(&self, tree: usize) -> Result<usize> {
+	fn approximate_len(&self, tree: usize) -> Result<usize> {
 		let tree = self.get_tree(tree)?;
 		let db = self.db.get()?;
 
@@ -170,6 +182,10 @@ impl IDb for SqliteDb {
 			None => Ok(0),
 			Some(v) => Ok(v.get::<_, usize>(0)?),
 		}
+	}
+
+	fn is_empty(&self, tree: usize) -> Result<bool> {
+		Ok(self.approximate_len(tree)? == 0)
 	}
 
 	fn insert(&self, tree: usize, key: &[u8], value: &[u8]) -> Result<()> {

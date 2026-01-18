@@ -11,7 +11,7 @@ Firstly clone the repository:
 
 ```bash
 git clone https://git.deuxfleurs.fr/Deuxfleurs/garage
-cd garage/scripts/helm
+cd garage/script/helm
 ```
 
 Deploy with default options:
@@ -52,7 +52,7 @@ This is an example `values.overrride.yaml` for deploying in a microk8s cluster w
 ```yaml
 garage:
   # Use only 2 replicas per object
-  replicationMode: "2"
+  replicationFactor: 2
 
 # Start 4 instances (StatefulSets) of garage
 deployment:

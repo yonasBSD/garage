@@ -24,18 +24,18 @@ default-members = ["src/garage"]
 
 # Internal Garage crates
 format_table = { version = "0.1.1", path = "src/format-table" }
-garage_api_common = { version = "1.2.0", path = "src/api/common" }
-garage_api_admin = { version = "1.2.0", path = "src/api/admin" }
-garage_api_s3 = { version = "1.2.0", path = "src/api/s3" }
-garage_api_k2v = { version = "1.2.0", path = "src/api/k2v" }
-garage_block = { version = "1.2.0", path = "src/block" }
-garage_db = { version = "1.2.0", path = "src/db", default-features = false }
-garage_model = { version = "1.2.0", path = "src/model", default-features = false }
-garage_net = { version = "1.2.0", path = "src/net" }
-garage_rpc = { version = "1.2.0", path = "src/rpc" }
-garage_table = { version = "1.2.0", path = "src/table" }
-garage_util = { version = "1.2.0", path = "src/util" }
-garage_web = { version = "1.2.0", path = "src/web" }
+garage_api_common = { version = "2.1.0", path = "src/api/common" }
+garage_api_admin = { version = "2.1.0", path = "src/api/admin" }
+garage_api_s3 = { version = "2.1.0", path = "src/api/s3" }
+garage_api_k2v = { version = "2.1.0", path = "src/api/k2v" }
+garage_block = { version = "2.1.0", path = "src/block" }
+garage_db = { version = "2.1.0", path = "src/db", default-features = false }
+garage_model = { version = "2.1.0", path = "src/model", default-features = false }
+garage_net = { version = "2.1.0", path = "src/net" }
+garage_rpc = { version = "2.1.0", path = "src/rpc" }
+garage_table = { version = "2.1.0", path = "src/table" }
+garage_util = { version = "2.1.0", path = "src/util" }
+garage_web = { version = "2.1.0", path = "src/web" }
 k2v-client = { version = "0.0.4", path = "src/k2v-client" }
 
 # External crates from crates.io
@@ -48,11 +48,9 @@ blake2 = "0.10"
 bytes = "1.0"
 bytesize = "1.1"
 cfg-if = "1.0"
-chrono = "0.4"
-crc32fast = "1.4"
-crc32c = "0.6"
+chrono = { version = "0.4", features = ["serde"] }
+crc-fast = "1.6"
 crypto-common = "0.1"
-err-derive = "0.3"
 gethostname = "0.4"
 git-version = "0.3.4"
 hex = "0.4"
@@ -65,7 +63,9 @@ md-5 = "0.10"
 mktemp = "0.5"
 nix = { version = "0.29", default-features = false, features = ["fs"] }
 nom = "7.1"
+parking_lot = "0.12"
 parse_duration = "2.1"
+paste = "1.0"
 pin-project = "1.0.12"
 pnet_datalink = "0.34"
 rand = "0.8"
@@ -87,9 +87,10 @@ tracing-journald = "0.3.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 heed = { version = "0.11", default-features = false, features = ["lmdb"] }
-rusqlite = "0.31.0"
+rusqlite = "0.37"
 r2d2 = "0.8"
-r2d2_sqlite = "0.24"
+r2d2_sqlite = "0.31"
+fjall = "2.4"
 
 async-compression = { version = "0.4", features = ["tokio", "zstd"] }
 zstd = { version = "0.13", default-features = false }
@@ -100,6 +101,7 @@ serde = { version = "1.0", default-features = false, features = ["derive", "rc"]
 serde_bytes = "0.11"
 serde_json = "1.0"
 toml = { version = "0.8", default-features = false, features = ["parse"] }
+utoipa = { version = "5.3.1", features = ["chrono"] }
 
 # newer version requires rust edition 2021
 k8s-openapi = { version = "0.21", features = ["v1_24"] }
@@ -135,7 +137,7 @@ prometheus = "0.13"
 aws-sigv4 = { version = "1.1", default-features = false }
 hyper-rustls = { version = "0.26", default-features = false, features = ["http1", "http2", "ring", "rustls-native-certs"] }
 log = "0.4"
-thiserror = "1.0"
+thiserror = "2.0"
 
 # ---- used only as build / dev dependencies ----
 assert-json-diff = "2.0"
@@ -152,5 +154,5 @@ lto = "off"
 [profile.release]
 lto = true
 codegen-units = 1
-opt-level = "s"
+opt-level = 3
 strip = true

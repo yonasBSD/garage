@@ -27,8 +27,6 @@ use garage_util::tranquilizer::Tranquilizer;
 use garage_rpc::system::System;
 use garage_rpc::*;
 
-use garage_table::replication::TableReplication;
-
 use crate::manager::*;
 
 // The delay between the time where a resync operation fails
@@ -106,13 +104,13 @@ impl BlockResyncManager {
 	}
 
 	/// Get length of resync queue
-	pub fn queue_len(&self) -> Result<usize, Error> {
-		Ok(self.queue.len()?)
+	pub fn queue_approximate_len(&self) -> Result<usize, Error> {
+		Ok(self.queue.approximate_len()?)
 	}
 
 	/// Get number of blocks that have an error
-	pub fn errors_len(&self) -> Result<usize, Error> {
-		Ok(self.errors.len()?)
+	pub fn errors_approximate_len(&self) -> Result<usize, Error> {
+		Ok(self.errors.approximate_len()?)
 	}
 
 	/// Clear the error counter for a block and put it in queue immediately
@@ -131,6 +129,14 @@ impl BlockResyncManager {
 			"Block {:?} was not in an errored state",
 			hash
 		)))
+	}
+
+	/// Clear the entire resync queue and list of errored blocks
+	/// Corresponds to `garage repair clear-resync-queue`
+	pub fn clear_resync_queue(&self) -> Result<(), Error> {
+		self.queue.clear()?;
+		self.errors.clear()?;
+		Ok(())
 	}
 
 	pub fn register_bg_vars(&self, vars: &mut vars::BgVars) {
@@ -377,11 +383,8 @@ impl BlockResyncManager {
 			info!("Resync block {:?}: offloading and deleting", hash);
 			let existing_path = existing_path.unwrap();
 
-			let mut who = manager
-				.system
-				.cluster_layout()
-				.current_storage_nodes_of(hash);
-			if who.len() < manager.replication.write_quorum() {
+			let mut who = manager.storage_nodes_of(hash)?;
+			if who.len() < manager.write_quorum {
 				return Err(Error::Message("Not trying to offload block because we don't have a quorum of nodes to write to".to_string()));
 			}
 			who.retain(|id| *id != manager.system.id);
@@ -463,10 +466,7 @@ impl BlockResyncManager {
 
 			// First, check whether we are still supposed to store that
 			// block in the latest cluster layout version.
-			let storage_nodes = manager
-				.system
-				.cluster_layout()
-				.current_storage_nodes_of(&hash);
+			let storage_nodes = manager.storage_nodes_of(&hash)?;
 
 			if !storage_nodes.contains(&manager.system.id) {
 				info!(
@@ -548,9 +548,11 @@ impl Worker for ResyncWorker {
 		}
 
 		WorkerStatus {
-			queue_length: Some(self.manager.resync.queue_len().unwrap_or(0) as u64),
+			queue_length: Some(self.manager.resync.queue_approximate_len().unwrap_or(0) as u64),
 			tranquility: Some(tranquility),
-			persistent_errors: Some(self.manager.resync.errors_len().unwrap_or(0) as u64),
+			persistent_errors: Some(
+				self.manager.resync.errors_approximate_len().unwrap_or(0) as u64
+			),
 			..Default::default()
 		}
 	}

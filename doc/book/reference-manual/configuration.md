@@ -24,6 +24,7 @@ db_engine = "lmdb"
 
 block_size = "1M"
 block_ram_buffer_max = "256MiB"
+block_max_concurrent_reads = 16
 
 lmdb_map_size = "1T"
 
@@ -50,17 +51,20 @@ allow_punycode = false
 
 [consul_discovery]
 api = "catalog"
-consul_http_addr = "http://127.0.0.1:8500"
+consul_http_addr = "https://127.0.0.1:8500"
+tls_skip_verify = false
 service_name = "garage-daemon"
+
 ca_cert = "/etc/consul/consul-ca.crt"
 client_cert = "/etc/consul/consul-client.crt"
 client_key = "/etc/consul/consul-key.crt"
+
 # for `agent` API mode, unset client_cert and client_key, and optionally enable `token`
 # token = "abcdef-01234-56789"
-tls_skip_verify = false
+
 tags = [ "dns-enabled" ]
 meta = { dns-acl = "allow trusted" }
-
+datacenters = ["dc1", "dc2", "dc3"]
 
 [kubernetes_discovery]
 namespace = "garage"
@@ -81,6 +85,7 @@ add_host_to_metrics = true
 [admin]
 api_bind_addr = "0.0.0.0:3903"
 metrics_token = "BCAdFjoa9G0KJR0WXnHHm7fs1ZAbfpI8iIZ+Z/a2NgI="
+metrics_require_token = true
 admin_token = "UkLeGWEvHnXBqnueR3ISEMWpOnm40jH2tM2HnnL/0F4="
 trace_sink = "http://localhost:4317"
 ```
@@ -96,6 +101,7 @@ The following gives details about each available configuration option.
 Top-level configuration options, in alphabetical order:
 [`allow_punycode`](#allow_punycode),
 [`allow_world_readable_secrets`](#allow_world_readable_secrets),
+[`block_max_concurrent_reads`](#block_max_concurrent_reads),
 [`block_ram_buffer_max`](#block_ram_buffer_max),
 [`block_size`](#block_size),
 [`bootstrap_peers`](#bootstrap_peers),
@@ -124,11 +130,13 @@ The `[consul_discovery]` section:
 [`client_cert`](#consul_client_cert_and_key),
 [`client_key`](#consul_client_cert_and_key),
 [`consul_http_addr`](#consul_http_addr),
+[`datacenters`](#consul_datacenters)
 [`meta`](#consul_tags_and_meta),
 [`service_name`](#consul_service_name),
 [`tags`](#consul_tags_and_meta),
 [`tls_skip_verify`](#consul_tls_skip_verify),
 [`token`](#consul_token).
+
 
 The `[kubernetes_discovery]` section:
 [`namespace`](#kube_namespace),
@@ -147,6 +155,7 @@ The `[s3_web]` section:
 
 The `[admin]` section:
 [`api_bind_addr`](#admin_api_bind_addr),
+[`metrics_require_token`](#admin_metrics_require_token),
 [`metrics_token`/`metrics_token_file`](#admin_metrics_token),
 [`admin_token`/`admin_token_file`](#admin_token),
 [`trace_sink`](#admin_trace_sink),
@@ -333,6 +342,7 @@ Since `v0.8.0`, Garage can use alternative storage backends as follows:
 | --------- | ----------------- | ------------- |
 | [LMDB](https://www.symas.com/lmdb) (since `v0.8.0`, default since `v0.9.0`) | `"lmdb"` | `<metadata_dir>/db.lmdb/` |
 | [Sqlite](https://sqlite.org) (since `v0.8.0`) | `"sqlite"` | `<metadata_dir>/db.sqlite` |
+| [Fjall](https://github.com/fjall-rs/fjall) (**experimental support** since `v1.3.0`/`v2.1.0`) | `"fjall"` | `<metadata_dir>/db.fjall/` |
 | [Sled](https://sled.rs) (old default, removed since `v1.0`) | `"sled"` | `<metadata_dir>/db/` |
 
 Sled was supported until Garage v0.9.x, and was removed in Garage v1.0.
@@ -341,8 +351,16 @@ old Sled metadata databases to another engine.
 
 Performance characteristics of the different DB engines are as follows:
 
-- LMDB: the recommended database engine for high-performance distributed clusters.
-LMDB works very well, but is known to have the following limitations:
+- **LMDB:** the recommended database engine for high-performance distributed clusters
+  with `replication_factor` ≥ 2.
+  LMDB works well, but is known to have the following limitations:
+
+  - LMDB is prone to database corruption after an unclean shutdown (e.g. a process kill
+    or a power outage).  It is recommended to configure
+    [`metadata_auto_snapshot_interval`](#metadata_auto_snapshot_interval) to be
+    able to easily recover from this situation. With `replication_factor` ≥ 2,
+    metadata can also be reconstructed from remote nodes upon corruption
+    (see [Recovering from failures](@/documentation/operations/recovering.md#corrupted_meta)).
 
   - The data format of LMDB is not portable between architectures, so for
     instance the Garage database of an x86-64 node cannot be moved to an ARM64
@@ -352,22 +370,21 @@ LMDB works very well, but is known to have the following limitations:
     node to very small database sizes due to how LMDB works; it is therefore
     not recommended.
 
-  - Several users have reported corrupted LMDB database files after an unclean
-    shutdown (e.g. a power outage). This situation can generally be recovered
-    from if your cluster is geo-replicated (by rebuilding your metadata db from
-    other nodes), or if you have saved regular snapshots at the filesystem
-    level.
-
   - Keys in LMDB are limited to 511 bytes. This limit translates to limits on
     object keys in S3 and sort keys in K2V that are limted to 479 bytes.
 
-- Sqlite: Garage supports Sqlite as an alternative storage backend for
-  metadata, which does not have the issues listed above for LMDB.
-  On versions 0.8.x and earlier, Sqlite should be avoided due to abysmal
-  performance, which was fixed with the addition of `metadata_fsync`.
-  Sqlite is still probably slower than LMDB due to the way we use it,
-  so it is not the best choice for high-performance storage clusters,
-  but it should work fine in many cases.
+- **Sqlite:** Garage supports Sqlite as an alternative storage backend for
+  metadata, which does not have the issues listed above for LMDB.  Sqlite is
+  slower than LMDB, so it is not the best choice for high-performance storage
+  clusters.
+
+- **Fjall:** a storage engine based on LSM trees, which theoretically allow for
+  higher write throughput than other storage engines that are based on B-trees.
+  Using Fjall could potentially improve Garage's performance significantly in
+  write-heavy workloads. **Support for Fjall is experimental at this point**,
+  we have added it to Garage for evaluation purposes only. **Use it only with
+  test data, and report any issues to our bug tracker. Do not use it for
+  production workloads.**
 
 It is possible to convert Garage's metadata directory from one format to another
 using the `garage convert-db` command, which should be used as follows:
@@ -406,6 +423,7 @@ Here is how this option impacts the different database engines:
 |----------|------------------------------------|-------------------------------|
 | Sqlite   | `PRAGMA synchronous = OFF`         | `PRAGMA synchronous = NORMAL` |
 | LMDB     | `MDB_NOMETASYNC` + `MDB_NOSYNC`    | `MDB_NOMETASYNC`              |
+| Fjall    | default options                    | not supported                 |
 
 Note that the Sqlite database is always ran in `WAL` mode (`PRAGMA journal_mode = WAL`).
 
@@ -425,7 +443,8 @@ if geographical replication is used.
 #### `metadata_auto_snapshot_interval` (since `v0.9.4`) {#metadata_auto_snapshot_interval}
 
 If this value is set, Garage will automatically take a snapshot of the metadata
-DB file at a regular interval and save it in the metadata directory.
+DB file at a regular interval and save it in the metadata directory,
+or in [`metadata_snapshots_dir`](#metadata_snapshots_dir) if it is set.
 This parameter can take any duration string that can be parsed by
 the [`parse_duration`](https://docs.rs/parse_duration/latest/parse_duration/#syntax) crate.
 
@@ -434,14 +453,19 @@ corrupted, for instance after an unclean shutdown.  See [this
 page](@/documentation/operations/recovering.md#corrupted_meta) for details.
 Garage keeps only the two most recent snapshots of the metadata DB and deletes
 older ones automatically.
+You can also create metadata snapshots manually at any point using the
+`garage meta snapshot` command.
+
+Using snapshots created by Garage is the best option to make snapshots of your
+node's metadata for potential recovery, as they are guaranteed to be clean and
+consistent, contrarily to filesystem-level snapshots that may be taken while
+some writes are in-flight and thus might be corrupted.
 
 Note that taking a metadata snapshot is a relatively intensive operation as the
 entire data file is copied. A snapshot being taken might have performance
 impacts on the Garage node while it is running. If the cluster is under heavy
 write load when a snapshot operation is running, this might also cause the
 database file to grow in size significantly as pages cannot be recycled easily.
-For this reason, it might be better to use filesystem-level snapshots instead
-if possible.
 
 #### `disable_scrub` {#disable_scrub}
 
@@ -511,6 +535,29 @@ intermediate processing before even trying to send the data to the storage
 node.
 
 The default value is 256MiB.
+
+#### `block_max_concurrent_reads` (since `v1.3.0` / `v2.1.0`) {#block_max_concurrent_reads}
+
+The maximum number of blocks (individual files in the data directory) open
+simultaneously for reading.
+
+Reducing this number does not limit the number of data blocks that can be
+transferred through the network simultaneously. This mechanism was just added
+as a backpressure mechanism for HDD read speed: it helps avoid a situation
+where too many requests are coming in and Garage is reading too many block
+files simultaneously, thus not making timely progress on any of the reads.
+
+When a request to read a data block comes in through the network, the requests
+awaits for one of the `block_max_concurrent_reads` slots to be available
+(internally implemented using a Semaphore object). Once it acquired a read
+slot, it reads the entire block file to RAM and frees the slot as soon as the
+block file is finished reading. Only after the slot is released will the
+block's data start being transferred over the network.  If the request fails to
+acquire a reading slot wihtin 15 seconds, it fails with a timeout error.
+Timeout events can be monitored through the `block_read_semaphore_timeouts`
+metric in Prometheus: a non-zero number of such events indicates an I/O
+bottleneck on HDD read speed.
+
 
 #### `lmdb_map_size` {#lmdb_map_size}
 
@@ -684,6 +731,18 @@ node_prefix "" {
 }
 ```
 
+
+#### `datacenters` {#consul_datacenters}
+
+Optional list of datacenters that allow garage to do service discovery when Consul is configured in WAN federation.
+
+Example: `datacenters = ["dc1", "dc2", "dc3"]`
+
+In a WAN configuration, by default the Consul services API only responds with
+local LAN services.  When a list of datacenters is specified using this option,
+Garage will query the consul server API by datacenter directly, allowing for
+Garage to discover nodes across the Consul WAN.
+
 #### `tags` and `meta` {#consul_tags_and_meta}
 
 Additional list of tags and map of service meta to add during service registration.
@@ -780,10 +839,34 @@ See [administration API reference](@/documentation/reference-manual/admin-api.md
 Alternatively, since `v0.8.5`, a path can be used to create a unix socket. Note that for security reasons,
 the socket will have 0220 mode. Make sure to set user and group permissions accordingly.
 
+#### `admin_token`, `admin_token_file` or `GARAGE_ADMIN_TOKEN`, `GARAGE_ADMIN_TOKEN_FILE` (env) {#admin_token}
+
+The token for accessing all administration functions on the admin endpoint,
+with the exception of the metrics endpoint (see `metrics_token`).
+
+You can use any random string for this value. We recommend generating a random
+token with `openssl rand -base64 32`.
+
+For Garage version earlier than `v2.0`, if this token is not set,
+access to these endpoints is disabled entirely.
+
+Since Garage `v2.0`, additional admin API tokens can be defined dynamically
+in your Garage cluster using administration commands. This new admin token system
+is more flexible since it allows admin tokens to have an expiration date,
+and to have a scope restricted to certain admin API functions. If `admin_token`
+is set, it behaves as an admin token without expiration and with full scope.
+Otherwise, only admin API tokens defined dynamically can be used.
+
+`admin_token` was introduced in Garage `v0.7.2`.
+`admin_token_file` and the `GARAGE_ADMIN_TOKEN` environment variable are supported since Garage `v0.8.2`.
+
+`GARAGE_ADMIN_TOKEN_FILE` is supported since `v0.8.5` / `v0.9.1`.
+
 #### `metrics_token`, `metrics_token_file` or `GARAGE_METRICS_TOKEN`, `GARAGE_METRICS_TOKEN_FILE` (env) {#admin_metrics_token}
 
-The token for accessing the Metrics endpoint. If this token is not set, the
-Metrics endpoint can be accessed without access control.
+The token for accessing the Prometheus metrics endpoint (`/metrics`).
+If this token is not set, and unless `metrics_require_token` is set to `true`,
+the metrics endpoint can be accessed without access control.
 
 You can use any random string for this value. We recommend generating a random token with `openssl rand -base64 32`.
 
@@ -792,17 +875,12 @@ You can use any random string for this value. We recommend generating a random t
 
 `GARAGE_METRICS_TOKEN_FILE` is supported since `v0.8.5` / `v0.9.1`.
 
-#### `admin_token`, `admin_token_file` or `GARAGE_ADMIN_TOKEN`, `GARAGE_ADMIN_TOKEN_FILE` (env) {#admin_token}
+#### `metrics_require_token` (since `v2.0.0`) {#admin_metrics_require_token}
 
-The token for accessing all of the other administration endpoints.  If this
-token is not set, access to these endpoints is disabled entirely.
-
-You can use any random string for this value. We recommend generating a random token with `openssl rand -base64 32`.
-
-`admin_token` was introduced in Garage `v0.7.2`.
-`admin_token_file` and the `GARAGE_ADMIN_TOKEN` environment variable are supported since Garage `v0.8.2`.
-
-`GARAGE_ADMIN_TOKEN_FILE` is supported since `v0.8.5` / `v0.9.1`.
+If this is set to `true`, accessing the metrics endpoint will always require
+an access token. Valid tokens include the `metrics_token` if it is set,
+and admin API token defined dynamicaly in Garage which have
+the `Metrics` endpoint in their scope.
 
 #### `trace_sink` {#admin_trace_sink}
 

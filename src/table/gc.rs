@@ -153,7 +153,7 @@ impl<F: TableSchema, R: TableReplication> TableGc<F, R> {
 		let mut partitions = HashMap::new();
 		for entry in entries {
 			let pkh = Hash::try_from(&entry.key[..32]).unwrap();
-			let mut nodes = self.data.replication.storage_nodes(&pkh);
+			let mut nodes = self.data.replication.storage_nodes(&pkh)?;
 			nodes.retain(|x| *x != self.system.id);
 			nodes.sort();
 
@@ -313,7 +313,7 @@ impl<F: TableSchema, R: TableReplication> Worker for GcWorker<F, R> {
 
 	fn status(&self) -> WorkerStatus {
 		WorkerStatus {
-			queue_length: Some(self.gc.data.gc_todo_len().unwrap_or(0) as u64),
+			queue_length: Some(self.gc.data.gc_todo_approximate_len().unwrap_or(0) as u64),
 			..Default::default()
 		}
 	}

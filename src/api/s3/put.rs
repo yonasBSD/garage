@@ -35,7 +35,7 @@ use garage_api_common::signature::body::StreamingChecksumReceiver;
 use garage_api_common::signature::checksum::*;
 
 use crate::api_server::{ReqBody, ResBody};
-use crate::encryption::EncryptionParams;
+use crate::encryption::{EncryptionParams, OekDerivationInfo};
 use crate::error::*;
 use crate::website::X_AMZ_WEBSITE_REDIRECT_LOCATION;
 
@@ -48,8 +48,8 @@ pub(crate) struct SaveStreamResult {
 	pub(crate) etag: String,
 }
 
-pub(crate) enum ChecksumMode<'a> {
-	Verify(&'a ExpectedChecksums),
+pub(crate) enum ChecksumMode {
+	Verify(ExpectedChecksums),
 	VerifyFrom {
 		checksummer: StreamingChecksumReceiver,
 		trailer_algo: Option<ChecksumAlgorithm>,
@@ -62,6 +62,10 @@ pub async fn handle_put(
 	req: Request<ReqBody>,
 	key: &String,
 ) -> Result<Response<ResBody>, Error> {
+	// Generate version uuid now, because it is necessary to compute SSE-C
+	// encryption parameters
+	let version_uuid = gen_uuid();
+
 	// Retrieve interesting headers from request
 	let headers = extract_metadata_headers(req.headers())?;
 	debug!("Object headers: {:?}", headers);
@@ -79,10 +83,19 @@ pub async fn handle_put(
 	let meta = ObjectVersionMetaInner {
 		headers,
 		checksum: expected_checksums.extra,
+		checksum_type: expected_checksums.extra.map(|_| ChecksumType::FullObject),
 	};
 
 	// Determine whether object should be encrypted, and if so the key
-	let encryption = EncryptionParams::new_from_headers(&ctx.garage, req.headers())?;
+	let encryption = EncryptionParams::new_from_headers(
+		&ctx.garage,
+		req.headers(),
+		OekDerivationInfo {
+			bucket_id: ctx.bucket_id,
+			version_id: version_uuid,
+			object_key: &key,
+		},
+	)?;
 
 	// The request body is a special ReqBody object (see garage_api_common::signature::body)
 	// which supports calculating checksums while streaming the data.
@@ -100,6 +113,7 @@ pub async fn handle_put(
 
 	let res = save_stream(
 		&ctx,
+		version_uuid,
 		meta,
 		encryption,
 		stream,
@@ -121,11 +135,12 @@ pub async fn handle_put(
 
 pub(crate) async fn save_stream<S: Stream<Item = Result<Bytes, Error>> + Unpin>(
 	ctx: &ReqCtx,
+	version_uuid: Uuid,
 	mut meta: ObjectVersionMetaInner,
 	encryption: EncryptionParams,
 	body: S,
 	key: &String,
-	checksum_mode: ChecksumMode<'_>,
+	checksum_mode: ChecksumMode,
 ) -> Result<SaveStreamResult, Error> {
 	let ReqCtx {
 		garage, bucket_id, ..
@@ -140,7 +155,6 @@ pub(crate) async fn save_stream<S: Stream<Item = Result<Bytes, Error>> + Unpin>(
 	let first_block = first_block_opt.unwrap_or_default();
 
 	// Generate identity of new version
-	let version_uuid = gen_uuid();
 	let version_timestamp = next_timestamp(existing_object.as_ref());
 
 	let mut checksummer = match &checksum_mode {

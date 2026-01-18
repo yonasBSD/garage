@@ -22,6 +22,7 @@ pub struct BlockManagerMetrics {
 
 	pub(crate) bytes_read: BoundCounter<u64>,
 	pub(crate) block_read_duration: BoundValueRecorder<f64>,
+	pub(crate) block_read_semaphore_timeouts: BoundCounter<u64>,
 	pub(crate) bytes_written: BoundCounter<u64>,
 	pub(crate) block_write_duration: BoundValueRecorder<f64>,
 	pub(crate) delete_counter: BoundCounter<u64>,
@@ -50,7 +51,7 @@ impl BlockManagerMetrics {
 				.init(),
 			_rc_size: meter
 				.u64_value_observer("block.rc_size", move |observer| {
-					if let Ok(value) = rc_tree.len() {
+					if let Ok(value) = rc_tree.approximate_len() {
 						observer.observe(value as u64, &[])
 					}
 				})
@@ -58,7 +59,7 @@ impl BlockManagerMetrics {
 				.init(),
 			_resync_queue_len: meter
 				.u64_value_observer("block.resync_queue_length", move |observer| {
-					if let Ok(value) = resync_queue.len() {
+					if let Ok(value) = resync_queue.approximate_len() {
 						observer.observe(value as u64, &[]);
 					}
 				})
@@ -68,7 +69,7 @@ impl BlockManagerMetrics {
 				.init(),
 			_resync_errored_blocks: meter
 				.u64_value_observer("block.resync_errored_blocks", move |observer| {
-					if let Ok(value) = resync_errors.len() {
+					if let Ok(value) = resync_errors.approximate_len() {
 						observer.observe(value as u64, &[]);
 					}
 				})
@@ -117,6 +118,11 @@ impl BlockManagerMetrics {
 			block_read_duration: meter
 				.f64_value_recorder("block.read_duration")
 				.with_description("Duration of block read operations")
+				.init()
+				.bind(&[]),
+			block_read_semaphore_timeouts: meter
+				.u64_counter("block.read_semaphore_timeouts")
+				.with_description("Number of block reads that failed due to semaphore acquire timeout")
 				.init()
 				.bind(&[]),
 			bytes_written: meter

@@ -11,12 +11,13 @@ use garage_util::error::*;
 
 use super::graph_algo::*;
 use super::*;
+use crate::replication_mode::*;
 
 // The Message type will be used to collect information on the algorithm.
 pub type Message = Vec<String>;
 
 impl LayoutVersion {
-	pub fn new(replication_factor: usize) -> Self {
+	pub fn new(replication_factor: ReplicationFactor) -> Self {
 		// We set the default zone redundancy to be Maximum, meaning that the maximum
 		// possible value will be used depending on the cluster topology
 		let parameters = LayoutParameters {
@@ -25,7 +26,7 @@ impl LayoutVersion {
 
 		LayoutVersion {
 			version: 0,
-			replication_factor,
+			replication_factor: usize::from(replication_factor),
 			partition_size: 0,
 			roles: LwwMap::new(),
 			node_id_vec: Vec::new(),
@@ -114,24 +115,33 @@ impl LayoutVersion {
 	}
 
 	/// Return the n servers in which data for this hash should be replicated
-	pub fn nodes_of(&self, position: &Hash, n: usize) -> impl Iterator<Item = Uuid> + '_ {
-		assert_eq!(n, self.replication_factor);
-
+	pub fn nodes_of(&self, position: &Hash) -> impl Iterator<Item = Uuid> + '_ {
 		let data = &self.ring_assignment_data;
 
-		let partition_nodes = if data.len() == self.replication_factor * (1 << PARTITION_BITS) {
-			let partition_idx = self.partition_of(position) as usize;
-			let partition_start = partition_idx * self.replication_factor;
-			let partition_end = (partition_idx + 1) * self.replication_factor;
-			&data[partition_start..partition_end]
-		} else {
-			warn!("Ring not yet ready, read/writes will be lost!");
-			&[]
-		};
+		if data.len() != self.replication_factor * (1 << PARTITION_BITS) {
+			panic!(".nodes_of() called on invalid LayoutVersion (this is a bug)");
+		}
+
+		let partition_idx = self.partition_of(position) as usize;
+		let partition_start = partition_idx * self.replication_factor;
+		let partition_end = (partition_idx + 1) * self.replication_factor;
+		let partition_nodes = &data[partition_start..partition_end];
 
 		partition_nodes
 			.iter()
 			.map(move |i| self.node_id_vec[*i as usize])
+	}
+
+	pub fn replication_factor(&self) -> ReplicationFactor {
+		ReplicationFactor::new(self.replication_factor).unwrap()
+	}
+
+	pub fn read_quorum(&self, consistency_mode: ConsistencyMode) -> usize {
+		self.replication_factor().read_quorum(consistency_mode)
+	}
+
+	pub fn write_quorum(&self, consistency_mode: ConsistencyMode) -> usize {
+		self.replication_factor().write_quorum(consistency_mode)
 	}
 
 	// ===================== internal information extractors ======================
@@ -507,7 +517,7 @@ impl LayoutVersion {
 		g.compute_maximal_flow()?;
 		if g.get_flow_value()? < (NB_PARTITIONS * self.replication_factor) as i64 {
 			return Err(Error::Message(
-				"The storage capacity of he cluster is to small. It is \
+				"The storage capacity of the cluster is too small. It is \
                        impossible to store partitions of size 1."
 					.into(),
 			));
@@ -823,7 +833,7 @@ impl LayoutVersion {
 				let total_cap_n = self.expect_get_node_capacity(&self.node_id_vec[*n]);
 				let tags_n = (self.node_role(&self.node_id_vec[*n]).ok_or("<??>"))?.tags_string();
 				table.push(format!(
-					"  {:?}\t{}\t{} ({} new)\t{}\t{} ({:.1}%)",
+					"  {:?}\t[{}]\t{} ({} new)\t{}\t{} ({:.1}%)",
 					self.node_id_vec[*n],
 					tags_n,
 					stored_partitions[*n],

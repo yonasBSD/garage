@@ -15,6 +15,7 @@ use serde::Deserialize;
 
 use garage_model::garage::Garage;
 use garage_model::s3::object_table::*;
+use garage_util::data::gen_uuid;
 
 use garage_api_common::cors::*;
 use garage_api_common::helpers::*;
@@ -22,7 +23,7 @@ use garage_api_common::signature::checksum::*;
 use garage_api_common::signature::payload::{verify_v4, Authorization};
 
 use crate::api_server::ResBody;
-use crate::encryption::EncryptionParams;
+use crate::encryption::{EncryptionParams, OekDerivationInfo};
 use crate::error::*;
 use crate::put::{extract_metadata_headers, save_stream, ChecksumMode};
 use crate::xml as s3_xml;
@@ -103,22 +104,18 @@ pub async fn handle_post_object(
 		key.to_owned()
 	};
 
-	let api_key = verify_v4(&garage, "s3", &authorization, policy.as_bytes()).await?;
+	let api_key = verify_v4(&garage, "s3", &authorization, policy.as_bytes())?;
 
-	let bucket_id = garage
+	let bucket = garage
 		.bucket_helper()
-		.resolve_bucket(&bucket_name, &api_key)
-		.await
+		.resolve_bucket_fast(&bucket_name, &api_key)
 		.map_err(pass_helper_error)?;
+	let bucket_id = bucket.id;
 
 	if !api_key.allow_write(&bucket_id) {
 		return Err(Error::forbidden("Operation is not allowed for this key."));
 	}
 
-	let bucket = garage
-		.bucket_helper()
-		.get_existing_bucket(bucket_id)
-		.await?;
 	let bucket_params = bucket.state.into_option().unwrap();
 	let matching_cors_rule = find_matching_cors_rule(
 		&bucket_params,
@@ -247,12 +244,23 @@ pub async fn handle_post_object(
 			.transpose()?,
 	};
 
+	let version_uuid = gen_uuid();
+
 	let meta = ObjectVersionMetaInner {
 		headers,
 		checksum: expected_checksums.extra,
+		checksum_type: expected_checksums.extra.map(|_| ChecksumType::FullObject),
 	};
 
-	let encryption = EncryptionParams::new_from_headers(&garage, &params)?;
+	let encryption = EncryptionParams::new_from_headers(
+		&garage,
+		&params,
+		OekDerivationInfo {
+			bucket_id,
+			version_id: version_uuid,
+			object_key: &key,
+		},
+	)?;
 
 	let stream = file_field.map(|r| r.map_err(Into::into));
 	let ctx = ReqCtx {
@@ -265,11 +273,12 @@ pub async fn handle_post_object(
 
 	let res = save_stream(
 		&ctx,
+		version_uuid,
 		meta,
 		encryption,
 		StreamLimiter::new(stream, conditions.content_length),
 		&key,
-		ChecksumMode::Verify(&expected_checksums),
+		ChecksumMode::Verify(expected_checksums),
 	)
 	.await?;
 

@@ -24,7 +24,7 @@ use garage_api_common::helpers::*;
 use garage_api_common::signature::checksum::*;
 
 use crate::api_server::{ReqBody, ResBody};
-use crate::encryption::EncryptionParams;
+use crate::encryption::{EncryptionParams, OekDerivationInfo};
 use crate::error::*;
 use crate::get::{check_version_not_deleted, full_object_byte_stream, PreconditionHeaders};
 use crate::multipart;
@@ -66,11 +66,37 @@ pub async fn handle_copy(
 			&ctx.garage,
 			req.headers(),
 			&source_version_meta.encryption,
+			OekDerivationInfo::for_object(&source_object, source_version),
 		)?;
-	let dest_encryption = EncryptionParams::new_from_headers(&ctx.garage, req.headers())?;
+	let dest_uuid = gen_uuid();
+	let dest_encryption = EncryptionParams::new_from_headers(
+		&ctx.garage,
+		req.headers(),
+		OekDerivationInfo {
+			bucket_id: ctx.bucket_id,
+			version_id: dest_uuid,
+			object_key: dest_key,
+		},
+	)?;
+
+	let was_multipart = source_version_meta.etag.contains('-') // HACK
+        || source_object_meta_inner.checksum_type == Some(ChecksumType::Composite);
 
 	// Extract source checksum info before source_object_meta_inner is consumed
 	let source_checksum = source_object_meta_inner.checksum;
+	let source_checksum_type = match (source_object_meta_inner.checksum_type, source_checksum) {
+		(Some(ct), _) => Some(ct),
+		(None, Some(_)) => {
+			// Migrated object from garage v1.x or older
+			// determine checksum type depending if this is a multipart upload or not
+			if was_multipart {
+				Some(ChecksumType::Composite)
+			} else {
+				Some(ChecksumType::FullObject)
+			}
+		}
+		(None, None) => None,
+	};
 	let source_checksum_algorithm = source_checksum.map(|x| x.algorithm());
 
 	// If source object has a checksum, the destination object must as well.
@@ -79,7 +105,6 @@ pub async fn handle_copy(
 	let checksum_algorithm = checksum_algorithm.or(source_checksum_algorithm);
 
 	// Determine metadata of destination object
-	let was_multipart = source_version_meta.etag.contains('-');
 	let dest_object_meta = ObjectVersionMetaInner {
 		headers: match req.headers().get("x-amz-metadata-directive") {
 			Some(v) if v == hyper::header::HeaderValue::from_static("REPLACE") => {
@@ -99,6 +124,7 @@ pub async fn handle_copy(
 			}
 		},
 		checksum: source_checksum,
+		checksum_type: source_checksum_type,
 	};
 
 	// Do actual object copying
@@ -118,8 +144,8 @@ pub async fn handle_copy(
 	// See: https://docs.aws.amazon.com/AmazonS3/latest/userguide/checking-object-integrity.html
 
 	let must_recopy = !EncryptionParams::is_same(&source_encryption, &dest_encryption)
-		|| source_checksum_algorithm != checksum_algorithm
-		|| (was_multipart && checksum_algorithm.is_some());
+		|| (checksum_algorithm.is_some()
+			&& (was_multipart || checksum_algorithm != source_checksum_algorithm));
 
 	let res = if !must_recopy {
 		// In most cases, we can just copy the metadata and link blocks of the
@@ -127,6 +153,7 @@ pub async fn handle_copy(
 		handle_copy_metaonly(
 			ctx,
 			dest_key,
+			dest_uuid,
 			dest_object_meta,
 			dest_encryption,
 			source_version,
@@ -135,21 +162,25 @@ pub async fn handle_copy(
 		)
 		.await?
 	} else {
-		let expected_checksum = ExpectedChecksums {
-			md5: None,
-			sha256: None,
-			extra: source_checksum,
-		};
 		let checksum_mode = if was_multipart || source_checksum_algorithm != checksum_algorithm {
 			ChecksumMode::Calculate(checksum_algorithm)
 		} else {
-			ChecksumMode::Verify(&expected_checksum)
+			ChecksumMode::Verify(ExpectedChecksums {
+				md5: None,
+				sha256: None,
+				extra: source_checksum,
+			})
 		};
-		// If source and dest encryption use different keys,
-		// we must decrypt content and re-encrypt, so rewrite all data blocks.
+		// For multipart uploads that had a composite checksum, set checksum type
+		// to full object as it will be recalculated.
+		let dest_object_meta = ObjectVersionMetaInner {
+			checksum_type: checksum_algorithm.map(|_| ChecksumType::FullObject),
+			..dest_object_meta
+		};
 		handle_copy_reencrypt(
 			ctx,
 			dest_key,
+			dest_uuid,
 			dest_object_meta,
 			dest_encryption,
 			source_version,
@@ -181,6 +212,7 @@ pub async fn handle_copy(
 async fn handle_copy_metaonly(
 	ctx: ReqCtx,
 	dest_key: &str,
+	dest_uuid: Uuid,
 	dest_object_meta: ObjectVersionMetaInner,
 	dest_encryption: EncryptionParams,
 	source_version: &ObjectVersion,
@@ -194,7 +226,6 @@ async fn handle_copy_metaonly(
 	} = ctx;
 
 	// Generate parameters for copied object
-	let new_uuid = gen_uuid();
 	let new_timestamp = now_msec();
 
 	let new_meta = ObjectVersionMeta {
@@ -204,7 +235,7 @@ async fn handle_copy_metaonly(
 	};
 
 	let res = SaveStreamResult {
-		version_uuid: new_uuid,
+		version_uuid: dest_uuid,
 		version_timestamp: new_timestamp,
 		etag: new_meta.etag.clone(),
 	};
@@ -216,7 +247,7 @@ async fn handle_copy_metaonly(
 			// bytes is either plaintext before&after or encrypted with the
 			// same keys, so it's ok to just copy it as is
 			let dest_object_version = ObjectVersion {
-				uuid: new_uuid,
+				uuid: dest_uuid,
 				timestamp: new_timestamp,
 				state: ObjectVersionState::Complete(ObjectVersionData::Inline(
 					new_meta,
@@ -243,7 +274,7 @@ async fn handle_copy_metaonly(
 			// This holds a reference to the object in the Version table
 			// so that it won't be deleted, e.g. by repair_versions.
 			let tmp_dest_object_version = ObjectVersion {
-				uuid: new_uuid,
+				uuid: dest_uuid,
 				timestamp: new_timestamp,
 				state: ObjectVersionState::Uploading {
 					encryption: new_meta.encryption.clone(),
@@ -263,7 +294,7 @@ async fn handle_copy_metaonly(
 			// marked as deleted (they are marked as deleted only if the Version
 			// doesn't exist or is marked as deleted).
 			let mut dest_version = Version::new(
-				new_uuid,
+				dest_uuid,
 				VersionBacklink::Object {
 					bucket_id: dest_bucket_id,
 					key: dest_key.to_string(),
@@ -282,7 +313,7 @@ async fn handle_copy_metaonly(
 				.iter()
 				.map(|b| BlockRef {
 					block: b.1.hash,
-					version: new_uuid,
+					version: dest_uuid,
 					deleted: false.into(),
 				})
 				.collect::<Vec<_>>();
@@ -298,7 +329,7 @@ async fn handle_copy_metaonly(
 			// with the stuff before, the block's reference counts could be decremented before
 			// they are incremented again for the new version, leading to data being deleted.
 			let dest_object_version = ObjectVersion {
-				uuid: new_uuid,
+				uuid: dest_uuid,
 				timestamp: new_timestamp,
 				state: ObjectVersionState::Complete(ObjectVersionData::FirstBlock(
 					new_meta,
@@ -320,12 +351,13 @@ async fn handle_copy_metaonly(
 async fn handle_copy_reencrypt(
 	ctx: ReqCtx,
 	dest_key: &str,
+	dest_uuid: Uuid,
 	dest_object_meta: ObjectVersionMetaInner,
 	dest_encryption: EncryptionParams,
 	source_version: &ObjectVersion,
 	source_version_data: &ObjectVersionData,
 	source_encryption: EncryptionParams,
-	checksum_mode: ChecksumMode<'_>,
+	checksum_mode: ChecksumMode,
 ) -> Result<SaveStreamResult, Error> {
 	// basically we will read the source data (decrypt if necessary)
 	// and save that in a new object (encrypt if necessary),
@@ -339,6 +371,7 @@ async fn handle_copy_reencrypt(
 
 	save_stream(
 		&ctx,
+		dest_uuid,
 		dest_object_meta,
 		dest_encryption,
 		source_stream.map_err(|e| Error::from(GarageError::from(e))),
@@ -362,7 +395,7 @@ pub async fn handle_upload_part_copy(
 	let dest_upload_id = multipart::decode_upload_id(upload_id)?;
 
 	let dest_key = dest_key.to_string();
-	let (source_object, (_, dest_version, mut dest_mpu)) = futures::try_join!(
+	let (source_object, (dest_object, dest_version, mut dest_mpu)) = futures::try_join!(
 		get_copy_source(&ctx, req),
 		multipart::get_upload(&ctx, &dest_key, &dest_upload_id)
 	)?;
@@ -380,7 +413,10 @@ pub async fn handle_upload_part_copy(
 		&garage,
 		req.headers(),
 		&source_version_meta.encryption,
+		OekDerivationInfo::for_object(&source_object, source_object_version),
 	)?;
+
+	let dest_oek_params = OekDerivationInfo::for_object(&dest_object, &dest_version);
 	let (dest_object_encryption, dest_object_checksum_algorithm) = match dest_version.state {
 		ObjectVersionState::Uploading {
 			encryption,
@@ -389,8 +425,12 @@ pub async fn handle_upload_part_copy(
 		} => (encryption, checksum_algorithm),
 		_ => unreachable!(),
 	};
-	let (dest_encryption, _) =
-		EncryptionParams::check_decrypt(&garage, req.headers(), &dest_object_encryption)?;
+	let (dest_encryption, _) = EncryptionParams::check_decrypt(
+		&garage,
+		req.headers(),
+		&dest_object_encryption,
+		dest_oek_params,
+	)?;
 	let same_encryption = EncryptionParams::is_same(&source_encryption, &dest_encryption);
 
 	// Check source range is valid
@@ -505,7 +545,7 @@ pub async fn handle_upload_part_copy(
 
 	// Now, actually copy the blocks
 	let mut checksummer = Checksummer::init(&Default::default(), !dest_encryption.is_encrypted())
-		.add(dest_object_checksum_algorithm);
+		.add(dest_object_checksum_algorithm.map(|(algo, _)| algo));
 
 	// First, create a stream that is able to read the source blocks
 	// and extract the subrange if necessary.
@@ -655,7 +695,7 @@ pub async fn handle_upload_part_copy(
 
 	let checksums = checksummer.finalize();
 	let etag = dest_encryption.etag_from_md5(&checksums.md5);
-	let checksum = checksums.extract(dest_object_checksum_algorithm);
+	let checksum = checksums.extract(dest_object_checksum_algorithm.map(|(algo, _)| algo));
 
 	// Put the part's ETag in the Versiontable
 	dest_mpu.parts.put(
@@ -695,16 +735,15 @@ async fn get_copy_source(ctx: &ReqCtx, req: &Request<ReqBody>) -> Result<Object,
 	let copy_source = percent_encoding::percent_decode_str(copy_source).decode_utf8()?;
 
 	let (source_bucket, source_key) = parse_bucket_key(&copy_source, None)?;
-	let source_bucket_id = garage
+	let source_bucket = garage
 		.bucket_helper()
-		.resolve_bucket(&source_bucket.to_string(), api_key)
-		.await
+		.resolve_bucket_fast(&source_bucket.to_string(), api_key)
 		.map_err(pass_helper_error)?;
 
-	if !api_key.allow_read(&source_bucket_id) {
+	if !api_key.allow_read(&source_bucket.id) {
 		return Err(Error::forbidden(format!(
-			"Reading from bucket {} not allowed for this key",
-			source_bucket
+			"Reading from bucket {:?} not allowed for this key",
+			source_bucket.id
 		)));
 	}
 
@@ -712,7 +751,7 @@ async fn get_copy_source(ctx: &ReqCtx, req: &Request<ReqBody>) -> Result<Object,
 
 	let source_object = garage
 		.object_table
-		.get(&source_bucket_id, &source_key.to_string())
+		.get(&source_bucket.id, &source_key.to_string())
 		.await?
 		.ok_or(Error::NoSuchKey)?;
 

@@ -45,7 +45,7 @@ const STATUS_EXCHANGE_INTERVAL: Duration = Duration::from_secs(10);
 /// Version tag used for version check upon Netapp connection.
 /// Cluster nodes with different version tags are deemed
 /// incompatible and will refuse to connect.
-pub const GARAGE_VERSION_TAG: u64 = 0x6761726167650010; // garage 0x0010 (1.0)
+pub const GARAGE_VERSION_TAG: u64 = 0x6761726167650020; // garage 0x0020 (2.0)
 
 /// RPC endpoint used for calls related to membership
 pub const SYSTEM_RPC_PATH: &str = "garage_rpc/system.rs/SystemRpc";
@@ -123,6 +123,9 @@ pub struct System {
 pub struct NodeStatus {
 	/// Hostname of the node
 	pub hostname: Option<String>,
+
+	/// Garage version of the node
+	pub garage_version: Option<String>,
 
 	/// Replication factor configured on the node
 	pub replication_factor: usize,
@@ -369,6 +372,10 @@ impl System {
 		&self.layout_manager.rpc_helper
 	}
 
+	pub fn local_status(&self) -> NodeStatus {
+		self.local_status.read().unwrap().clone()
+	}
+
 	// ---- Administrative operations (directly available and
 	//      also available through RPC) ----
 
@@ -446,11 +453,28 @@ impl System {
 
 		// Acquire a rwlock read-lock to the current cluster layout
 		let layout = self.cluster_layout();
+		let layout_versions = match layout.versions() {
+			Ok(v) => v,
+			Err(_) => {
+				// Layout not yet configured, special case
+				return ClusterHealth {
+					status: ClusterHealthStatus::Unavailable,
+					known_nodes: nodes.len(),
+					connected_nodes,
+					storage_nodes: 0,
+					storage_nodes_ok: 0,
+					partitions: 0,
+					partitions_quorum: 0,
+					partitions_all_ok: 0,
+				};
+			}
+		};
+		let current_layout = layout_versions.last().unwrap();
 
 		// Obtain information about nodes that have a role as storage nodes
 		// in one of the active layout versions
 		let mut storage_nodes = HashSet::<Uuid>::with_capacity(16);
-		for ver in layout.versions().iter() {
+		for ver in layout_versions.iter() {
 			storage_nodes.extend(
 				ver.roles
 					.items()
@@ -464,14 +488,11 @@ impl System {
 		// Determine the number of partitions that have:
 		// - a quorum of up nodes for all write sets (i.e. are available)
 		// - for which all nodes in all write sets are up (i.e. are fully healthy)
-		let partitions = layout.current().partitions().collect::<Vec<_>>();
+		let partitions = current_layout.partitions().collect::<Vec<_>>();
 		let mut partitions_quorum = 0;
 		let mut partitions_all_ok = 0;
 		for (_, hash) in partitions.iter() {
-			let mut write_sets = layout
-				.versions()
-				.iter()
-				.map(|x| x.nodes_of(hash, x.replication_factor));
+			let mut write_sets = layout_versions.iter().map(|x| x.nodes_of(hash));
 			let has_quorum = write_sets
 				.clone()
 				.all(|set| set.filter(|x| node_up(x)).count() >= quorum);
@@ -626,21 +647,37 @@ impl System {
 
 	async fn discovery_loop(self: &Arc<Self>, mut stop_signal: watch::Receiver<bool>) {
 		while !*stop_signal.borrow() {
-			let n_connected = self
+			let peers_up = self
 				.peering
 				.get_peer_list()
 				.iter()
 				.filter(|p| p.is_up())
-				.count();
+				.map(|p| Uuid::from(p.id))
+				.collect::<Vec<_>>();
 
-			let not_configured = !self.cluster_layout().is_check_ok();
-			let no_peers = n_connected < self.replication_factor.into();
-			let expected_n_nodes = self.cluster_layout().all_nodes().len();
-			let bad_peers = n_connected != expected_n_nodes;
+			let do_bootstrap = match self.cluster_layout().all_nodes() {
+				Err(_) => {
+					debug!("doing bootstrap/discovery step (layout not configured)");
+					true
+				}
+				Ok(all_nodes) => {
+					// Do bootstrap if we have fewer peers than the replication
+					// factor,
+					// or if some peers in the layout are not connected
+					let do_bootstrap = peers_up.len() < self.replication_factor.into()
+						|| all_nodes.iter().any(|x| !peers_up.contains(x));
+					if do_bootstrap {
+						debug!(
+							"doing bootstrap/discovery step (peers_up: {}, all_nodes: {})",
+							peers_up.len(),
+							all_nodes.len()
+						);
+					}
+					do_bootstrap
+				}
+			};
 
-			if not_configured || no_peers || bad_peers {
-				info!("Doing a bootstrap/discovery step (not_configured: {}, no_peers: {}, bad_peers: {})", not_configured, no_peers, bad_peers);
-
+			if do_bootstrap {
 				let mut ping_list = resolve_peers(&self.bootstrap_peers).await;
 
 				// Add peer list from list stored on disk
@@ -683,12 +720,13 @@ impl System {
 					}
 				}
 
-				if !not_configured && !no_peers {
-					// If the layout is configured, and we already have some connections
-					// to other nodes in the cluster, we can skip trying to connect to
-					// nodes that are not in the cluster layout.
-					let layout = self.cluster_layout();
-					ping_list.retain(|(id, _)| layout.all_nodes().contains(&(*id).into()));
+				if let Ok(all_nodes) = self.cluster_layout().all_nodes() {
+					if peers_up.len() >= self.replication_factor.into() {
+						// If the layout is configured, and we already have some connections
+						// to other nodes in the cluster, we can skip trying to connect to
+						// nodes that are not in the cluster layout.
+						ping_list.retain(|(id, _)| all_nodes.contains(&(*id).into()));
+					}
 				}
 
 				for (node_id, node_addr) in ping_list {
@@ -786,6 +824,7 @@ impl NodeStatus {
 					.into_string()
 					.unwrap_or_else(|_| "<invalid utf-8>".to_string()),
 			),
+			garage_version: Some(garage_util::version::garage_version().to_string()),
 			replication_factor: replication_factor.into(),
 			layout_digest: layout_manager.layout().digest(),
 			meta_disk_avail: None,
@@ -796,6 +835,7 @@ impl NodeStatus {
 	fn unknown() -> Self {
 		NodeStatus {
 			hostname: None,
+			garage_version: None,
 			replication_factor: 0,
 			layout_digest: Default::default(),
 			meta_disk_avail: None,

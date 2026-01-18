@@ -126,7 +126,7 @@ impl K2VRpcHandler {
 			.item_table
 			.data
 			.replication
-			.storage_nodes(&partition.hash());
+			.storage_nodes(&partition.hash())?;
 		who.sort();
 
 		self.system
@@ -165,7 +165,7 @@ impl K2VRpcHandler {
 				.item_table
 				.data
 				.replication
-				.storage_nodes(&partition.hash());
+				.storage_nodes(&partition.hash())?;
 			who.sort();
 
 			call_list.entry(who).or_default().push(InsertedItem {
@@ -222,7 +222,7 @@ impl K2VRpcHandler {
 			.item_table
 			.data
 			.replication
-			.storage_nodes(&poll_key.partition.hash());
+			.storage_nodes(&poll_key.partition.hash())?;
 
 		let rpc = self.system.rpc_helper().try_call_many(
 			&self.endpoint,
@@ -233,7 +233,7 @@ impl K2VRpcHandler {
 				timeout_msec,
 			},
 			RequestStrategy::with_priority(PRIO_NORMAL)
-				.with_quorum(self.item_table.data.replication.read_quorum())
+				.with_quorum(self.item_table.data.replication.read_quorum()?)
 				.send_all_at_once(true)
 				.without_timeout(),
 		);
@@ -283,8 +283,8 @@ impl K2VRpcHandler {
 			.item_table
 			.data
 			.replication
-			.storage_nodes(&range.partition.hash());
-		let quorum = self.item_table.data.replication.read_quorum();
+			.storage_nodes(&range.partition.hash())?;
+		let quorum = self.item_table.data.replication.read_quorum()?;
 		let msg = K2VRpc::PollRange {
 			range,
 			seen_str,
@@ -451,10 +451,7 @@ impl K2VRpcHandler {
 
 		let mut value = self
 			.item_table
-			.data
-			.read_entry(&key.partition, &key.sort_key)?
-			.map(|bytes| self.item_table.data.decode_entry(&bytes[..]))
-			.transpose()?
+			.get_local(&key.partition, &key.sort_key)?
 			.unwrap_or_else(|| {
 				K2VItem::new(
 					key.partition.bucket_id,

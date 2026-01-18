@@ -68,7 +68,7 @@ impl SystemMetrics {
 				let replication_factor = system.replication_factor;
 				meter
 					.u64_value_observer("garage_replication_factor", move |observer| {
-						observer.observe(replication_factor.replication_factor() as u64, &[])
+						observer.observe(usize::from(replication_factor) as u64, &[])
 					})
 					.with_description("Garage replication factor setting")
 					.init()
@@ -216,10 +216,13 @@ impl SystemMetrics {
 					.u64_value_observer("cluster_layout_node_connected", move |observer| {
 						let layout = system.cluster_layout();
 						let nodes = system.get_known_nodes();
-						for id in layout.all_nodes().iter() {
+						for id in layout.all_nodes().unwrap_or_default().iter() {
 							let mut kv = vec![KeyValue::new("id", format!("{:?}", id))];
-							if let Some(role) =
-								layout.current().roles.get(id).and_then(|r| r.0.as_ref())
+							if let Some(role) = layout
+								.current()
+								.ok()
+								.and_then(|l| l.roles.get(id))
+								.and_then(|r| r.0.as_ref())
 							{
 								kv.push(KeyValue::new("role_zone", role.zone.clone()));
 								match role.capacity {
@@ -260,10 +263,13 @@ impl SystemMetrics {
 					.u64_value_observer("cluster_layout_node_disconnected_time", move |observer| {
 						let layout = system.cluster_layout();
 						let nodes = system.get_known_nodes();
-						for id in layout.all_nodes().iter() {
+						for id in layout.all_nodes().unwrap_or_default().iter() {
 							let mut kv = vec![KeyValue::new("id", format!("{:?}", id))];
-							if let Some(role) =
-								layout.current().roles.get(id).and_then(|r| r.0.as_ref())
+							if let Some(role) = layout
+								.current()
+								.ok()
+								.and_then(|l| l.roles.get(id))
+								.and_then(|r| r.0.as_ref())
 							{
 								kv.push(KeyValue::new("role_zone", role.zone.clone()));
 								match role.capacity {

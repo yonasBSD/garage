@@ -1,8 +1,8 @@
 use std::convert::TryFrom;
 
-use err_derive::Error;
 use hyper::header::HeaderValue;
 use hyper::{HeaderMap, StatusCode};
+use thiserror::Error;
 
 pub use garage_model::helper::error::Error as HelperError;
 
@@ -16,20 +16,33 @@ use garage_api_common::helpers::*;
 /// Errors of this crate
 #[derive(Debug, Error)]
 pub enum Error {
-	#[error(display = "{}", _0)]
+	#[error("{0}")]
 	/// Error from common error
-	Common(#[error(source)] CommonError),
+	Common(#[from] CommonError),
 
 	// Category: cannot process
+	/// The admin API token does not exist
+	#[error("Admin token not found: {0}")]
+	NoSuchAdminToken(String),
+
 	/// The API access key does not exist
-	#[error(display = "Access key not found: {}", _0)]
+	#[error("Access key not found: {00}")]
 	NoSuchAccessKey(String),
 
+	/// The requested block does not exist
+	#[error("Block not found: {0}")]
+	NoSuchBlock(String),
+
+	/// The requested worker does not exist
+	#[error("Worker not found: {0}")]
+	NoSuchWorker(u64),
+
+	/// The object requested don't exists
+	#[error("Key not found")]
+	NoSuchKey,
+
 	/// In Import key, the key already exists
-	#[error(
-		display = "Key {} already exists in data store. Even if it is deleted, we can't let you create a new key with the same ID. Sorry.",
-		_0
-	)]
+	#[error("Key {0} already exists in data store. Even if it is deleted, we can't let you create a new key with the same ID. Sorry.")]
 	KeyAlreadyExists(String),
 }
 
@@ -49,11 +62,15 @@ impl From<HelperError> for Error {
 }
 
 impl Error {
-	fn code(&self) -> &'static str {
+	pub fn code(&self) -> &'static str {
 		match self {
 			Error::Common(c) => c.aws_code(),
+			Error::NoSuchAdminToken(_) => "NoSuchAdminToken",
 			Error::NoSuchAccessKey(_) => "NoSuchAccessKey",
+			Error::NoSuchWorker(_) => "NoSuchWorker",
+			Error::NoSuchBlock(_) => "NoSuchBlock",
 			Error::KeyAlreadyExists(_) => "KeyAlreadyExists",
+			Error::NoSuchKey => "NoSuchKey",
 		}
 	}
 }
@@ -63,7 +80,11 @@ impl ApiError for Error {
 	fn http_status_code(&self) -> StatusCode {
 		match self {
 			Error::Common(c) => c.http_status_code(),
-			Error::NoSuchAccessKey(_) => StatusCode::NOT_FOUND,
+			Error::NoSuchAdminToken(_)
+			| Error::NoSuchAccessKey(_)
+			| Error::NoSuchWorker(_)
+			| Error::NoSuchBlock(_)
+			| Error::NoSuchKey => StatusCode::NOT_FOUND,
 			Error::KeyAlreadyExists(_) => StatusCode::CONFLICT,
 		}
 	}
@@ -71,6 +92,7 @@ impl ApiError for Error {
 	fn add_http_headers(&self, header_map: &mut HeaderMap<HeaderValue>) {
 		use hyper::header;
 		header_map.append(header::CONTENT_TYPE, "application/json".parse().unwrap());
+		header_map.append(header::ACCESS_CONTROL_ALLOW_ORIGIN, "*".parse().unwrap());
 	}
 
 	fn http_body(&self, garage_region: &str, path: &str) -> ErrorBody {

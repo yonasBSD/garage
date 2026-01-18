@@ -84,17 +84,16 @@ impl<T: CountedItem> Entry<T::CP, T::CS> for CounterEntry<T> {
 
 impl<T: CountedItem> CounterEntry<T> {
 	pub fn filtered_values(&self, layout: &LayoutHelper) -> HashMap<String, i64> {
-		let nodes = layout.all_nongateway_nodes();
-		self.filtered_values_with_nodes(&nodes)
+		self.filtered_values_internal(layout.all_nongateway_nodes().ok())
 	}
 
-	pub fn filtered_values_with_nodes(&self, nodes: &[Uuid]) -> HashMap<String, i64> {
+	fn filtered_values_internal(&self, nodes_opt: Option<&[Uuid]>) -> HashMap<String, i64> {
 		let mut ret = HashMap::new();
 		for (name, vals) in self.values.iter() {
 			let new_vals = vals
 				.node_values
 				.iter()
-				.filter(|(n, _)| nodes.contains(n))
+				.filter(|(n, _)| nodes_opt.map(|nodes| nodes.contains(n)).unwrap_or(true))
 				.map(|(_, (_, v))| *v)
 				.collect::<Vec<_>>();
 			if !new_vals.is_empty() {
@@ -153,7 +152,7 @@ impl<T: CountedItem> TableSchema for CounterTable<T> {
 		}
 
 		let is_tombstone = entry
-			.filtered_values_with_nodes(&filter.1[..])
+			.filtered_values_internal(Some(&filter.1[..]))
 			.iter()
 			.all(|(_, v)| *v == 0);
 		filter.0.apply(is_tombstone)

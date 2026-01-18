@@ -1,7 +1,7 @@
 use crate::*;
 
 fn test_suite(db: Db) {
-	let tree = db.open_tree("tree").unwrap();
+	let tree = db.open_tree("tree:this_is_a_tree").unwrap();
 
 	let ka: &[u8] = &b"test"[..];
 	let kb: &[u8] = &b"zwello"[..];
@@ -14,7 +14,7 @@ fn test_suite(db: Db) {
 
 	assert!(tree.insert(ka, va).is_ok());
 	assert_eq!(tree.get(ka).unwrap().unwrap(), va);
-	assert_eq!(tree.len().unwrap(), 1);
+	assert_eq!(tree.iter().unwrap().count(), 1);
 
 	// ---- test transaction logic ----
 
@@ -146,5 +146,17 @@ fn test_sqlite_db() {
 
 	let manager = r2d2_sqlite::SqliteConnectionManager::memory();
 	let db = SqliteDb::new(manager, false).unwrap();
+	test_suite(db);
+}
+
+#[test]
+#[cfg(feature = "fjall")]
+fn test_fjall_db() {
+	use crate::fjall_adapter::{fjall, FjallDb};
+
+	let path = mktemp::Temp::new_dir().unwrap();
+	let config = fjall::Config::new(path).temporary(true);
+	let keyspace = config.open_transactional().unwrap();
+	let db = FjallDb::init(keyspace);
 	test_suite(db);
 }

@@ -1,333 +1,237 @@
-use std::collections::HashMap;
+use std::borrow::Cow;
 use std::sync::Arc;
 
-use argon2::password_hash::PasswordHash;
-
-use http::header::{ACCESS_CONTROL_ALLOW_METHODS, ACCESS_CONTROL_ALLOW_ORIGIN, ALLOW};
-use hyper::{body::Incoming as IncomingBody, Request, Response, StatusCode};
+use http::header::{HeaderValue, ACCESS_CONTROL_ALLOW_ORIGIN, AUTHORIZATION};
+use hyper::{body::Incoming as IncomingBody, Request, Response};
+use serde::{Deserialize, Serialize};
 use tokio::sync::watch;
 
 use opentelemetry::trace::SpanRef;
 
 #[cfg(feature = "metrics")]
 use opentelemetry_prometheus::PrometheusExporter;
-#[cfg(feature = "metrics")]
-use prometheus::{Encoder, TextEncoder};
 
 use garage_model::garage::Garage;
-use garage_rpc::system::ClusterHealthStatus;
+use garage_rpc::{Endpoint as RpcEndpoint, *};
+use garage_table::EmptyKey;
+use garage_util::background::BackgroundRunner;
+use garage_util::data::Uuid;
 use garage_util::error::Error as GarageError;
 use garage_util::socket_address::UnixOrTCPSocketAddress;
+use garage_util::time::now_msec;
 
 use garage_api_common::generic_server::*;
 use garage_api_common::helpers::*;
 
-use crate::bucket::*;
-use crate::cluster::*;
+use crate::api::*;
 use crate::error::*;
-use crate::key::*;
 use crate::router_v0;
-use crate::router_v1::{Authorization, Endpoint};
+use crate::router_v1;
+use crate::Authorization;
+use crate::RequestHandler;
+
+// ---- FOR RPC ----
+
+pub const ADMIN_RPC_PATH: &str = "garage_api/admin/rpc.rs/Rpc";
+
+#[derive(Debug, Serialize, Deserialize)]
+pub enum AdminRpc {
+	Proxy(AdminApiRequest),
+	Internal(LocalAdminApiRequest),
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+pub enum AdminRpcResponse {
+	ProxyApiOkResponse(TaggedAdminApiResponse),
+	InternalApiOkResponse(LocalAdminApiResponse),
+	ApiErrorResponse {
+		http_code: u16,
+		error_code: String,
+		message: String,
+	},
+}
+
+impl Rpc for AdminRpc {
+	type Response = Result<AdminRpcResponse, GarageError>;
+}
+
+impl EndpointHandler<AdminRpc> for AdminApiServer {
+	async fn handle(
+		self: &Arc<Self>,
+		message: &AdminRpc,
+		_from: NodeID,
+	) -> Result<AdminRpcResponse, GarageError> {
+		match message {
+			AdminRpc::Proxy(req) => {
+				info!("Proxied admin API request: {}", req.name());
+				let res = req.clone().handle(&self.garage, &self).await;
+				match res {
+					Ok(res) => Ok(AdminRpcResponse::ProxyApiOkResponse(res.tagged())),
+					Err(e) => Ok(AdminRpcResponse::ApiErrorResponse {
+						http_code: e.http_status_code().as_u16(),
+						error_code: e.code().to_string(),
+						message: e.to_string(),
+					}),
+				}
+			}
+			AdminRpc::Internal(req) => {
+				info!("Internal admin API request: {}", req.name());
+				let res = req.clone().handle(&self.garage, &self).await;
+				match res {
+					Ok(res) => Ok(AdminRpcResponse::InternalApiOkResponse(res)),
+					Err(e) => Ok(AdminRpcResponse::ApiErrorResponse {
+						http_code: e.http_status_code().as_u16(),
+						error_code: e.code().to_string(),
+						message: e.to_string(),
+					}),
+				}
+			}
+		}
+	}
+}
+
+// ---- FOR HTTP ----
 
 pub type ResBody = BoxBody<Error>;
 
 pub struct AdminApiServer {
 	garage: Arc<Garage>,
 	#[cfg(feature = "metrics")]
-	exporter: PrometheusExporter,
+	pub(crate) exporter: PrometheusExporter,
 	metrics_token: Option<String>,
+	metrics_require_token: bool,
 	admin_token: Option<String>,
+	pub(crate) background: Arc<BackgroundRunner>,
+	pub(crate) endpoint: Arc<RpcEndpoint<AdminRpc, Self>>,
+}
+
+pub enum HttpEndpoint {
+	Old(router_v1::Endpoint),
+	New(String),
 }
 
 impl AdminApiServer {
 	pub fn new(
 		garage: Arc<Garage>,
+		background: Arc<BackgroundRunner>,
 		#[cfg(feature = "metrics")] exporter: PrometheusExporter,
-	) -> Self {
+	) -> Arc<Self> {
 		let cfg = &garage.config.admin;
 		let metrics_token = cfg.metrics_token.as_deref().map(hash_bearer_token);
 		let admin_token = cfg.admin_token.as_deref().map(hash_bearer_token);
-		Self {
+		let metrics_require_token = cfg.metrics_require_token;
+
+		let endpoint = garage.system.netapp.endpoint(ADMIN_RPC_PATH.into());
+		let admin = Arc::new(Self {
 			garage,
 			#[cfg(feature = "metrics")]
 			exporter,
 			metrics_token,
+			metrics_require_token,
 			admin_token,
-		}
+			background,
+			endpoint,
+		});
+		admin.endpoint.set_handler(admin.clone());
+		admin
 	}
 
 	pub async fn run(
-		self,
+		self: Arc<Self>,
 		bind_addr: UnixOrTCPSocketAddress,
 		must_exit: watch::Receiver<bool>,
 	) -> Result<(), GarageError> {
 		let region = self.garage.config.s3_api.s3_region.clone();
-		ApiServer::new(region, self)
+		ApiServer::new(region, ArcAdminApiServer(self))
 			.run_server(bind_addr, Some(0o220), must_exit)
 			.await
 	}
 
-	fn handle_options(&self, _req: &Request<IncomingBody>) -> Result<Response<ResBody>, Error> {
-		Ok(Response::builder()
-			.status(StatusCode::NO_CONTENT)
-			.header(ALLOW, "OPTIONS, GET, POST")
-			.header(ACCESS_CONTROL_ALLOW_METHODS, "OPTIONS, GET, POST")
-			.header(ACCESS_CONTROL_ALLOW_ORIGIN, "*")
-			.body(empty_body())?)
-	}
-
-	async fn handle_check_domain(
+	async fn handle_http_api(
 		&self,
 		req: Request<IncomingBody>,
+		endpoint: HttpEndpoint,
 	) -> Result<Response<ResBody>, Error> {
-		let query_params: HashMap<String, String> = req
-			.uri()
-			.query()
-			.map(|v| {
-				url::form_urlencoded::parse(v.as_bytes())
-					.into_owned()
-					.collect()
-			})
-			.unwrap_or_else(HashMap::new);
+		let auth_header = req.headers().get(AUTHORIZATION).cloned();
 
-		let has_domain_key = query_params.contains_key("domain");
-
-		if !has_domain_key {
-			return Err(Error::bad_request("No domain query string found"));
-		}
-
-		let domain = query_params
-			.get("domain")
-			.ok_or_internal_error("Could not parse domain query string")?;
-
-		if self.check_domain(domain).await? {
-			Ok(Response::builder()
-				.status(StatusCode::OK)
-				.body(string_body(format!(
-					"Domain '{domain}' is managed by Garage"
-				)))?)
-		} else {
-			Err(Error::bad_request(format!(
-				"Domain '{domain}' is not managed by Garage"
-			)))
-		}
-	}
-
-	async fn check_domain(&self, domain: &str) -> Result<bool, Error> {
-		// Resolve bucket from domain name, inferring if the website must be activated for the
-		// domain to be valid.
-		let (bucket_name, must_check_website) = if let Some(bname) = self
-			.garage
-			.config
-			.s3_api
-			.root_domain
-			.as_ref()
-			.and_then(|rd| host_to_bucket(domain, rd))
-		{
-			(bname.to_string(), false)
-		} else if let Some(bname) = self
-			.garage
-			.config
-			.s3_web
-			.as_ref()
-			.and_then(|sw| host_to_bucket(domain, sw.root_domain.as_str()))
-		{
-			(bname.to_string(), true)
-		} else {
-			(domain.to_string(), true)
+		let request = match endpoint {
+			HttpEndpoint::Old(endpoint_v1) => AdminApiRequest::from_v1(endpoint_v1, req).await?,
+			HttpEndpoint::New(_) => AdminApiRequest::from_request(req).await?,
 		};
 
-		let bucket_id = match self
-			.garage
-			.bucket_helper()
-			.resolve_global_bucket_name(&bucket_name)
-			.await?
-		{
-			Some(bucket_id) => bucket_id,
-			None => return Ok(false),
-		};
-
-		if !must_check_website {
-			return Ok(true);
-		}
-
-		let bucket = self
-			.garage
-			.bucket_helper()
-			.get_existing_bucket(bucket_id)
-			.await?;
-
-		let bucket_state = bucket.state.as_option().unwrap();
-		let bucket_website_config = bucket_state.website_config.get();
-
-		match bucket_website_config {
-			Some(_v) => Ok(true),
-			None => Ok(false),
-		}
-	}
-
-	fn handle_health(&self) -> Result<Response<ResBody>, Error> {
-		let health = self.garage.system.health();
-
-		let (status, status_str) = match health.status {
-			ClusterHealthStatus::Healthy => (StatusCode::OK, "Garage is fully operational"),
-			ClusterHealthStatus::Degraded => (
-				StatusCode::OK,
-				"Garage is operational but some storage nodes are unavailable",
+		let (global_token_hash, token_required) = match request.authorization_type() {
+			Authorization::None => (None, false),
+			Authorization::MetricsToken => (
+				self.metrics_token.as_deref(),
+				self.metrics_token.is_some() || self.metrics_require_token,
 			),
-			ClusterHealthStatus::Unavailable => (
-				StatusCode::SERVICE_UNAVAILABLE,
-				"Quorum is not available for some/all partitions, reads and writes will fail",
-			),
+			Authorization::AdminToken => (self.admin_token.as_deref(), true),
 		};
-		let status_str = format!(
-			"{}\nConsult the full health check API endpoint at /v1/health for more details\n",
-			status_str
-		);
 
-		Ok(Response::builder()
-			.status(status)
-			.header(http::header::CONTENT_TYPE, "text/plain")
-			.body(string_body(status_str))?)
-	}
-
-	fn handle_metrics(&self) -> Result<Response<ResBody>, Error> {
-		#[cfg(feature = "metrics")]
-		{
-			use opentelemetry::trace::Tracer;
-
-			let mut buffer = vec![];
-			let encoder = TextEncoder::new();
-
-			let tracer = opentelemetry::global::tracer("garage");
-			let metric_families = tracer.in_span("admin/gather_metrics", |_| {
-				self.exporter.registry().gather()
-			});
-
-			encoder
-				.encode(&metric_families, &mut buffer)
-				.ok_or_internal_error("Could not serialize metrics")?;
-
-			Ok(Response::builder()
-				.status(StatusCode::OK)
-				.header(http::header::CONTENT_TYPE, encoder.format_type())
-				.body(bytes_body(buffer.into()))?)
+		if token_required {
+			verify_authorization(&self.garage, global_token_hash, auth_header, request.name())?;
 		}
-		#[cfg(not(feature = "metrics"))]
-		Err(Error::bad_request(
-			"Garage was built without the metrics feature".to_string(),
-		))
+
+		match request {
+			AdminApiRequest::Options(req) => req.handle(&self.garage, &self).await,
+			AdminApiRequest::CheckDomain(req) => req.handle(&self.garage, &self).await,
+			AdminApiRequest::Health(req) => req.handle(&self.garage, &self).await,
+			AdminApiRequest::Metrics(req) => req.handle(&self.garage, &self).await,
+			req => {
+				let res = req.handle(&self.garage, &self).await?;
+				let mut res = json_ok_response(&res)?;
+				res.headers_mut()
+					.insert(ACCESS_CONTROL_ALLOW_ORIGIN, HeaderValue::from_static("*"));
+				Ok(res)
+			}
+		}
 	}
 }
 
-impl ApiHandler for AdminApiServer {
+struct ArcAdminApiServer(Arc<AdminApiServer>);
+
+impl ApiHandler for ArcAdminApiServer {
 	const API_NAME: &'static str = "admin";
 	const API_NAME_DISPLAY: &'static str = "Admin";
 
-	type Endpoint = Endpoint;
+	type Endpoint = HttpEndpoint;
 	type Error = Error;
 
-	fn parse_endpoint(&self, req: &Request<IncomingBody>) -> Result<Endpoint, Error> {
+	fn parse_endpoint(&self, req: &Request<IncomingBody>) -> Result<HttpEndpoint, Error> {
 		if req.uri().path().starts_with("/v0/") {
 			let endpoint_v0 = router_v0::Endpoint::from_request(req)?;
-			Endpoint::from_v0(endpoint_v0)
+			let endpoint_v1 = router_v1::Endpoint::from_v0(endpoint_v0)?;
+			Ok(HttpEndpoint::Old(endpoint_v1))
+		} else if req.uri().path().starts_with("/v1/") {
+			let endpoint_v1 = router_v1::Endpoint::from_request(req)?;
+			Ok(HttpEndpoint::Old(endpoint_v1))
 		} else {
-			Endpoint::from_request(req)
+			Ok(HttpEndpoint::New(req.uri().path().to_string()))
 		}
 	}
 
 	async fn handle(
 		&self,
 		req: Request<IncomingBody>,
-		endpoint: Endpoint,
+		endpoint: HttpEndpoint,
 	) -> Result<Response<ResBody>, Error> {
-		let required_auth_hash =
-			match endpoint.authorization_type() {
-				Authorization::None => None,
-				Authorization::MetricsToken => self.metrics_token.as_deref(),
-				Authorization::AdminToken => match self.admin_token.as_deref() {
-					None => return Err(Error::forbidden(
-						"Admin token isn't configured, admin API access is disabled for security.",
-					)),
-					Some(t) => Some(t),
-				},
-			};
+		self.0.handle_http_api(req, endpoint).await
+	}
 
-		if let Some(password_hash) = required_auth_hash {
-			match req.headers().get("Authorization") {
-				None => return Err(Error::forbidden("Authorization token must be provided")),
-				Some(authorization) => {
-					verify_bearer_token(&authorization, password_hash)?;
-				}
-			}
-		}
-
-		match endpoint {
-			Endpoint::Options => self.handle_options(&req),
-			Endpoint::CheckDomain => self.handle_check_domain(req).await,
-			Endpoint::Health => self.handle_health(),
-			Endpoint::Metrics => self.handle_metrics(),
-			Endpoint::GetClusterStatus => handle_get_cluster_status(&self.garage).await,
-			Endpoint::GetClusterHealth => handle_get_cluster_health(&self.garage).await,
-			Endpoint::ConnectClusterNodes => handle_connect_cluster_nodes(&self.garage, req).await,
-			// Layout
-			Endpoint::GetClusterLayout => handle_get_cluster_layout(&self.garage).await,
-			Endpoint::UpdateClusterLayout => handle_update_cluster_layout(&self.garage, req).await,
-			Endpoint::ApplyClusterLayout => handle_apply_cluster_layout(&self.garage, req).await,
-			Endpoint::RevertClusterLayout => handle_revert_cluster_layout(&self.garage).await,
-			// Keys
-			Endpoint::ListKeys => handle_list_keys(&self.garage).await,
-			Endpoint::GetKeyInfo {
-				id,
-				search,
-				show_secret_key,
-			} => {
-				let show_secret_key = show_secret_key.map(|x| x == "true").unwrap_or(false);
-				handle_get_key_info(&self.garage, id, search, show_secret_key).await
-			}
-			Endpoint::CreateKey => handle_create_key(&self.garage, req).await,
-			Endpoint::ImportKey => handle_import_key(&self.garage, req).await,
-			Endpoint::UpdateKey { id } => handle_update_key(&self.garage, id, req).await,
-			Endpoint::DeleteKey { id } => handle_delete_key(&self.garage, id).await,
-			// Buckets
-			Endpoint::ListBuckets => handle_list_buckets(&self.garage).await,
-			Endpoint::GetBucketInfo { id, global_alias } => {
-				handle_get_bucket_info(&self.garage, id, global_alias).await
-			}
-			Endpoint::CreateBucket => handle_create_bucket(&self.garage, req).await,
-			Endpoint::DeleteBucket { id } => handle_delete_bucket(&self.garage, id).await,
-			Endpoint::UpdateBucket { id } => handle_update_bucket(&self.garage, id, req).await,
-			// Bucket-key permissions
-			Endpoint::BucketAllowKey => {
-				handle_bucket_change_key_perm(&self.garage, req, true).await
-			}
-			Endpoint::BucketDenyKey => {
-				handle_bucket_change_key_perm(&self.garage, req, false).await
-			}
-			// Bucket aliasing
-			Endpoint::GlobalAliasBucket { id, alias } => {
-				handle_global_alias_bucket(&self.garage, id, alias).await
-			}
-			Endpoint::GlobalUnaliasBucket { id, alias } => {
-				handle_global_unalias_bucket(&self.garage, id, alias).await
-			}
-			Endpoint::LocalAliasBucket {
-				id,
-				access_key_id,
-				alias,
-			} => handle_local_alias_bucket(&self.garage, id, access_key_id, alias).await,
-			Endpoint::LocalUnaliasBucket {
-				id,
-				access_key_id,
-				alias,
-			} => handle_local_unalias_bucket(&self.garage, id, access_key_id, alias).await,
-		}
+	fn key_id_from_request(&self, req: &Request<IncomingBody>) -> Option<String> {
+		let auth_header = req.headers().get(AUTHORIZATION)?;
+		let token = parse_authorization(auth_header).ok()?;
+		let key_id = token.split_once('.')?.0;
+		Some(key_id.to_string())
 	}
 }
 
-impl ApiEndpoint for Endpoint {
-	fn name(&self) -> &'static str {
-		Endpoint::name(self)
+impl ApiEndpoint for HttpEndpoint {
+	fn name(&self) -> Cow<'static, str> {
+		match self {
+			Self::Old(endpoint_v1) => Cow::Borrowed(endpoint_v1.name()),
+			Self::New(path) => Cow::Owned(path.clone()),
+		}
 	}
 
 	fn add_span_attributes(&self, _span: SpanRef<'_>) {}
@@ -347,20 +251,91 @@ fn hash_bearer_token(token: &str) -> String {
 		.to_string()
 }
 
-fn verify_bearer_token(token: &hyper::http::HeaderValue, password_hash: &str) -> Result<(), Error> {
-	use argon2::{password_hash::PasswordVerifier, Argon2};
-
-	let parsed_hash = PasswordHash::new(&password_hash).unwrap();
-
-	token
+fn parse_authorization(auth_header: &hyper::http::HeaderValue) -> Result<&str, Error> {
+	let token = auth_header
 		.to_str()?
 		.strip_prefix("Bearer ")
-		.and_then(|token| {
-			Argon2::default()
-				.verify_password(token.trim().as_bytes(), &parsed_hash)
-				.ok()
-		})
-		.ok_or_else(|| Error::forbidden("Invalid authorization token"))?;
+		.ok_or_else(|| Error::forbidden("Invalid Authorization header"))?
+		.trim();
+	Ok(token)
+}
+
+fn verify_authorization(
+	garage: &Garage,
+	global_token_hash: Option<&str>,
+	auth_header: Option<hyper::http::HeaderValue>,
+	endpoint_name: &str,
+) -> Result<(), Error> {
+	use argon2::{password_hash::PasswordHash, password_hash::PasswordVerifier, Argon2};
+
+	let invalid_msg = "Invalid bearer token";
+
+	let token = match &auth_header {
+		None => {
+			return Err(Error::forbidden(
+				"Bearer token must be provided in Authorization header",
+			))
+		}
+		Some(authorization) => parse_authorization(authorization)?,
+	};
+
+	let token_hash_string = if let Some((prefix, _)) = token.split_once('.') {
+		garage
+			.admin_token_table
+			.get_local(&EmptyKey, &prefix.to_string())?
+			.and_then(|k| k.state.into_option())
+			.filter(|p| !p.is_expired(now_msec()))
+			// GetCurrentAdminTokenInfo endpoint must be accessible even if it is not in the token scopes
+			.filter(|p| p.has_scope(endpoint_name) || endpoint_name == "GetCurrentAdminTokenInfo")
+			.ok_or_else(|| Error::forbidden(invalid_msg))?
+			.token_hash
+	} else {
+		global_token_hash
+			.ok_or_else(|| Error::forbidden(invalid_msg))?
+			.to_string()
+	};
+
+	let token_hash =
+		PasswordHash::new(&token_hash_string).ok_or_internal_error("Could not parse token hash")?;
+
+	Argon2::default()
+		.verify_password(token.as_bytes(), &token_hash)
+		.map_err(|_| Error::forbidden(invalid_msg))?;
 
 	Ok(())
+}
+
+pub(crate) fn find_matching_nodes(garage: &Garage, spec: &str) -> Result<Vec<Uuid>, Error> {
+	if spec == "self" {
+		Ok(vec![garage.system.id])
+	} else {
+		// Collect all nodes currently up and/or in cluster layout
+		let mut res = vec![];
+		if let Ok(all_nodes) = garage.system.cluster_layout().all_nodes() {
+			res = all_nodes.to_vec();
+		}
+		for node in garage.system.get_known_nodes() {
+			if node.is_up && !res.contains(&node.id) {
+				res.push(node.id);
+			}
+		}
+
+		if spec == "*" {
+			// match all nodes
+			Ok(res)
+		} else {
+			// filter nodes that match spec
+			res.retain(|node| hex::encode(node).starts_with(spec));
+			if res.is_empty() {
+				Err(Error::bad_request(format!("No nodes matching {}", spec)))
+			} else if res.len() > 1 {
+				Err(Error::bad_request(format!(
+					"Multiple nodes matching {}: {:?}",
+					spec, res
+				)))
+			} else {
+				Ok(res)
+			}
+		}
+	}
 }

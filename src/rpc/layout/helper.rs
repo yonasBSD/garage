@@ -4,6 +4,7 @@ use std::sync::atomic::{AtomicUsize, Ordering};
 use serde::{Deserialize, Serialize};
 
 use garage_util::data::*;
+use garage_util::error::Error;
 
 use super::*;
 use crate::replication_mode::*;
@@ -28,7 +29,6 @@ pub struct SyncLayoutDigest {
 }
 
 pub struct LayoutHelper {
-	replication_factor: ReplicationFactor,
 	consistency_mode: ConsistencyMode,
 	layout: Option<LayoutHistory>,
 
@@ -51,7 +51,6 @@ pub struct LayoutHelper {
 
 impl LayoutHelper {
 	pub fn new(
-		replication_factor: ReplicationFactor,
 		consistency_mode: ConsistencyMode,
 		mut layout: LayoutHistory,
 		mut ack_lock: HashMap<u64, AtomicUsize>,
@@ -97,8 +96,7 @@ impl LayoutHelper {
 		// consistency on those).
 		// This value is calculated using quorums to allow progress even
 		// if not all nodes have successfully completed a sync.
-		let sync_map_min =
-			layout.calculate_sync_map_min_with_quorum(replication_factor, &all_nongateway_nodes);
+		let sync_map_min = layout.calculate_sync_map_min_with_quorum(&all_nongateway_nodes);
 
 		let trackers_hash = layout.calculate_trackers_hash();
 		let staging_hash = layout.calculate_staging_hash();
@@ -111,7 +109,6 @@ impl LayoutHelper {
 		let is_check_ok = layout.check().is_ok();
 
 		LayoutHelper {
-			replication_factor,
 			consistency_mode,
 			layout: Some(layout),
 			ack_map_min,
@@ -134,7 +131,6 @@ impl LayoutHelper {
 		let changed = f(self.layout.as_mut().unwrap());
 		if changed {
 			*self = Self::new(
-				self.replication_factor,
 				self.consistency_mode,
 				self.layout.take().unwrap(),
 				std::mem::take(&mut self.ack_lock),
@@ -149,12 +145,32 @@ impl LayoutHelper {
 		self.layout.as_ref().unwrap()
 	}
 
-	pub fn current(&self) -> &LayoutVersion {
-		self.inner().current()
+	/// Returns the current layout version
+	pub fn current(&self) -> Result<&LayoutVersion, Error> {
+		if !self.is_check_ok {
+			return Err(Error::LayoutNotReady);
+		}
+		Ok(self.inner().current())
 	}
 
-	pub fn versions(&self) -> &[LayoutVersion] {
-		&self.inner().versions
+	/// Returns all layout versions currently active in the cluster
+	pub fn versions(&self) -> Result<&[LayoutVersion], Error> {
+		if !self.is_check_ok {
+			return Err(Error::LayoutNotReady);
+		}
+		Ok(&self.inner().versions)
+	}
+
+	/// Returns the latest layout version for which it is safe to read data from,
+	/// i.e. the version whose version number is sync_map_min
+	pub fn read_version(&self) -> Result<&LayoutVersion, Error> {
+		let sync_min = self.sync_map_min;
+		let versions = self.versions()?;
+		Ok(versions
+			.iter()
+			.find(|x| x.version == sync_min)
+			.or(versions.last())
+			.unwrap())
 	}
 
 	pub fn is_check_ok(&self) -> bool {
@@ -163,14 +179,20 @@ impl LayoutHelper {
 
 	/// Return all nodes that have a role (gateway or storage)
 	/// in one of the currently active layout versions
-	pub fn all_nodes(&self) -> &[Uuid] {
-		&self.all_nodes
+	pub fn all_nodes(&self) -> Result<&[Uuid], Error> {
+		if !self.is_check_ok {
+			return Err(Error::LayoutNotReady);
+		}
+		Ok(&self.all_nodes)
 	}
 
 	/// Return all nodes that are configured to store data
 	/// in one of the currently active layout versions
-	pub fn all_nongateway_nodes(&self) -> &[Uuid] {
-		&self.all_nongateway_nodes
+	pub fn all_nongateway_nodes(&self) -> Result<&[Uuid], Error> {
+		if !self.is_check_ok {
+			return Err(Error::LayoutNotReady);
+		}
+		Ok(&self.all_nongateway_nodes)
 	}
 
 	pub fn ack_map_min(&self) -> u64 {
@@ -181,61 +203,20 @@ impl LayoutHelper {
 		self.sync_map_min
 	}
 
+	// ---- helpers for layout synchronization ----
+
 	pub fn sync_digest(&self) -> SyncLayoutDigest {
 		SyncLayoutDigest {
-			current: self.current().version,
+			current: self.inner().current().version,
 			ack_map_min: self.ack_map_min(),
 			min_stored: self.inner().min_stored(),
 		}
 	}
 
-	pub fn read_nodes_of(&self, position: &Hash) -> Vec<Uuid> {
-		let sync_min = self.sync_map_min;
-		let version = self
-			.versions()
-			.iter()
-			.find(|x| x.version == sync_min)
-			.or(self.versions().last())
-			.unwrap();
-		version
-			.nodes_of(position, version.replication_factor)
-			.collect()
-	}
-
-	pub fn storage_sets_of(&self, position: &Hash) -> Vec<Vec<Uuid>> {
-		self.versions()
-			.iter()
-			.map(|x| x.nodes_of(position, x.replication_factor).collect())
-			.collect()
-	}
-
-	pub fn storage_nodes_of(&self, position: &Hash) -> Vec<Uuid> {
-		let mut ret = vec![];
-		for version in self.versions().iter() {
-			ret.extend(version.nodes_of(position, version.replication_factor));
-		}
-		ret.sort();
-		ret.dedup();
-		ret
-	}
-
-	pub fn current_storage_nodes_of(&self, position: &Hash) -> Vec<Uuid> {
-		let ver = self.current();
-		ver.nodes_of(position, ver.replication_factor).collect()
-	}
-
-	pub fn trackers_hash(&self) -> Hash {
-		self.trackers_hash
-	}
-
-	pub fn staging_hash(&self) -> Hash {
-		self.staging_hash
-	}
-
-	pub fn digest(&self) -> RpcLayoutDigest {
+	pub(crate) fn digest(&self) -> RpcLayoutDigest {
 		RpcLayoutDigest {
-			current_version: self.current().version,
-			active_versions: self.versions().len(),
+			current_version: self.inner().current().version,
+			active_versions: self.inner().versions.len(),
 			trackers_hash: self.trackers_hash,
 			staging_hash: self.staging_hash,
 		}
@@ -279,7 +260,8 @@ impl LayoutHelper {
 
 	pub(crate) fn update_ack_to_max_free(&mut self, local_node_id: Uuid) -> bool {
 		let max_free = self
-			.versions()
+			.inner()
+			.versions
 			.iter()
 			.map(|x| x.version)
 			.skip_while(|v| {
@@ -289,7 +271,7 @@ impl LayoutHelper {
 					.unwrap_or(true)
 			})
 			.next()
-			.unwrap_or(self.current().version);
+			.unwrap_or(self.inner().current().version);
 		let changed = self.update(|layout| {
 			layout
 				.update_trackers

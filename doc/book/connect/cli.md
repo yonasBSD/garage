@@ -149,6 +149,15 @@ rclone help
 This will tremendously accelerate operations such as `rclone sync` or `rclone ncdu` by reducing the number
 of ListObjects calls that are made.
 
+**Garage behind Cloudflare proxy:** when running Garage behind Cloudflare proxy, you might see `Response: error 403 Forbidden, Forbidden: Invalid signature` error in your garage logs or `AccessDenied: Forbidden: Invalid signature` error in rclone logs. Try adding `--s3-sign-accept-encoding=false` flag to your rclone command and see if the issue is resolved.
+
+```bash
+# this throws an error
+rclone lsd garage:
+
+# this should work
+rclone lsd --s3-sign-accept-encoding=false garage:
+```
 
 ## `s3cmd`
 
@@ -314,4 +323,3 @@ ls
 ```
 
 And through the web interface at http://[::1]:8080/web/client
-
