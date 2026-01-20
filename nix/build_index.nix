@@ -167,7 +167,7 @@ let
                  </ul></p>
                  <p> Sources:
                  <ul>
-                  <li><a href="https://git.deuxfleurs.fr/Deuxfleurs/garage/src/${r.type}/${x.version}">gitea</a></li>
+                  <li><a href="https://git.deuxfleurs.fr/Deuxfleurs/garage/src/${r.type}/${x.version}">Forgejo</a></li>
                   <li><a href="https://git.deuxfleurs.fr/Deuxfleurs/garage/archive/${x.version}.zip">.zip</a></li>
                   <li><a href="https://git.deuxfleurs.fr/Deuxfleurs/garage/archive/${x.version}.tar.gz">.tar.gz</a></li>
                  </ul></p>
