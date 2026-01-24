@@ -14,8 +14,7 @@ In this section, we cover the following web applications:
 | [ejabberd](#ejabberd)     | ✅       |  `mod_s3_upload`    |
 | [Ente](#ente)     | ✅       |  Natively supported |
 | [Pixelfed](#pixelfed)     | ❓       |  Natively supported    |
->>>>>>> b98c90f0 (Adding ente documentation)
-| [Pleroma](#pleroma)     | ❓       |  Not yet tested    |
+| [Pleroma](#pleroma)     | ✅        |  Natively supported    |
 | [Lemmy](#lemmy)     | ✅        |  Supported with pict-rs    |
 | [Funkwhale](#funkwhale)     | ❓       | Not yet tested     |
 | [Misskey](#misskey)     | ❓       | Not yet tested     |
@@ -674,7 +673,81 @@ For more information on deployment you can check the [ente documentation](https:
 
 ## Pleroma
 
-[Pleroma Documentation > Pleroma.Uploaders.S3](https://docs-develop.pleroma.social/backend/configuration/cheatsheet/#pleromauploaderss3)
+### Creating your bucket
+
+This is the usual Garage setup:
+
+```bash
+garage key new --name pleroma-key
+garage bucket create pleroma
+garage bucket allow pleroma --read --write --owner --key pleroma-key
+```
+
+We also need to expose these buckets publicly to serve their content to users:
+
+```bash
+garage bucket website --allow pleroma
+```
+
+Note the Key ID and Secret Key.
+
+### Configure Pleroma
+
+Update your Pleroma configuration like that in `/etc/pleroma/config.exs`.
+
+```
+config :pleroma, Pleroma.Upload,
+    uploader: Pleroma.Uploaders.S3,
+    base_url: "https://pleroma.garage.example.tld"
+
+config :ex_aws, :s3,
+    access_key_id: "GW...",
+    secret_access_key: "XXX",
+    region: "garage",
+    host: "api.garage.example.tld"
+```
+
+And restart Pleroma.
+
+You can found more information in [Pleroma Documentation > Pleroma.Uploaders.S3](https://docs-develop.pleroma.social/backend/configuration/cheatsheet/#pleromauploaderss3)
+
+### Migrating your data
+
+Pleroma have an internal migration tool that can encounter some fatal error
+
+```
+** (EXIT from #PID<0.98.0>) an exception was raised:
+    ** (File.Error) could not stream "/var/lib/pleroma/uploads/09/f8": illegal operation on a directory
+        (elixir 1.17.3) lib/file/stream.ex:100: anonymous fn/3 in Enumerable.File.Stream.reduce/3
+        (elixir 1.17.3) lib/stream.ex:1675: anonymous fn/5 in Stream.resource/3
+        (elixir 1.17.3) lib/stream.ex:1891: Enumerable.Stream.do_each/4
+        (elixir 1.17.3) lib/task/supervised.ex:370: Task.Supervised.stream_reduce/7
+        (elixir 1.17.3) lib/enum.ex:4423: Enum.map/2
+        (ex_aws_s3 2.5.8) lib/ex_aws/s3/upload.ex:141: ExAws.Operation.ExAws.S3.Upload.perform/2
+        (pleroma 2.10.0) lib/pleroma/uploaders/s3.ex:60: Pleroma.Uploaders.S3.put_file/1
+        (pleroma 2.10.0) lib/pleroma/uploaders/uploader.ex:49: Pleroma.Uploaders.Uploader.put_file/2
+```
+
+So, use [your best tool](https://garagehq.deuxfleurs.fr/documentation/connect/cli/) to sync `/var/lib/pleroma/uploads/` in your S3.
+
+Then, to avoid some non existant problem (just in case of), run this command
+
+```bash
+while true
+do
+    rm -vr $(./bin/pleroma_ctl uploads migrate_local S3 2>&1 | grep "could not stream" | awk -F '"' '{print $2}')
+    sleep 5
+done
+```
+
+If you have many files, stop this command sometime and the command bellow (interactive) to delete local
+file after upload. Then restart the loop.
+
+```bash
+./bin/pleroma_ctl uploads migrate_local S3 --delete
+```
+
+And *voilà*
 
 ## Lemmy
 
