@@ -11,7 +11,8 @@
   "github:oxalica/rust-overlay/ab726555a9a72e6dc80649809147823a813fa95b";
   inputs.rust-overlay.inputs.nixpkgs.follows = "nixpkgs";
 
-  inputs.crane.url = "github:ipetkov/crane";
+  # Crane as of 2025-01-24
+  inputs.crane.url = "github:ipetkov/crane/6fe74265bbb6d016d663b1091f015e2976c4a527";
 
   inputs.flake-compat.url = "github:nix-community/flake-compat";
   inputs.flake-utils.url = "github:numtide/flake-utils";
