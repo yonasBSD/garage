@@ -560,7 +560,7 @@ metric in Prometheus: a non-zero number of such events indicates an I/O
 bottleneck on HDD read speed.
 
 
-#### `block_max_concurrent_writes_per_request` (since  `v2.1.0`) {#block_max_concurrent_writes_per_request}
+#### `block_max_concurrent_writes_per_request` (since `v1.3.1` / `v2.2.0`) {#block_max_concurrent_writes_per_request}
 
 This parameter is designed to adapt to the concurrent write performance of 
 different storage media. Maximum number of parallel block writes per put request.
