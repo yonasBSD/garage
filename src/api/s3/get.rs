@@ -853,7 +853,9 @@ impl PreconditionHeaders {
 	}
 
 	fn check(&self, v: &ObjectVersion, etag: &str) -> Result<Option<StatusCode>, Error> {
-		let v_date = UNIX_EPOCH + Duration::from_millis(v.timestamp);
+		// we store date with ms precision, but headers are precise to the second: truncate
+		// the timestamp to handle the same-second edge case
+		let v_date = UNIX_EPOCH + Duration::from_secs(v.timestamp / 1000);
 
 		// Implemented from https://datatracker.ietf.org/doc/html/rfc7232#section-6
 

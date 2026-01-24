@@ -26,7 +26,7 @@ in
       s3cmd
       minio-client
       rclone
-      (python312.withPackages (ps: [ ps.boto3 ]))
+      (python313.withPackages (ps: [ ps.boto3 ]))
 
       socat
       psmisc
@@ -36,6 +36,8 @@ in
       jq
     ];
     shellHook = ''
+      export AWS_REQUEST_CHECKSUM_CALCULATION='when_required'
+
       function to_s3 {
         AWS_REQUEST_CHECKSUM_CALCULATION=WHEN_REQUIRED AWS_RESPONSE_CHECKSUM_VALIDATION=WHEN_REQUIRED \
         aws \

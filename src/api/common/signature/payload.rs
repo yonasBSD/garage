@@ -105,7 +105,7 @@ fn check_standard_signature(
 	// Verify that all necessary request headers are included in signed_headers
 	// The following must be included for all signatures:
 	// - the Host header (mandatory)
-	// - all x-amz-* headers used in the request
+	// - all x-amz-* headers used in the request (except x-amz-content-sha256)
 	// AWS also indicates that the Content-Type header should be signed if
 	// it is used, but Minio client doesn't sign it so we don't check it for compatibility.
 	let signed_headers = split_signed_headers(&authorization)?;
@@ -152,7 +152,7 @@ fn check_presigned_signature(
 	// Verify that all necessary request headers are included in signed_headers
 	// For AWSv4 pre-signed URLs, the following must be included:
 	// - the Host header (mandatory)
-	// - all x-amz-* headers used in the request
+	// - all x-amz-* headers used in the request (except x-amz-content-sha256)
 	let signed_headers = split_signed_headers(&authorization)?;
 	verify_signed_headers(request.headers(), &signed_headers)?;
 
@@ -269,7 +269,9 @@ fn verify_signed_headers(headers: &HeaderMap, signed_headers: &[HeaderName]) -> 
 		return Err(Error::bad_request("Header `Host` should be signed"));
 	}
 	for (name, _) in headers.iter() {
-		if name.as_str().starts_with("x-amz-") {
+		// Enforce signature of all x-amz-* headers, except x-amz-content-sh256
+		// because it is included in the canonical request in all cases
+		if name.as_str().starts_with("x-amz-") && name != X_AMZ_CONTENT_SHA256 {
 			if !signed_headers.contains(name) {
 				return Err(Error::bad_request(format!(
 					"Header `{}` should be signed",
@@ -475,8 +477,7 @@ impl Authorization {
 
 		let date = headers
 			.get(X_AMZ_DATE)
-			.ok_or_bad_request("Missing X-Amz-Date field")
-			.map_err(Error::from)?
+			.ok_or_bad_request("Missing X-Amz-Date field")?
 			.to_str()?;
 		let date = parse_date(date)?;
 
