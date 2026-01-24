@@ -102,8 +102,8 @@ Top-level configuration options, in alphabetical order:
 [`allow_punycode`](#allow_punycode),
 [`allow_world_readable_secrets`](#allow_world_readable_secrets),
 [`block_max_concurrent_reads`](#block_max_concurrent_reads),
-[`block_ram_buffer_max`](#block_ram_buffer_max),
 [`block_max_concurrent_writes_per_request`](#block_max_concurrent_writes_per_request),
+[`block_ram_buffer_max`](#block_ram_buffer_max),
 [`block_size`](#block_size),
 [`bootstrap_peers`](#bootstrap_peers),
 [`compression_level`](#compression_level),
@@ -563,10 +563,10 @@ bottleneck on HDD read speed.
 #### `block_max_concurrent_writes_per_request` (since  `v2.1.0`) {#block_max_concurrent_writes_per_request}
 
 This parameter is designed to adapt to the concurrent write performance of 
-different storage media.Maximum number of parallel block writes per put request 
-Higher values improve throughput but increase memory usage.
+different storage media. Maximum number of parallel block writes per put request.
+Higher values may improve throughput but increase memory usage.
 
-Default: 3, Recommended: 10-30 for NVMe, 3-10 for HDD
+Default value: 3. Recommended values: 10-30 for NVMe, 3-10 for spinning HDD.
 
 #### `lmdb_map_size` {#lmdb_map_size}
 
