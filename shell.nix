@@ -36,6 +36,8 @@ in
       jq
     ];
     shellHook = ''
+      export AWS_REQUEST_CHECKSUM_CALCULATION='when_required'
+
       function to_s3 {
         AWS_REQUEST_CHECKSUM_CALCULATION=WHEN_REQUIRED AWS_RESPONSE_CHECKSUM_VALIDATION=WHEN_REQUIRED \
         aws \

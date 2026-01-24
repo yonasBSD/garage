@@ -26,7 +26,7 @@ pub enum Error {
 	NoSuchAdminToken(String),
 
 	/// The API access key does not exist
-	#[error("Access key not found: {00}")]
+	#[error("Access key not found: {0}")]
 	NoSuchAccessKey(String),
 
 	/// The requested block does not exist

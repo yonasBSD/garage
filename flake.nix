@@ -2,13 +2,13 @@
   description =
     "Garage, an S3-compatible distributed object store for self-hosted deployments";
 
-  # Nixpkgs 25.05 as of 2025-05-22
+  # Nixpkgs 25.05 as of 2025-11-24
   inputs.nixpkgs.url =
-    "github:NixOS/nixpkgs/cd2812de55cf87df88a9e09bf3be1ce63d50c1a6";
+    "github:NixOS/nixpkgs/cfe2c7d5b5d3032862254e68c37a6576b633d632";
 
-  # Rust overlay as of 2025-02-03
+  # Rust overlay as of 2025-11-24
   inputs.rust-overlay.url =
-  "github:oxalica/rust-overlay/35c6f8c4352f995ecd53896200769f80a3e8f22d";
+  "github:oxalica/rust-overlay/ab726555a9a72e6dc80649809147823a813fa95b";
   inputs.rust-overlay.inputs.nixpkgs.follows = "nixpkgs";
 
   inputs.crane.url = "github:ipetkov/crane";
@@ -30,6 +30,10 @@
           inherit system nixpkgs crane rust-overlay extraTestEnv;
           release = false;
         }).garage-test;
+        lints = (compile {
+          inherit system nixpkgs crane rust-overlay;
+          release = false;
+        });
       in
       {
         packages = {
@@ -56,6 +60,10 @@
           tests-fjall = testWith {
             GARAGE_TEST_INTEGRATION_DB_ENGINE = "fjall";
           };
+
+          # lints (fmt, clippy)
+          fmt = lints.garage-cargo-fmt;
+          clippy = lints.garage-cargo-clippy;
         };
 
         # ---- developpment shell, for making native builds only ----

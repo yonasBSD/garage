@@ -11,7 +11,7 @@ depends_on:
 
 steps:
   - name: refresh-index
-    image: nixpkgs/nix:nixos-22.05
+    image: nixpkgs/nix:nixos-24.05
     environment:
       AWS_ACCESS_KEY_ID:
         from_secret: garagehq_aws_access_key_id
@@ -22,7 +22,7 @@ steps:
       - nix-shell --attr ci --run "refresh_index"
 
   - name: multiarch-docker
-    image: nixpkgs/nix:nixos-22.05
+    image: nixpkgs/nix:nixos-24.05
     environment:
       DOCKER_AUTH:
         from_secret: docker_auth
