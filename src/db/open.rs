@@ -26,19 +26,12 @@ impl Engine {
 
 	/// Return engine-specific DB path from base path
 	pub fn db_path(&self, base_path: &Path) -> PathBuf {
-		let mut ret = base_path.to_path_buf();
-		match self {
-			Self::Lmdb => {
-				ret.push("db.lmdb");
-			}
-			Self::Sqlite => {
-				ret.push("db.sqlite");
-			}
-			Self::Fjall => {
-				ret.push("db.fjall");
-			}
-		}
-		ret
+		let suffix = match self {
+			Self::Lmdb => "db.lmdb",
+			Self::Sqlite => "db.sqlite",
+			Self::Fjall => "db.fjall",
+		};
+		base_path.join(suffix)
 	}
 }
 
