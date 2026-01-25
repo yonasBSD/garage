@@ -52,11 +52,11 @@ pub async fn run_server(config_file: PathBuf, secrets: Secrets) -> Result<(), Er
 	info!("Spawning Garage workers...");
 	garage.spawn_workers(&background)?;
 
-	if config.admin.trace_sink.is_some() {
+	if let Some(admin_trace_sink) = &config.admin.trace_sink {
 		info!("Initialize tracing...");
 
 		#[cfg(feature = "telemetry-otlp")]
-		init_tracing(config.admin.trace_sink.as_ref().unwrap(), garage.system.id)?;
+		init_tracing(admin_trace_sink, garage.system.id)?;
 
 		#[cfg(not(feature = "telemetry-otlp"))]
 		error!("Garage was built without OTLP exporter, admin.trace_sink is ignored.");
@@ -90,7 +90,7 @@ pub async fn run_server(config_file: PathBuf, secrets: Secrets) -> Result<(), Er
 		));
 	}
 
-	if config.k2v_api.is_some() {
+	if let Some(k2v_api) = &config.k2v_api {
 		#[cfg(feature = "k2v")]
 		{
 			info!("Initializing K2V API server...");
@@ -98,7 +98,7 @@ pub async fn run_server(config_file: PathBuf, secrets: Secrets) -> Result<(), Er
 				"K2V API",
 				tokio::spawn(K2VApiServer::run(
 					garage.clone(),
-					config.k2v_api.as_ref().unwrap().api_bind_addr.clone(),
+					k2v_api.api_bind_addr.clone(),
 					config.s3_api.s3_region.clone(),
 					watch_cancel.clone(),
 				)),
