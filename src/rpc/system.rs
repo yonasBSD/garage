@@ -856,6 +856,7 @@ impl NodeStatus {
 		};
 
 		let mount_avail = |path: &Path| match statvfs(path) {
+			#[allow(clippy::unnecessary_cast)]
 			Ok(x) => {
 				let avail = x.blocks_available() as u64 * x.fragment_size() as u64;
 				let total = x.blocks() as u64 * x.fragment_size() as u64;

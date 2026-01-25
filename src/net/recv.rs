@@ -89,7 +89,7 @@ pub(crate) trait RecvLoop: Sync + 'static {
 			let has_cont = (size & CHUNK_FLAG_HAS_CONTINUATION) != 0;
 			let is_error = (size & CHUNK_FLAG_ERROR) != 0;
 			let size = (size & CHUNK_LENGTH_MASK) as usize;
-			let mut next_slice = vec![0; size as usize];
+			let mut next_slice = vec![0; size];
 			read.read_exact(&mut next_slice[..]).await?;
 
 			let packet = if is_error {

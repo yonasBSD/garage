@@ -287,7 +287,7 @@ impl<'a> ITx for FjallTx<'a> {
 	}
 	fn len(&self, tree_idx: usize) -> TxOpResult<usize> {
 		let tree = self.get_tree(tree_idx)?;
-		Ok(self.tx.len(tree)? as usize)
+		Ok(self.tx.len(tree)?)
 	}
 
 	fn insert(&mut self, tree_idx: usize, key: &[u8], value: &[u8]) -> TxOpResult<()> {
