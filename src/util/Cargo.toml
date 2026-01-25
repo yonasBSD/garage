@@ -52,3 +52,6 @@ mktemp.workspace = true
 
 [features]
 k2v = []
+
+[lints]
+workspace = true

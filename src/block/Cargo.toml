@@ -40,3 +40,6 @@ tokio-util.workspace = true
 
 [features]
 system-libs = ["zstd/pkg-config"]
+
+[lints]
+workspace = true

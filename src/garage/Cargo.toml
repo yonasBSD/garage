@@ -119,3 +119,6 @@ system-libs = [
 	"garage_rpc/system-libs",
 	"sodiumoxide/use-pkg-config",
 ]
+
+[lints]
+workspace = true

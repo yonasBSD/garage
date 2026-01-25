@@ -33,3 +33,6 @@ serde_bytes.workspace = true
 futures.workspace = true
 futures-util.workspace = true
 tokio.workspace = true
+
+[lints]
+workspace = true

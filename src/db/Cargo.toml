@@ -33,3 +33,6 @@ bundled-libs = ["rusqlite?/bundled"]
 lmdb = ["heed"]
 fjall = ["dep:fjall", "dep:parking_lot"]
 sqlite = ["rusqlite", "r2d2", "r2d2_sqlite"]
+
+[lints]
+workspace = true

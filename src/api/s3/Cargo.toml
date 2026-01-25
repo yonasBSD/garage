@@ -58,3 +58,6 @@ serde_json.workspace = true
 quick-xml.workspace = true
 
 opentelemetry.workspace = true
+
+[lints]
+workspace = true
