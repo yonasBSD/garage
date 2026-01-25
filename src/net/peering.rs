@@ -119,7 +119,7 @@ impl PeerInfo {
 	}
 }
 
-/// PeerConnState: possible states for our tentative connections to given peer
+/// `PeerConnState`: possible states for our tentative connections to given peer
 /// This structure is only interested in recording connection info for outgoing
 /// TCP connections
 #[derive(Copy, Clone, Debug, PartialEq, Eq)]

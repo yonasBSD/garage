@@ -14,18 +14,18 @@ use crate::bytes_buf::BytesBuf;
 /// When sent through Netapp, the Vec may be split in smaller chunk in such a way
 /// consecutive Vec may get merged, but Vec and error code may not be reordered
 ///
-/// Items sent in the ByteStream may be errors of type `std::io::Error`.
-/// An error indicates the end of the ByteStream: a reader should no longer read
+/// Items sent in the `ByteStream` may be errors of type `std::io::Error`.
+/// An error indicates the end of the `ByteStream`: a reader should no longer read
 /// after receiving an error, and a writer should stop writing after sending an error.
 pub type ByteStream = Pin<Box<dyn Stream<Item = Packet> + Send + Sync>>;
 
-/// A packet sent in a ByteStream, which may contain either
+/// A packet sent in a `ByteStream`, which may contain either
 /// a Bytes object or an error
 pub type Packet = Result<Bytes, std::io::Error>;
 
 // ----
 
-/// A helper struct to read defined lengths of data from a BytesStream
+/// A helper struct to read defined lengths of data from a `BytesStream`
 pub struct ByteStreamReader {
 	stream: ByteStream,
 	buf: BytesBuf,
@@ -201,7 +201,7 @@ pub fn stream_asyncread(stream: ByteStream) -> impl AsyncRead + Send + Sync + 's
 	tokio_util::io::StreamReader::new(stream)
 }
 
-/// Reads all of the content of a `ByteStream` into a BytesBuf
+/// Reads all of the content of a `ByteStream` into a `BytesBuf`
 /// that contains everything
 pub async fn read_stream_to_end(mut stream: ByteStream) -> Result<BytesBuf, std::io::Error> {
 	let mut buf = BytesBuf::new();

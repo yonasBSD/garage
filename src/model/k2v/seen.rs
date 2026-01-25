@@ -1,4 +1,4 @@
-//! Implements a RangeSeenMarker, a data type used in the PollRange API
+//! Implements a `RangeSeenMarker`, a data type used in the `PollRange` API
 //! to indicate which items in the range have already been seen
 //! and which have not been seen yet.
 //!

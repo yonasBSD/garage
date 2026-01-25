@@ -17,7 +17,7 @@ pub struct BytesBuf {
 }
 
 impl BytesBuf {
-	/// Creates a new empty BytesBuf
+	/// Creates a new empty `BytesBuf`
 	pub fn new() -> Self {
 		Self {
 			buf: VecDeque::new(),
@@ -25,13 +25,13 @@ impl BytesBuf {
 		}
 	}
 
-	/// Returns the number of bytes stored in the BytesBuf
+	/// Returns the number of bytes stored in the `BytesBuf`
 	#[inline]
 	pub fn len(&self) -> usize {
 		self.buf_len
 	}
 
-	/// Returns true iff the BytesBuf contains zero bytes
+	/// Returns true iff the `BytesBuf` contains zero bytes
 	#[inline]
 	pub fn is_empty(&self) -> bool {
 		self.buf_len == 0
@@ -63,7 +63,7 @@ impl BytesBuf {
 		}
 	}
 
-	/// Takes at most max_len bytes from the left of the buffer
+	/// Takes at most `max_len` bytes from the left of the buffer
 	pub fn take_max(&mut self, max_len: usize) -> Bytes {
 		if self.buf_len <= max_len {
 			self.take_all()
@@ -73,7 +73,7 @@ impl BytesBuf {
 	}
 
 	/// Take exactly len bytes from the left of the buffer, returns None if
-	/// the BytesBuf doesn't contain enough data
+	/// the `BytesBuf` doesn't contain enough data
 	pub fn take_exact(&mut self, len: usize) -> Option<Bytes> {
 		if self.buf_len < len {
 			None

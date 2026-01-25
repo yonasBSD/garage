@@ -17,13 +17,13 @@ use crate::helper::key::KeyHelper;
 use crate::key_table::*;
 use crate::permission::BucketKeyPerm;
 
-/// A LockedHelper is the mandatory struct to hold when doing operations
+/// A `LockedHelper` is the mandatory struct to hold when doing operations
 /// that modify access keys or bucket aliases. This structure takes
 /// a lock to a unit value that is in the globally-shared Garage struct.
 ///
 /// This avoid several concurrent requests to modify the list of buckets
 /// and aliases at the same time, ending up in inconsistent states.
-/// This DOES NOT FIX THE FUNDAMENTAL ISSUE as CreateBucket requests handled
+/// This DOES NOT FIX THE FUNDAMENTAL ISSUE as `CreateBucket` requests handled
 /// by different API nodes can still break the cluster, but it is a first
 /// fix that allows consistency to be maintained if all such requests are
 /// directed to a single node, which is doable for many deployments.
@@ -167,7 +167,7 @@ impl<'a> LockedHelper<'a> {
 	}
 
 	/// Ensures a bucket does not have a certain global alias.
-	/// Contrarily to unset_global_bucket_alias, this does not
+	/// Contrarily to `unset_global_bucket_alias`, this does not
 	/// fail on any condition other than:
 	/// - bucket cannot be found (its fine if it is in deleted state)
 	/// - alias cannot be found (its fine if it points to nothing or
@@ -335,7 +335,7 @@ impl<'a> LockedHelper<'a> {
 	}
 
 	/// Ensures a bucket does not have a certain local alias.
-	/// Contrarily to unset_local_bucket_alias, this does not
+	/// Contrarily to `unset_local_bucket_alias`, this does not
 	/// fail on any condition other than:
 	/// - bucket cannot be found (its fine if it is in deleted state)
 	/// - key cannot be found (its fine if alias in key points to nothing

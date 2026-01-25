@@ -249,7 +249,7 @@ mod v010 {
 	#[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug, Serialize, Deserialize)]
 	pub enum ObjectVersionEncryption {
 		SseC {
-			/// Encrypted serialized ObjectVersionInner struct.
+			/// Encrypted serialized `ObjectVersionInner` struct.
 			/// This is never compressed, just encrypted using AES256-GCM.
 			#[serde(with = "serde_bytes")]
 			inner: Vec<u8>,
@@ -460,7 +460,7 @@ mod v2 {
 	#[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug, Serialize, Deserialize)]
 	pub enum ObjectVersionEncryption {
 		SseC {
-			/// Encrypted serialized ObjectVersionInner struct.
+			/// Encrypted serialized `ObjectVersionInner` struct.
 			/// This is never compressed, just encrypted using AES256-GCM.
 			#[serde(with = "serde_bytes")]
 			inner: Vec<u8>,
@@ -480,7 +480,7 @@ mod v2 {
 	}
 
 	/// Vector of headers, as tuples of the format (header name, header value)
-	/// Note: checksum can be Some(_) with checksum_type = None for objects that
+	/// Note: checksum can be Some(_) with `checksum_type` = None for objects that
 	/// have been migrated from Garage version before v2.0, as the distinction between
 	/// full-object and composite checksums was not implemented yet.
 	#[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Debug, Serialize, Deserialize)]
@@ -665,9 +665,9 @@ impl ObjectVersion {
 
 	/// Is the object version currently being uploaded
 	///
-	/// matches only multipart uploads if check_multipart is Some(true)
-	/// matches only non-multipart uploads if check_multipart is Some(false)
-	/// matches both if check_multipart is None
+	/// matches only multipart uploads if `check_multipart` is Some(true)
+	/// matches only non-multipart uploads if `check_multipart` is Some(false)
+	/// matches both if `check_multipart` is None
 	pub fn is_uploading(&self, check_multipart: Option<bool>) -> bool {
 		match &self.state {
 			ObjectVersionState::Uploading { multipart, .. } => {
@@ -763,9 +763,9 @@ pub enum ObjectFilter {
 	IsData,
 	/// Is the object version currently being uploaded
 	///
-	/// matches only multipart uploads if check_multipart is Some(true)
-	/// matches only non-multipart uploads if check_multipart is Some(false)
-	/// matches both if check_multipart is None
+	/// matches only multipart uploads if `check_multipart` is Some(true)
+	/// matches only non-multipart uploads if `check_multipart` is Some(false)
+	/// matches both if `check_multipart` is None
 	IsUploading { check_multipart: Option<bool> },
 }
 

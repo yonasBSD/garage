@@ -57,7 +57,7 @@ pub enum SystemRpc {
 	Ok,
 	/// Request to connect to a specific node (in `<pubkey>@<host>:<port>` format, pubkey = full-length node ID)
 	Connect(String),
-	/// Advertise Garage status. Answered with another AdvertiseStatus.
+	/// Advertise Garage status. Answered with another `AdvertiseStatus`.
 	/// Exchanged with every node on a regular basis.
 	AdvertiseStatus(NodeStatus),
 	/// Get known nodes states
@@ -65,9 +65,9 @@ pub enum SystemRpc {
 	/// Return known nodes
 	ReturnKnownNodes(Vec<KnownNodeInfo>),
 
-	/// Ask other node its cluster layout. Answered with AdvertiseClusterLayout
+	/// Ask other node its cluster layout. Answered with `AdvertiseClusterLayout`
 	PullClusterLayout,
-	/// Advertisement of cluster layout. Sent spontanously or in response to PullClusterLayout
+	/// Advertisement of cluster layout. Sent spontanously or in response to `PullClusterLayout`
 	AdvertiseClusterLayout(LayoutHistory),
 	/// Ask other node its cluster layout update trackers.
 	PullClusterLayoutTrackers,
@@ -908,7 +908,7 @@ impl NodeStatus {
 }
 
 /// Obtain the list of currently available IP addresses on all non-loopback
-/// interfaces, optionally filtering them to be inside a given IpNet.
+/// interfaces, optionally filtering them to be inside a given `IpNet`.
 fn get_default_ip(filter_ipnet: Option<ipnet::IpNet>) -> Option<IpAddr> {
 	pnet_datalink::interfaces()
 		.into_iter()

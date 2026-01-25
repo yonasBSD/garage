@@ -334,7 +334,7 @@ impl<F: TableSchema, R: TableReplication> Worker for GcWorker<F, R> {
 	}
 }
 
-/// An entry stored in the gc_todo db tree associated with the table
+/// An entry stored in the `gc_todo` db tree associated with the table
 /// Contains helper function for parsing, saving, and removing
 /// such entry in the db
 ///
@@ -352,7 +352,7 @@ pub(crate) struct GcTodoEntry {
 }
 
 impl GcTodoEntry {
-	/// Creates a new GcTodoEntry (not saved in the db) from its components:
+	/// Creates a new `GcTodoEntry` (not saved in the db) from its components:
 	/// the key of an entry in the table, and the hash of the associated
 	/// serialized value
 	pub(crate) fn new(key: Vec<u8>, value_hash: Hash) -> Self {
@@ -364,7 +364,7 @@ impl GcTodoEntry {
 		}
 	}
 
-	/// Parses a GcTodoEntry from a (k, v) pair stored in the gc_todo tree
+	/// Parses a `GcTodoEntry` from a (k, v) pair stored in the `gc_todo` tree
 	pub(crate) fn parse(db_k: &[u8], db_v: &[u8]) -> Self {
 		Self {
 			tombstone_timestamp: u64::from_be_bytes(db_k[0..8].try_into().unwrap()),
@@ -374,13 +374,13 @@ impl GcTodoEntry {
 		}
 	}
 
-	/// Saves the GcTodoEntry in the gc_todo tree
+	/// Saves the `GcTodoEntry` in the `gc_todo` tree
 	pub(crate) fn save(&self, gc_todo_tree: &db::Tree) -> Result<(), Error> {
 		gc_todo_tree.insert(self.todo_table_key(), self.value_hash.as_slice())?;
 		Ok(())
 	}
 
-	/// Removes the GcTodoEntry from the gc_todo tree if the
+	/// Removes the `GcTodoEntry` from the `gc_todo` tree if the
 	/// hash of the serialized value is the same here as in the tree.
 	/// This is useful to remove a todo entry only under the condition
 	/// that it has not changed since the time it was read, i.e.

@@ -54,7 +54,7 @@ impl<T: InitialFormat> Migrate for T {
 	}
 }
 
-/// Internal type used by InitialFormat, not meant for general use.
+/// Internal type used by `InitialFormat`, not meant for general use.
 #[derive(Serialize, Deserialize)]
 pub enum NoPrevious {}
 

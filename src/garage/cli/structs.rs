@@ -71,7 +71,7 @@ pub enum Command {
 	/// The result is printed to `stdout` in JSON format.
 	#[structopt(name = "json-api", version = garage_version())]
 	JsonApi {
-		/// The admin API endpoint to invoke, e.g. GetClusterStatus
+		/// The admin API endpoint to invoke, e.g. `GetClusterStatus`
 		endpoint: String,
 		/// The JSON payload, or `-` to read from `stdin`
 		#[structopt(default_value = "null")]
@@ -475,7 +475,7 @@ pub struct KeyNewOpt {
 	#[structopt(default_value = "Unnamed key")]
 	pub name: String,
 	/// Set an expiration time for the access key
-	/// (see docs.rs/parse_duration for date format)
+	/// (see `docs.rs/parse_duration` for date format)
 	#[structopt(long = "expires-in")]
 	pub expires_in: Option<String>,
 }
@@ -486,7 +486,7 @@ pub struct KeySetOpt {
 	pub key_pattern: String,
 
 	/// Set an expiration time for the access key
-	/// (see docs.rs/parse_duration for date format)
+	/// (see `docs.rs/parse_duration` for date format)
 	#[structopt(long = "expires-in")]
 	pub expires_in: Option<String>,
 	/// Set the access key to never expire
@@ -518,7 +518,7 @@ pub struct KeyPermOpt {
 	/// ID or name of the key
 	pub key_pattern: String,
 
-	/// Flag that allows key to create buckets using S3's CreateBucket call
+	/// Flag that allows key to create buckets using S3's `CreateBucket` call
 	#[structopt(long = "create-bucket")]
 	pub create_bucket: bool,
 }
@@ -597,12 +597,12 @@ pub enum AdminTokenOperation {
 pub struct AdminTokenCreateOp {
 	/// Set a name for the token
 	pub name: Option<String>,
-	/// Set an expiration time for the token (see docs.rs/parse_duration for date
+	/// Set an expiration time for the token (see `docs.rs/parse_duration` for date
 	/// format)
 	#[structopt(long = "expires-in")]
 	pub expires_in: Option<String>,
 	/// Set a limited scope for the token, as a comma-separated list of
-	/// admin API functions (e.g. GetClusterStatus, etc.). The default scope
+	/// admin API functions (e.g. `GetClusterStatus`, etc.). The default scope
 	/// is `*`, which allows access to all admin API functions.
 	/// Note that granting a scope that allows `CreateAdminToken` or
 	/// `UpdateAdminToken` allows for privilege escalation, and is therefore
@@ -619,7 +619,7 @@ pub struct AdminTokenSetOp {
 	/// Name or prefix of the ID of the token to modify
 	pub api_token: String,
 
-	/// Set an expiration time for the token (see docs.rs/parse_duration for date
+	/// Set an expiration time for the token (see `docs.rs/parse_duration` for date
 	/// format)
 	#[structopt(long = "expires-in")]
 	pub expires_in: Option<String>,
@@ -628,7 +628,7 @@ pub struct AdminTokenSetOp {
 	pub never_expires: bool,
 
 	/// Set a limited scope for the token, as a comma-separated list of
-	/// admin API functions (e.g. GetClusterStatus, etc.), or `*` to allow
+	/// admin API functions (e.g. `GetClusterStatus`, etc.), or `*` to allow
 	/// all admin API functions.
 	/// Use `--scope=+Scope1,Scope2` to add scopes to the existing list,
 	/// and `--scope=-Scope1,Scope2` to remove scopes from the existing list.

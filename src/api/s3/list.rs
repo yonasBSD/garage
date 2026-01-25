@@ -939,7 +939,7 @@ fn common_prefix<'a>(object: &'a Object, query: &ListQueryCommon) -> Option<&'a 
 	}
 }
 
-/// URIencode a value if needed
+/// `URIencode` a value if needed
 fn uriencode_maybe(s: &str, yes: bool) -> s3_xml::Value {
 	if yes {
 		s3_xml::Value(uri_encode(s, true))

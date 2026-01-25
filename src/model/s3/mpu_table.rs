@@ -31,12 +31,12 @@ mod v09 {
 		/// The timestamp at which the multipart upload was created
 		pub timestamp: u64,
 		/// Is this multipart upload deleted
-		/// The MultipartUpload is marked as deleted as soon as the
+		/// The `MultipartUpload` is marked as deleted as soon as the
 		/// multipart upload is either completed or aborted
 		pub deleted: crdt::Bool,
 		/// List of uploaded parts, key = (part number, timestamp)
 		/// In case of retries, all versions for each part are kept
-		/// Everything is cleaned up only once the MultipartUpload is marked deleted
+		/// Everything is cleaned up only once the `MultipartUpload` is marked deleted
 		pub parts: crdt::Map<MpuPartKey, MpuPart>,
 
 		// Back link to bucket+key so that we can find the object this mpu
@@ -58,9 +58,9 @@ mod v09 {
 	/// The version of an uploaded part
 	#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
 	pub struct MpuPart {
-		/// Links to a Version in VersionTable
+		/// Links to a Version in `VersionTable`
 		pub version: Uuid,
-		/// ETag of the content of this part (known only once done uploading)
+		/// `ETag` of the content of this part (known only once done uploading)
 		pub etag: Option<String>,
 		/// Checksum requested by x-amz-checksum-algorithm
 		#[serde(default)]

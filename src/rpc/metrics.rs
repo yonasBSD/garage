@@ -1,6 +1,6 @@
 use opentelemetry::{global, metrics::*};
 
-/// TableMetrics reference all counter used for metrics
+/// `TableMetrics` reference all counter used for metrics
 pub struct RpcMetrics {
 	pub(crate) rpc_counter: Counter<u64>,
 	pub(crate) rpc_timeout_counter: Counter<u64>,

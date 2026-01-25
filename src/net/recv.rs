@@ -42,8 +42,8 @@ impl Drop for Sender {
 	}
 }
 
-/// The RecvLoop trait, which is implemented both by the client and the server
-/// connection objects (ServerConn and ClientConn) adds a method `.recv_loop()`
+/// The `RecvLoop` trait, which is implemented both by the client and the server
+/// connection objects (`ServerConn` and `ClientConn`) adds a method `.recv_loop()`
 /// and a prototype of a handler for received messages `.recv_handler()` that
 /// must be filled by implementors. `.recv_loop()` receives messages in a loop
 /// according to the protocol defined above: chunks of message in progress of being

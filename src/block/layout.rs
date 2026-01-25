@@ -21,7 +21,7 @@ pub(crate) struct DataLayout {
 	pub(crate) data_dirs: Vec<DataDir>,
 	markers: HashMap<PathBuf, String>,
 
-	/// Primary storage location (index in data_dirs) for each partition
+	/// Primary storage location (index in `data_dirs`) for each partition
 	/// = the location where the data is supposed to be, blocks are always
 	/// written there (copies in other dirs may be deleted if they exist)
 	pub(crate) part_prim: Vec<Idx>,

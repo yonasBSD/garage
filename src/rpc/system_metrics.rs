@@ -5,7 +5,7 @@ use opentelemetry::{global, metrics::*, KeyValue};
 
 use crate::system::{ClusterHealthStatus, System};
 
-/// TableMetrics reference all counter used for metrics
+/// `TableMetrics` reference all counter used for metrics
 pub struct SystemMetrics {
 	// Static values
 	pub(crate) _garage_build_info: ValueObserver<u64>,

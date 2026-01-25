@@ -34,12 +34,12 @@ pub type NetworkKey = sodiumoxide::crypto::auth::Key;
 /// composed of 8 bytes for Netapp version and 8 bytes for client version
 pub(crate) type VersionTag = [u8; 16];
 
-/// Value of garage_net version used in the version tag
-/// We are no longer using prefix `netapp` as garage_net is forked from the netapp crate.
-/// Since Garage v1.0, we have replaced the prefix by `grgnet` (shorthand for garage_net).
+/// Value of `garage_net` version used in the version tag
+/// We are no longer using prefix `netapp` as `garage_net` is forked from the netapp crate.
+/// Since Garage v1.0, we have replaced the prefix by `grgnet` (shorthand for `garage_net`).
 pub(crate) const NETAPP_VERSION_TAG: u64 = 0x6772676e65740010; // grgnet 0x0010 (1.0)
 
-/// HelloMessage is sent by the client on a Netapp connection to indicate
+/// `HelloMessage` is sent by the client on a Netapp connection to indicate
 /// that they are also a server and ready to receive incoming connections
 /// at the specified address and port. If the client doesn't know their
 /// public address, they don't need to specify it and we look at the
@@ -57,9 +57,9 @@ impl Message for HelloMessage {
 type OnConnectHandler = Box<dyn Fn(NodeID, SocketAddr, bool) + Send + Sync>;
 type OnDisconnectHandler = Box<dyn Fn(NodeID, bool) + Send + Sync>;
 
-/// NetApp is the main class that handles incoming and outgoing connections.
+/// `NetApp` is the main class that handles incoming and outgoing connections.
 ///
-/// NetApp can be used in a stand-alone fashion or together with a peering strategy.
+/// `NetApp` can be used in a stand-alone fashion or together with a peering strategy.
 /// If using it alone, you will want to set `on_connect` and `on_disconnect` events
 /// in order to manage information about the current peer list.
 pub struct NetApp {
@@ -91,7 +91,7 @@ struct ListenParams {
 }
 
 impl NetApp {
-	/// Creates a new instance of NetApp, which can serve either as a full p2p node,
+	/// Creates a new instance of `NetApp`, which can serve either as a full p2p node,
 	/// or just as a passive client. To upgrade to a full p2p node, spawn a listener
 	/// using `.listen()`
 	///
@@ -186,7 +186,7 @@ impl NetApp {
 
 	/// Main listening process for our app. This future runs during the whole
 	/// run time of our application.
-	/// If this is not called, the NetApp instance remains a passive client.
+	/// If this is not called, the `NetApp` instance remains a passive client.
 	pub async fn listen(
 		self: Arc<Self>,
 		listen_addr: SocketAddr,

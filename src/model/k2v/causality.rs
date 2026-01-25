@@ -1,9 +1,9 @@
-//! Implements a CausalContext, which is a set of timestamps for each
+//! Implements a `CausalContext`, which is a set of timestamps for each
 //! node -- a vector clock --, indicating that the versions with
 //! timestamps <= these numbers have been seen and can be
 //! overwritten by a subsequent write.
 //!
-//! The textual representation of a CausalContext, which we call a
+//! The textual representation of a `CausalContext`, which we call a
 //! "causality token", is used in the API and must be sent along with
 //! each write or delete operation to indicate the previously seen
 //! versions that we want to overwrite or delete.

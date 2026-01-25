@@ -19,7 +19,7 @@ use crate::crdt::crdt::*;
 /// Internally, the map is stored as a vector of keys and values, sorted by ascending key order.
 /// This is why the key type `K` must implement `Ord` (and also to ensure a unique serialization,
 /// such that two values can be compared for equality based on their hashes). As a consequence,
-/// insertions take `O(n)` time. This means that LWWMap should be used for reasonably small maps.
+/// insertions take `O(n)` time. This means that `LWWMap` should be used for reasonably small maps.
 /// However, note that even if we were using a more efficient data structure such as a `BTreeMap`,
 /// the serialization cost `O(n)` would still have to be paid at each modification, so we are
 /// actually not losing anything here.

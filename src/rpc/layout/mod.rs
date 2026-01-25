@@ -23,7 +23,7 @@ pub use version::*;
 
 /// A partition id, which is stored on 16 bits
 /// i.e. we have up to 2**16 partitions.
-/// (in practice we have exactly 2**PARTITION_BITS partitions)
+/// (in practice we have exactly 2**`PARTITION_BITS` partitions)
 pub type Partition = u16;
 
 // TODO: make this constant parametrizable in the config file
@@ -114,7 +114,7 @@ mod v09 {
 		/// to know to what extent does it change with the layout update.
 		pub partition_size: u64,
 		/// Parameters used to compute the assignment currently given by
-		/// ring_assignment_data
+		/// `ring_assignment_data`
 		pub parameters: LayoutParameters,
 
 		pub roles: LwwMap<Uuid, NodeRoleV>,
@@ -229,7 +229,7 @@ mod v010 {
 	use std::collections::BTreeMap;
 	pub use v09::{LayoutParameters, NodeRole, NodeRoleV, ZoneRedundancy};
 
-	/// Number of old (non-live) versions to keep, see LayoutHistory::old_versions
+	/// Number of old (non-live) versions to keep, see `LayoutHistory::old_versions`
 	pub const OLD_VERSION_COUNT: usize = 5;
 
 	/// The history of cluster layouts, with trackers to keep a record
@@ -238,8 +238,8 @@ mod v010 {
 	pub struct LayoutHistory {
 		/// The versions currently in use in the cluster
 		pub versions: Vec<LayoutVersion>,
-		/// At most 5 of the previous versions, not used by the garage_table
-		/// module, but useful for the garage_block module to find data blocks
+		/// At most 5 of the previous versions, not used by the `garage_table`
+		/// module, but useful for the `garage_block` module to find data blocks
 		/// that have not yet been moved
 		pub old_versions: Vec<LayoutVersion>,
 
@@ -260,7 +260,7 @@ mod v010 {
 		/// Roles assigned to nodes in this version
 		pub roles: LwwMap<Uuid, NodeRoleV>,
 		/// Parameters used to compute the assignment currently given by
-		/// ring_assignment_data
+		/// `ring_assignment_data`
 		pub parameters: LayoutParameters,
 
 		/// The number of replicas for each data partition
@@ -269,17 +269,17 @@ mod v010 {
 		/// to know to what extent does it change with the layout update.
 		pub partition_size: u64,
 
-		/// node_id_vec: a vector of node IDs with a role assigned
+		/// `node_id_vec`: a vector of node IDs with a role assigned
 		/// in the system (this includes gateway nodes).
 		/// The order here is different than the vec stored by `roles`, because:
 		/// 1. non-gateway nodes are first so that they have lower numbers
 		/// 2. nodes that don't have a role are excluded (but they need to
 		///    stay in the CRDT as tombstones)
 		pub node_id_vec: Vec<Uuid>,
-		/// number of non-gateway nodes, which are the first ids in node_id_vec
+		/// number of non-gateway nodes, which are the first ids in `node_id_vec`
 		pub nongateway_node_count: usize,
 		/// The assignation of data partitions to nodes, the values
-		/// are indices in node_id_vec
+		/// are indices in `node_id_vec`
 		#[serde(with = "serde_bytes")]
 		pub ring_assignment_data: Vec<CompactNodeType>,
 	}

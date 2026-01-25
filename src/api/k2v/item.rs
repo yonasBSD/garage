@@ -97,7 +97,7 @@ impl ReturnFormat {
 	}
 }
 
-/// Handle ReadItem request
+/// Handle `ReadItem` request
 #[allow(clippy::ptr_arg)]
 pub async fn handle_read_item(
 	ctx: ReqCtx,
@@ -201,7 +201,7 @@ pub async fn handle_delete_item(
 		.body(empty_body())?)
 }
 
-/// Handle ReadItem request
+/// Handle `ReadItem` request
 #[allow(clippy::ptr_arg)]
 pub async fn handle_poll_item(
 	ctx: ReqCtx,

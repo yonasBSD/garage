@@ -56,7 +56,7 @@ mod v08 {
 pub use v08::*;
 
 impl K2VItem {
-	/// Creates a new K2VItem when no previous entry existed in the db
+	/// Creates a new `K2VItem` when no previous entry existed in the db
 	pub fn new(bucket_id: Uuid, partition_key: String, sort_key: String) -> Self {
 		Self {
 			partition: K2VItemPartition {
@@ -67,7 +67,7 @@ impl K2VItem {
 			items: BTreeMap::new(),
 		}
 	}
-	/// Updates a K2VItem with a new value or a deletion event
+	/// Updates a `K2VItem` with a new value or a deletion event
 	pub fn update(
 		&mut self,
 		this_node: Uuid,

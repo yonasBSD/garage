@@ -101,9 +101,9 @@ pub trait Message: Serialize + for<'de> Deserialize<'de> + Send + Sync + 'static
 // ----
 
 /// The `Req<M>` is a helper object used to create requests and attach them
-/// a stream of data. If the stream is a fixed Bytes and not a ByteStream,
+/// a stream of data. If the stream is a fixed Bytes and not a `ByteStream`,
 /// `Req<M>` is cheaply cloneable to allow the request to be sent to different
-/// peers (Clone will panic if the stream is a ByteStream).
+/// peers (Clone will panic if the stream is a `ByteStream`).
 pub struct Req<M: Message> {
 	pub(crate) msg: Arc<M>,
 	pub(crate) msg_ser: Option<Bytes>,
@@ -382,7 +382,7 @@ impl AttachedStream {
 
 // ---- ----
 
-/// Encoding for requests into a ByteStream:
+/// Encoding for requests into a `ByteStream`:
 /// - priority: u8
 /// - path length: u8
 /// - path: [u8; path length]
@@ -457,7 +457,7 @@ impl ReqEnc {
 	}
 }
 
-/// Encoding for responses into a ByteStream:
+/// Encoding for responses into a `ByteStream`:
 ///
 /// IF SUCCESS:
 /// - 0: u8
@@ -468,7 +468,7 @@ impl ReqEnc {
 /// IF ERROR:
 /// - message length + 1: u8
 /// - error code: u8
-/// - message: [u8; message_length]
+/// - message: [u8; `message_length`]
 pub(crate) struct RespEnc {
 	msg: Bytes,
 	stream: Option<ByteStream>,

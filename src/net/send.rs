@@ -264,8 +264,8 @@ impl DataFrame {
 	}
 }
 
-/// The SendLoop trait, which is implemented both by the client and the server
-/// connection objects (ServerConna and ClientConn) adds a method `.send_loop()`
+/// The `SendLoop` trait, which is implemented both by the client and the server
+/// connection objects (`ServerConna` and `ClientConn`) adds a method `.send_loop()`
 /// that takes a channel of messages to send and an asynchronous writer,
 /// and sends messages from the channel to the async writer, putting them in a queue
 /// before being sent and doing the round-robin sending strategy.

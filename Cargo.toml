@@ -181,4 +181,5 @@ opt-level = 3
 strip = "debuginfo"
 
 [workspace.lints.clippy]
-# custom configuration
+# pedantic lints configuration
+doc_markdown = "warn"

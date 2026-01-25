@@ -73,7 +73,7 @@ impl FixedBytes32 {
 	pub fn to_vec(self) -> Vec<u8> {
 		self.0.to_vec()
 	}
-	/// Try building a FixedBytes32 from a slice
+	/// Try building a `FixedBytes32` from a slice
 	/// Return None if the slice is not 32 bytes long
 	pub fn try_from(by: &[u8]) -> Option<Self> {
 		if by.len() != 32 {

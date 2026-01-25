@@ -75,7 +75,7 @@ impl Context {
 		bucket_name
 	}
 
-	/// Build a K2vClient for a given bucket
+	/// Build a `K2vClient` for a given bucket
 	#[cfg(feature = "k2v")]
 	pub fn k2v_client(&self, bucket: &str) -> K2vClient {
 		let config = k2v_client::K2vClientConfig {
