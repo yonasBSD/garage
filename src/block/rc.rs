@@ -37,7 +37,7 @@ impl BlockRc {
 		match old_rc.increment().serialize() {
 			Some(x) => tx.insert(&self.rc_table, hash, x)?,
 			None => unreachable!(),
-		};
+		}
 		Ok(old_rc.is_zero())
 	}
 
@@ -52,7 +52,7 @@ impl BlockRc {
 		match new_rc.serialize() {
 			Some(x) => tx.insert(&self.rc_table, hash, x)?,
 			None => tx.remove(&self.rc_table, hash)?,
-		};
+		}
 		Ok(matches!(new_rc, RcEntry::Deletable { .. }))
 	}
 
@@ -72,7 +72,7 @@ impl BlockRc {
 					tx.remove(&self.rc_table, hash)?;
 				}
 				_ => (),
-			};
+			}
 			Ok(())
 		})?;
 		Ok(())

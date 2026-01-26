@@ -125,7 +125,7 @@ impl<A: ApiHandler> ApiServer<A> {
 			}
 			UnixOrTCPSocketAddress::UnixSocket(ref path) => {
 				if path.exists() {
-					fs::remove_file(path)?
+					fs::remove_file(path)?;
 				}
 
 				let listener = UnixListener::bind(path)?;
@@ -190,7 +190,7 @@ impl<A: ApiHandler> ApiServer<A> {
 				let mut http_error_builder = Response::builder().status(e.http_status_code());
 
 				if let Some(header_map) = http_error_builder.headers_mut() {
-					e.add_http_headers(header_map)
+					e.add_http_headers(header_map);
 				}
 
 				let http_error = http_error_builder.body(body)?;

@@ -869,7 +869,7 @@ impl Modify for SecurityAddon {
 		components.add_security_scheme(
 			"bearerAuth",
 			SecurityScheme::Http(Http::builder().scheme(HttpAuthScheme::Bearer).build()),
-		)
+		);
 	}
 }
 

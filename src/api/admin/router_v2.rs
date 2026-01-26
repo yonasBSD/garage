@@ -89,7 +89,7 @@ impl AdminApiRequest {
 		]);
 
 		if let Some(message) = query.nonempty_message() {
-			debug!("Unused query parameter: {}", message)
+			debug!("Unused query parameter: {}", message);
 		}
 
 		Ok(res)

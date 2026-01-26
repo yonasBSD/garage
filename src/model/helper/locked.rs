@@ -37,7 +37,7 @@ pub struct LockedHelper<'a>(
 impl<'a> Drop for LockedHelper<'a> {
 	fn drop(&mut self) {
 		// make it explicit that the mutexguard lives until here
-		drop(self.1.take())
+		drop(self.1.take());
 	}
 }
 

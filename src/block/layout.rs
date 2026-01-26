@@ -159,7 +159,7 @@ impl DataLayout {
 		for (idir, parts) in dir_prim.iter().enumerate() {
 			for part in parts.iter() {
 				assert!(part_prim[*part].is_none());
-				part_prim[*part] = Some(idir as Idx)
+				part_prim[*part] = Some(idir as Idx);
 			}
 		}
 

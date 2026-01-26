@@ -374,7 +374,7 @@ impl RpcHelper {
 			// reach quorum, start some new requests.
 			while send_all_at_once || successes.len() + resp_stream.len() < quorum {
 				if let Some(fut) = requests.next() {
-					resp_stream.push(fut)
+					resp_stream.push(fut);
 				} else {
 					break;
 				}
@@ -582,7 +582,7 @@ impl RpcHelper {
 		let mut vernodes = vec![];
 		for ver in layout.versions()?.iter() {
 			let nodes = ver.nodes_of(position);
-			vernodes.push(rpc_helper.request_order(current_layout, nodes))
+			vernodes.push(rpc_helper.request_order(current_layout, nodes));
 		}
 
 		let mut ret = if vernodes.len() == 1 {

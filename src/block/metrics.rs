@@ -52,7 +52,7 @@ impl BlockManagerMetrics {
 			_rc_size: meter
 				.u64_value_observer("block.rc_size", move |observer| {
 					if let Ok(value) = rc_tree.approximate_len() {
-						observer.observe(value as u64, &[])
+						observer.observe(value as u64, &[]);
 					}
 				})
 				.with_description("Number of blocks known to the reference counter")
@@ -78,7 +78,7 @@ impl BlockManagerMetrics {
 
 			_buffer_free_kb: meter
 				.u64_value_observer("block.ram_buffer_free_kb", move |observer| {
-					observer.observe(buffer_semaphore.available_permits() as u64, &[])
+					observer.observe(buffer_semaphore.available_permits() as u64, &[]);
 				})
 				.with_description(
 					"Available RAM in KiB to use for buffering data blocks to be written to remote nodes",

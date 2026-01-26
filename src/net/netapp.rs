@@ -180,7 +180,7 @@ impl NetApp {
 			.is_some()
 		{
 			panic!("Redefining endpoint: {}", path);
-		};
+		}
 		endpoint
 	}
 

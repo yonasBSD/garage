@@ -71,7 +71,7 @@ impl RangeSeenMarker {
 
 	pub fn canonicalize(&mut self) {
 		let self_vc = &self.vector_clock;
-		self.items.retain(|_sk, vc| vclock_gt(vc, self_vc))
+		self.items.retain(|_sk, vc| vclock_gt(vc, self_vc));
 	}
 
 	pub fn encode(&mut self) -> Result<String, Error> {

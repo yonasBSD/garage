@@ -89,7 +89,7 @@ impl ReqBody {
 							checksummer
 						})
 						.await
-						.unwrap()
+						.unwrap();
 					}
 					Err(frame) => {
 						let trailers = frame.into_trailers().unwrap();

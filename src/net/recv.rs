@@ -70,7 +70,7 @@ pub(crate) trait RecvLoop: Sync + 'static {
 				Ok(_) => (),
 				Err(e) if e.kind() == std::io::ErrorKind::UnexpectedEof => break,
 				Err(e) => return Err(e.into()),
-			};
+			}
 			let id = RequestID::from_be_bytes(header_id);
 
 			let mut header_size = [0u8; ChunkLength::BITS as usize / 8];

@@ -118,7 +118,7 @@ impl ConsulDiscovery {
 					builder = builder.default_headers(headers);
 				}
 			}
-		};
+		}
 
 		let client: reqwest::Client = builder.build()?;
 

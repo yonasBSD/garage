@@ -106,7 +106,7 @@ impl WebServer {
 			}
 			UnixOrTCPSocketAddress::UnixSocket(ref path) => {
 				if path.exists() {
-					fs::remove_file(path)?
+					fs::remove_file(path)?;
 				}
 
 				let listener = UnixListener::bind(path)?;
@@ -684,10 +684,10 @@ fn compute_redirect_target(redirect: &bucket_table::Redirect, suffix: Option<&st
 	if let Some(replace_key_prefix) = &redirect.replace_key_prefix {
 		res.push_str(replace_key_prefix);
 		if let Some(suffix) = suffix {
-			res.push_str(suffix)
+			res.push_str(suffix);
 		}
 	} else if let Some(replace_key) = &redirect.replace_key {
-		res.push_str(replace_key)
+		res.push_str(replace_key);
 	}
 	res
 }

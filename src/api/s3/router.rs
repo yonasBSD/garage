@@ -365,7 +365,7 @@ impl Endpoint {
 		}
 
 		if let Some(message) = query.nonempty_message() {
-			debug!("Unused query parameter: {}", message)
+			debug!("Unused query parameter: {}", message);
 		}
 		Ok((res, Some(bucket)))
 	}
@@ -580,7 +580,7 @@ impl Endpoint {
 	pub fn authorization_type(&self) -> Authorization {
 		if let Endpoint::ListBuckets = self {
 			return Authorization::None;
-		};
+		}
 		let readonly = router_match! {
 			@match
 			self,
@@ -725,7 +725,7 @@ mod tests {
 	) -> (Endpoint, Option<String>) {
 		let mut req = Request::builder().method(method).uri(uri);
 		if let Some((k, v)) = header {
-			req = req.header(k, v)
+			req = req.header(k, v);
 		}
 		let req = req.body(()).unwrap();
 
@@ -859,7 +859,7 @@ mod tests {
 			.body(())
 			.unwrap();
 
-		assert!(Endpoint::from_request(&req, None).is_err())
+		assert!(Endpoint::from_request(&req, None).is_err());
 	}
 
 	#[test]

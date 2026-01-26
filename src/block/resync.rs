@@ -588,7 +588,7 @@ impl Worker for ResyncWorker {
 
 	async fn wait_for_work(&mut self) -> WorkerState {
 		while self.index >= self.persister.get_with(|x| x.n_workers) {
-			self.manager.resync.notify.notified().await
+			self.manager.resync.notify.notified().await;
 		}
 
 		select! {

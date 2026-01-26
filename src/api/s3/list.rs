@@ -484,7 +484,7 @@ where
 				iter.next();
 			}
 			_ => (),
-		};
+		}
 
 		while let Some(object) = iter.peek() {
 			if !object.key.starts_with(&query.prefix) {
@@ -508,7 +508,7 @@ where
 				ExtractionResult::NoMore => {
 					return Ok(None);
 				}
-			};
+			}
 		}
 
 		if !server_more {
@@ -756,7 +756,7 @@ impl<K: std::cmp::Ord, V> Accumulator<K, V> {
 						None => Some(ExtractionResult::NoMore),
 					}
 				}
-			};
+			}
 		}
 	}
 
@@ -1069,7 +1069,7 @@ mod tests {
 				assert_eq!(upload, Uuid::from([0x8f; 32]));
 			}
 			_ => panic!("wrong result"),
-		};
+		}
 
 		assert_eq!(acc.keys.len(), 2);
 		assert_eq!(
@@ -1098,7 +1098,7 @@ mod tests {
 		match acc.extract(&(query().common), &start, &mut iter) {
 			ExtractionResult::Extracted { key } if key.as_str() == "b" => (),
 			_ => panic!("wrong result"),
-		};
+		}
 	}
 
 	#[tokio::test]

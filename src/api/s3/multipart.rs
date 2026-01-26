@@ -370,7 +370,7 @@ pub async fn handle_complete_multipart_upload(
 						req_part.part_number, req_part.checksum, part.checksum
 					)));
 				}
-				parts.push(*part)
+				parts.push(*part);
 			}
 			_ => return Err(Error::InvalidPart),
 		}

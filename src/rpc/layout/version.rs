@@ -85,7 +85,7 @@ impl LayoutVersion {
 				let mut count = 0;
 				for nod in self.ring_assignment_data.iter() {
 					if i as u8 == *nod {
-						count += 1
+						count += 1;
 					}
 				}
 				return Ok(count);

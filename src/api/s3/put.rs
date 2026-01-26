@@ -192,7 +192,7 @@ pub(crate) async fn save_stream<S: Stream<Item = Result<Bytes, Error>> + Unpin>(
 					meta.checksum = checksums.extract(Some(algo));
 				}
 			}
-		};
+		}
 
 		let size = first_block.len() as u64;
 		check_quotas(ctx, size, existing_object.as_ref()).await?;
@@ -293,7 +293,7 @@ pub(crate) async fn save_stream<S: Stream<Item = Result<Bytes, Error>> + Unpin>(
 				meta.checksum = checksums.extract(Some(algo));
 			}
 		}
-	};
+	}
 
 	// Verify quotas are respsected
 	check_quotas(ctx, total_size, existing_object.as_ref()).await?;
@@ -339,7 +339,7 @@ pub(crate) async fn check_quotas(
 	let quotas = bucket_params.quotas.get();
 	if quotas.max_objects.is_none() && quotas.max_size.is_none() {
 		return Ok(());
-	};
+	}
 
 	let counters = garage
 		.object_counter_table
@@ -436,7 +436,7 @@ pub(crate) async fn read_and_put_blocks<S: Stream<Item = Result<Bytes, Error>> +
 						tracer.start("Hash block (md5, sha256)"),
 					))
 					.await
-					.unwrap()
+					.unwrap();
 				}
 				Err(e) => {
 					block_tx2.send(Err(e)).await?;

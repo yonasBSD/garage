@@ -564,7 +564,7 @@ fn bounds_sql<'r>(low: Bound<&'r [u8]>, high: Bound<&'r [u8]>) -> (String, Vec<V
 			params.push(b.to_vec());
 		}
 		Bound::Unbounded => (),
-	};
+	}
 
 	match high {
 		Bound::Included(b) => {

@@ -481,7 +481,7 @@ impl System {
 					.iter()
 					.filter(|(_, _, v)| matches!(v, NodeRoleV(Some(r)) if r.capacity.is_some()))
 					.map(|(n, _, _)| *n),
-			)
+			);
 		}
 		let storage_nodes_ok = storage_nodes.iter().filter(|x| node_up(x)).count();
 
@@ -682,7 +682,7 @@ impl System {
 
 				// Add peer list from list stored on disk
 				if let Ok(peers) = self.persist_peer_list.load_async().await {
-					ping_list.extend(peers.0.iter().map(|(id, addr)| ((*id).into(), *addr)))
+					ping_list.extend(peers.0.iter().map(|(id, addr)| ((*id).into(), *addr)));
 				}
 
 				// Fetch peer list from Consul
@@ -705,9 +705,9 @@ impl System {
 						match create_kubernetes_crd().await {
 							Ok(()) => (),
 							Err(e) => {
-								error!("Failed to create kubernetes custom resource: {}", e)
+								error!("Failed to create kubernetes custom resource: {}", e);
 							}
-						};
+						}
 					}
 
 					match get_kubernetes_nodes(k).await {
