@@ -81,7 +81,7 @@ impl PeerInfoInternal {
 			// we want to retry connecting
 			self.state = match self.state {
 				PeerConnState::Trying(_) => PeerConnState::Trying(0),
-				PeerConnState::Waiting(_, _) | PeerConnState::Abandonned => {
+				PeerConnState::Waiting(_, _) | PeerConnState::Abandoned => {
 					PeerConnState::Waiting(0, Instant::now())
 				}
 				x @ (PeerConnState::Ourself | PeerConnState::Connected { .. }) => x,
@@ -138,7 +138,7 @@ pub enum PeerConnState {
 	Trying(usize),
 
 	/// We abandoned trying to connect to this peer (too many failed attempts)
-	Abandonned,
+	Abandoned,
 }
 
 impl PeerConnState {
@@ -525,7 +525,7 @@ impl PeeringManager {
 				host.state = match host.state {
 					PeerConnState::Trying(i) => {
 						if i >= CONN_MAX_RETRIES {
-							PeerConnState::Abandonned
+							PeerConnState::Abandoned
 						} else {
 							PeerConnState::Waiting(i + 1, Instant::now() + CONN_RETRY_INTERVAL)
 						}
