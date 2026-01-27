@@ -67,7 +67,7 @@
           clippy = lints.garage-cargo-clippy;
         };
 
-        # ---- developpment shell, for making native builds only ----
+        # ---- development shell, for making native builds only ----
         devShells =
           let
             targets = compile {

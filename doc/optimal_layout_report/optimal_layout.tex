@@ -38,7 +38,7 @@ We would like to compute an assignment of nodes to partitions. We will impose so
 \end{equation}
 This assumption is justified by the dispersion of the hashing function, when the number of partitions is small relative to the number of stored large objects.
 
-Every node $n$ wille store some number $k_n$ of partitions. Hence the partitions stored by $n$ (and hence all partitions by our assumption) have there size bounded by $c_n/k_n$. This remark leads us to define the optimal size that we will want to maximize:
+Every node $n$ will store some number $k_n$ of partitions. Hence the partitions stored by $n$ (and hence all partitions by our assumption) have there size bounded by $c_n/k_n$. This remark leads us to define the optimal size that we will want to maximize:
 
 \begin{equation}
 	\label{eq:optimal}
@@ -62,7 +62,7 @@ For now, in the following, we ask the following redundancy constraint:
 
 \textbf{Mode 3:} every partition needs to be assignated to three nodes. We try to spread the three nodes over different zones as much as possible.
 
-\textbf{Warning:} This is a working document written incrementaly. The last version of the algorithm is the \textbf{parametric assignment} described in the next section.
+\textbf{Warning:} This is a working document written incrementally. The last version of the algorithm is the \textbf{parametric assignment} described in the next section.
 
 
 \section{Computation of a parametric assignment}
@@ -318,7 +318,7 @@ $$
 $$
 which is the universal upper bound on $s^*$. Hence any optimal utilization $(n_v)$ can be modified to another optimal utilization such that $n_v\ge \hat{n}_v$
 
-Because $z_0$ cannot store more than $N$ partition occurences, in any assignment, at least $2N$ partitions must be assignated to the zones $Z\setminus\{z_0\}$. Let $C_0 = C-c_{z_0}$. Suppose that there exists a zone $z_1\neq z_0$ such that $c_{z_1}/C_0 \ge 1/2$. Then, with the same argument as for $z_0$, we can define 
+Because $z_0$ cannot store more than $N$ partition occurrences, in any assignment, at least $2N$ partitions must be assignated to the zones $Z\setminus\{z_0\}$. Let $C_0 = C-c_{z_0}$. Suppose that there exists a zone $z_1\neq z_0$ such that $c_{z_1}/C_0 \ge 1/2$. Then, with the same argument as for $z_0$, we can define
 $$\hat{n}_v = \left\lfloor\frac{c_v}{c_{z_1}}N\right\rfloor$$
 for every $v\in z_1$.
 
@@ -351,7 +351,7 @@ Define $3N$ tokens $t_1,\ldots, t_{3N}\in V$ as follows:
 Then for $1\le i \le N$, define the triplet $T_i$ to be 
 $(t_i, t_{i+N}, t_{i+2N})$. Since the same nodes of a zone appear contiguously, the three nodes of a triplet must belong to three distinct zones.
 
-However simple, this solution to go from an utilization to an assignment has the drawback of not spreading the triplets: a node will tend to be associated to the same two other nodes for many partitions. Hence, during data transfer, it will tend to use only two link, instead of spreading the bandwith use over many other links to other nodes. To achieve this goal, we will reframe the search of an assignment as a flow problem. and in the flow algorithm, we will introduce randomness in the order of exploration. This will be sufficient to obtain a good dispersion of the triplets.
+However simple, this solution to go from an utilization to an assignment has the drawback of not spreading the triplets: a node will tend to be associated to the same two other nodes for many partitions. Hence, during data transfer, it will tend to use only two link, instead of spreading the bandwidth use over many other links to other nodes. To achieve this goal, we will reframe the search of an assignment as a flow problem. and in the flow algorithm, we will introduce randomness in the order of exploration. This will be sufficient to obtain a good dispersion of the triplets.
 
 \begin{figure}
 	\centering
@@ -436,7 +436,7 @@ T_3=(b,c,d').
 $$
 One can check that in this case, it is impossible to minimize both the number of zone and node changes.
 
-Because of the redundancy constraint, we cannot use a greedy algorithm to just replace nodes in the triplets to try to get the new utilization rate: this could lead to blocking situation where there is still a hole to fill in a triplet but no available node satisfies the zone separation constraint. To circumvent this issue, we propose an algorithm based on finding cycles in a graph encoding of the assignment. As in section \ref{sec:opt_assign}, we can explore the neigbours in a random order in the graph algorithms, to spread the triplets distribution.
+Because of the redundancy constraint, we cannot use a greedy algorithm to just replace nodes in the triplets to try to get the new utilization rate: this could lead to blocking situation where there is still a hole to fill in a triplet but no available node satisfies the zone separation constraint. To circumvent this issue, we propose an algorithm based on finding cycles in a graph encoding of the assignment. As in section \ref{sec:opt_assign}, we can explore the neighbours in a random order in the graph algorithms, to spread the triplets distribution.
 
 
 \subsubsection{Minimizing the zone discrepancy}
@@ -550,8 +550,8 @@ We give some considerations of worst case complexity for these algorithms. In th
 Algorithm \ref{alg:util} can be implemented with complexity $O(\#V^2)$. The complexity of the function call at line \ref{lin:subutil} is $O(\#V)$. The difference between the sum of the subutilizations and $3N$ is at most the sum of the rounding errors when computing the $\hat{n}_v$. Hence it is bounded by $\#V$ and the loop at line \ref{lin:loopsub} is iterated at most $\#V$ times. Finding the minimizing $v$ at line \ref{lin:findmin} takes $O(\#V)$ operations (naively, we could also use a heap).
 
 Algorithm \ref{alg:opt} can be implemented with complexity $O(N^3\times \#Z)$. The flow graph has $O(N+\#Z)$ vertices and $O(N\times \#Z)$ edges. Dinic's algorithm has complexity $O(\#\mathrm{Vertices}^2\#\mathrm{Edges})$ hence in our case it is $O(N^3\times \#Z)$.
- 
-Algorithm \ref{alg:mini} can be implented with complexity $O(N^3\# Z)$ under \eqref{hyp:A} and $O(N^3 \#Z \#V)$ under \eqref{hyp:B}.
+
+Algorithm \ref{alg:mini} can be implemented with complexity $O(N^3\# Z)$ under \eqref{hyp:A} and $O(N^3 \#Z \#V)$ under \eqref{hyp:B}.
 The graph $G_T$ has $O(N)$ vertices and $O(N\times \#Z)$ edges under assumption \eqref{hyp:A} and respectively $O(N\times \#Z)$ vertices and $O(N\times \#V)$ edges under assumption \eqref{hyp:B}. The loop at line \ref{lin:repeat} is iterated at most $N$ times since the distance between $T$ and $T'$ decreases at every iteration. Bellman-Ford algorithm has complexity $O(\#\mathrm{Vertices}\#\mathrm{Edges})$, which in our case amounts to $O(N^2\# Z)$ under \eqref{hyp:A} and $O(N^2 \#Z \#V)$ under \eqref{hyp:B}.
  
 \begin{algorithm}
@@ -637,7 +637,7 @@ We try to maximize $s^*$ defined in \eqref{eq:optimal}. So we can compute the op
 
 \subsection{Computation of a candidate assignment}
 
-To compute a candidate assignment (that does not optimize zone spreading nor distance to a previous assignment yet), we can use the folowing flow problem.
+To compute a candidate assignment (that does not optimize zone spreading nor distance to a previous assignment yet), we can use the following flow problem.
 
 Define the oriented weighted graph $(X,E)$. The set of vertices $X$ contains the source $\mathbf{s}$, the sink $\mathbf{t}$, vertices 
 $\mathbf{x}_p, \mathbf{u}^+_p, \mathbf{u}^-_p$ for every partition $p$, vertices $\mathbf{y}_{p,z}$ for every partition $p$ and zone $z$, and vertices $\mathbf{z}_v$ for every node $v$. 
@@ -680,14 +680,14 @@ Given the flow $f$, let $G_f=(X',E_f)$ be the multi-graph where $X' = X\setminus
 \end{itemize}
 To summarize, arcs are oriented left to right if they correspond to a presence of flow in $f$, and right to left if they correspond to an absence of flow. They are positively weighted if we want them to stay at their current state, and negatively if we want them to switch. Let us compute the weight of such graph.
 
-\begin{multline*}
+\begin{multiline*}
 	w(G_f)  = \sum_{e\in E_f} w(e_f)  \\
 	= 
 	(\alpha - \beta -\gamma) N_1 + (\alpha +\beta - \gamma) N_2 + (\alpha+\beta+\gamma) N_3 
 	\\ + 
 	\#V\times N - 4 \sum_p 3-\#(T_p\cap T'_p) \\ 
 	=(\#V-12+\alpha-\beta-\gamma)\times N + 4Q_V + 2\beta N_2 + 2(\beta+\gamma) N_3 \\
-\end{multline*}
+\end{multiline*}
 
 As for the mode 3-strict, one can check that the difference of two such graphs corresponding to the same $(n_v)$ is always eulerian. Hence we can navigate in this class with the same greedy algorithm that discovers positive cycles and flips them.
 

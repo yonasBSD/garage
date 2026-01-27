@@ -2,7 +2,7 @@
 
 : '
 	This script tests whether uploaded parts can be skipped in a
-	CompleteMultipartUpoad
+	CompleteMultipartUpload
 
 	On Minio: yes, parts can be skipped
 
@@ -52,7 +52,7 @@
 
 	Conclusions:
 
-	- Skipping a part in a CompleteMultipartUpoad call is OK
+	- Skipping a part in a CompleteMultipartUpload call is OK
 	- The part is simply not included in the stored object
 	- Sequential part renumbering counts only non-skipped parts
 '

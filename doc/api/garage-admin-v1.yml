@@ -3,10 +3,10 @@ info:
   version: v0.9.0
   title: Garage Administration API v0+garage-v0.9.0
   description: |
-    Administrate your Garage cluster programatically, including status, layout, keys, buckets, and maintainance tasks.
-    
-    *Disclaimer: The API is not stable yet, hence its v0 tag. The API can change at any time, and changes can include breaking backward compatibility. Read the changelog and upgrade your scripts before upgrading. Additionnaly, this specification is very early stage and can contain bugs, especially on error return codes/types that are not tested yet. Do not expect a well finished and polished product!*
-paths: 
+    Administrate your Garage cluster programmatically, including status, layout, keys, buckets, and maintenance tasks.
+
+    *Disclaimer: The API is not stable yet, hence its v0 tag. The API can change at any time, and changes can include breaking backward compatibility. Read the changelog and upgrade your scripts before upgrading. Additionally, this specification is very early stage and can contain bugs, especially on error return codes/types that are not tested yet. Do not expect a well finished and polished product!*
+paths:
   /health:
     get:
       tags:
@@ -440,7 +440,7 @@ paths:
               - "false"
           example: "true"
           required: false
-          description: "Wether or not the secret key should be returned in the response"
+          description: "Whether or not the secret key should be returned in the response"
       responses:
         '500':
           description: "The server can not handle your request. Check your connectivity with the rest of the cluster."
