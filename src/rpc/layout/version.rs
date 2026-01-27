@@ -527,16 +527,16 @@ impl LayoutVersion {
 		let mut s_up = self.get_total_capacity();
 		while s_down + 1 < s_up {
 			g = self.generate_flow_graph(
-				(s_down + s_up) / 2,
+				u64::midpoint(s_down, s_up),
 				zone_to_id,
 				&empty_set,
 				zone_redundancy,
 			)?;
 			g.compute_maximal_flow()?;
 			if g.get_flow_value()? < (NB_PARTITIONS * self.replication_factor) as i64 {
-				s_up = (s_down + s_up) / 2;
+				s_up = u64::midpoint(s_down, s_up);
 			} else {
-				s_down = (s_down + s_up) / 2;
+				s_down = u64::midpoint(s_down, s_up);
 			}
 		}
 
