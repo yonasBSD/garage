@@ -49,12 +49,12 @@ The ring construction that selects `n_token` random positions for each nodes giv
 is not well-balanced: the space between the tokens varies a lot, and some partitions are thus bigger than others.
 This problem was demonstrated in the original Dynamo DB paper.
 
-To solve this, we want to apply a better second method for partitionning our dataset:
+To solve this, we want to apply a better second method for partitioning our dataset:
 
 1. fix an initially large number of partitions (say 1024) with evenly-spaced delimiters, 
 
 2. attribute each partition randomly to a node, with a probability
-   proportionnal to its capacity (which `n_tokens` represented in the first
+   proportional to its capacity (which `n_tokens` represented in the first
    method)
 
 For now we continue using the multi-DC ring walking described above.
@@ -66,7 +66,7 @@ I have studied two ways to do the attribution of partitions to nodes, in a way t
 
 MagLev provided significantly better balancing, as it guarantees that the exact
 same number of partitions is attributed to all nodes that have the same
-capacity (and that this number is proportionnal to the node's capacity, except
+capacity (and that this number is proportional to the node's capacity, except
 for large values), however in both cases:
 
 - the distribution is still bad, because we use the naive multi-DC ring walking

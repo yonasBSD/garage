@@ -176,7 +176,7 @@ Returns the cluster's current health in JSON format, with the following variable
   - degraded: Garage node is not connected to all storage nodes, but a quorum of write nodes is available for all partitions
   - unavailable: a quorum of write nodes is not available for some partitions
 - `knownNodes`: the number of nodes this Garage node has had a TCP connection to since the daemon started
-- `connectedNodes`: the nubmer of nodes this Garage node currently has an open connection to
+- `connectedNodes`: the number of nodes this Garage node currently has an open connection to
 - `storageNodes`: the number of storage nodes currently registered in the cluster layout
 - `storageNodesOk`: the number of storage nodes to which a connection is currently open
 - `partitions`: the total number of partitions of the data (currently always 256)
@@ -379,7 +379,7 @@ Example response:
 ]
 ```
 
-#### GetKeyInfo `GET /v2/GetKeyInfo?id=<acces key id>`
+#### GetKeyInfo `GET /v2/GetKeyInfo?id=<access key id>`
 #### GetKeyInfo `GET /v2/GetKeyInfo?search=<pattern>`
 
 Returns information about the requested API access key.
@@ -388,7 +388,7 @@ If `id` is set, the key is looked up using its exact identifier (faster).
 If `search` is set, the key is looked up using its name or prefix
 of identifier (slower, all keys are enumerated to do this).
 
-Optionnally, the query parameter `showSecretKey=true` can be set to reveal the
+Optionally, the query parameter `showSecretKey=true` can be set to reveal the
 associated secret access key.
 
 Example response:
@@ -487,7 +487,7 @@ Request body format:
 
 This returns the key info in the same format as the result of GetKeyInfo.
 
-#### UpdateKey `POST /v2/UpdateKey?id=<acces key id>`
+#### UpdateKey `POST /v2/UpdateKey?id=<access key id>`
 
 Updates information about the specified API access key.
 
@@ -509,7 +509,7 @@ The possible flags in `allow` and `deny` are: `createBucket`.
 
 This returns the key info in the same format as the result of GetKeyInfo.
 
-#### DeleteKey `POST /v2/DeleteKey?id=<acces key id>`
+#### DeleteKey `POST /v2/DeleteKey?id=<access key id>`
 
 Deletes an API access key.
 

@@ -372,7 +372,7 @@ Performance characteristics of the different DB engines are as follows:
     not recommended.
 
   - Keys in LMDB are limited to 511 bytes. This limit translates to limits on
-    object keys in S3 and sort keys in K2V that are limted to 479 bytes.
+    object keys in S3 and sort keys in K2V that are limited to 479 bytes.
 
 - **Sqlite:** Garage supports Sqlite as an alternative storage backend for
   metadata, which does not have the issues listed above for LMDB.  Sqlite is
@@ -396,7 +396,7 @@ garage convert-db -a <input db engine> -i <input db path> \
 ```
 
 Make sure to specify the full database path as presented in the table above
-(third colummn), and not just the path to the metadata directory.
+(third column), and not just the path to the metadata directory.
 
 #### `metadata_fsync` {#metadata_fsync}
 
@@ -554,7 +554,7 @@ awaits for one of the `block_max_concurrent_reads` slots to be available
 slot, it reads the entire block file to RAM and frees the slot as soon as the
 block file is finished reading. Only after the slot is released will the
 block's data start being transferred over the network.  If the request fails to
-acquire a reading slot wihtin 15 seconds, it fails with a timeout error.
+acquire a reading slot within 15 seconds, it fails with a timeout error.
 Timeout events can be monitored through the `block_read_semaphore_timeouts`
 metric in Prometheus: a non-zero number of such events indicates an I/O
 bottleneck on HDD read speed.
@@ -617,11 +617,11 @@ storing the secret as the `GARAGE_RPC_SECRET_FILE` environment variable.
 
 #### `rpc_bind_addr` {#rpc_bind_addr}
 
-The address and port on which to bind for inter-cluster communcations
-(reffered to as RPC for remote procedure calls).
+The address and port on which to bind for inter-cluster communications
+(referred to as RPC for remote procedure calls).
 The port specified here should be the same one that other nodes will used to contact
 the node, even in the case of a NAT: the NAT should be configured to forward the external
-port number to the same internal port nubmer. This means that if you have several nodes running
+port number to the same internal port number. This means that if you have several nodes running
 behind a NAT, they should each use a different RPC port number.
 
 #### `rpc_bind_outgoing` (since `v0.9.2`) {#rpc_bind_outgoing}
@@ -784,14 +784,14 @@ manually.
 #### `api_bind_addr` {#s3_api_bind_addr}
 
 The IP and port on which to bind for accepting S3 API calls.
-This endpoint does not suport TLS: a reverse proxy should be used to provide it.
+This endpoint does not support TLS: a reverse proxy should be used to provide it.
 
 Alternatively, since `v0.8.5`, a path can be used to create a unix socket with 0222 mode.
 
 #### `s3_region` {#s3_region}
 
-Garage will accept S3 API calls that are targetted to the S3 region defined here.
-API calls targetted to other regions will fail with a AuthorizationHeaderMalformed error
+Garage will accept S3 API calls that are targeted to the S3 region defined here.
+API calls targeted to other regions will fail with a AuthorizationHeaderMalformed error
 message that redirects the client to the correct region.
 
 #### `root_domain` {#s3_root_domain}
@@ -799,7 +799,7 @@ message that redirects the client to the correct region.
 The optional suffix to access bucket using vhost-style in addition to path-style request.
 Note path-style requests are always enabled, whether or not vhost-style is configured.
 Configuring vhost-style S3 required a wildcard DNS entry, and possibly a wildcard TLS certificate,
-but might be required by softwares not supporting path-style requests.
+but might be required by software not supporting path-style requests.
 
 If `root_domain` is `s3.garage.eu`, a bucket called `my-bucket` can be interacted with
 using the hostname `my-bucket.s3.garage.eu`.
@@ -815,7 +815,7 @@ behaviour of this module.
 
 The IP and port on which to bind for accepting HTTP requests to buckets configured
 for website access.
-This endpoint does not suport TLS: a reverse proxy should be used to provide it.
+This endpoint does not support TLS: a reverse proxy should be used to provide it.
 
 Alternatively, since `v0.8.5`, a path can be used to create a unix socket with 0222 mode.
 
@@ -888,7 +888,7 @@ You can use any random string for this value. We recommend generating a random t
 
 If this is set to `true`, accessing the metrics endpoint will always require
 an access token. Valid tokens include the `metrics_token` if it is set,
-and admin API token defined dynamicaly in Garage which have
+and admin API token defined dynamically in Garage which have
 the `Metrics` endpoint in their scope.
 
 #### `trace_sink` {#admin_trace_sink}

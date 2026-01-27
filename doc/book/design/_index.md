@@ -10,7 +10,7 @@ perspective.  It will allow you to understand if Garage is a good fit for
 you, how to better use it, how to contribute to it, what can Garage could
 and could not do, etc.
 
-- **[Goals and use cases](@/documentation/design/goals.md):** This page explains why Garage was concieved and what practical use cases it targets.
+- **[Goals and use cases](@/documentation/design/goals.md):** This page explains why Garage was conceived and what practical use cases it targets.
 
 - **[Related work](@/documentation/design/related-work.md):** This pages presents the theoretical background on which Garage is built, and describes other software storage solutions and why they didn't work for us.
 
@@ -31,5 +31,3 @@ We love to talk and hear about Garage, that's why we keep a log here:
   - [(en, 2021-04-28) Distributed object storage is centralised](https://git.deuxfleurs.fr/Deuxfleurs/garage/src/commit/b1f60579a13d3c5eba7f74b1775c84639ea9b51a/doc/talks/2021-04-28_spirals-team/talk.pdf)
 
   - [(fr, 2020-12-02) Garage : jouer dans la cour des grands quand on est un hébergeur associatif](https://git.deuxfleurs.fr/Deuxfleurs/garage/src/commit/b1f60579a13d3c5eba7f74b1775c84639ea9b51a/doc/talks/2020-12-02_wide-team/talk.pdf)
-
-

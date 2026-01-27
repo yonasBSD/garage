@@ -23,7 +23,7 @@ This logic is defined in `nix/build_index.nix`.
 For each commit, we first pass the code to a formatter (rustfmt) and a linter (clippy).
 Then we try to build it in debug mode and run both unit tests and our integration tests.
 
-Additionnaly, when releasing, our integration tests are run on the release build for amd64 and i686.
+Additionally, when releasing, our integration tests are run on the release build for amd64 and i686.
 
 ## Generated Artifacts
 
@@ -32,7 +32,7 @@ We generate the following binary artifacts for now:
   - **os**: linux
   - **format**: static binary, docker container
 
-Additionnaly we also build two web pages and one JSON document:
+Additionally we also build two web pages and one JSON document:
   - the documentation (this website)
   - [the release page](https://garagehq.deuxfleurs.fr/_releases.html)
   - [the release list in JSON format](https://garagehq.deuxfleurs.fr/_releases.json)
@@ -67,7 +67,7 @@ nix copy --to 's3://nix?endpoint=garage.deuxfleurs.fr&region=garage&secret-key=/
 The previous command will only send the built package and not its dependencies.
 In the case of our CI pipeline, we want to cache all intermediate build steps
 as well. This can be done using this quite involved command (here as an example
-for the `pkgs.amd64.relase` package):
+for the `pkgs.amd64.release` package):
 
 ```bash
 nix copy -j8 \
@@ -174,5 +174,3 @@ drone sign --save Deuxfleurs/garage
 ```
 
 Looking at the file, you will see that most of the commands are `nix-shell` and `nix-build` commands with various parameters.
-
-

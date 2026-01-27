@@ -56,7 +56,7 @@ From a high level perspective, a major upgrade looks like this:
   10. Enable API access (reverse step 1)
   11. Monitor your cluster while load comes back, check that all your applications are happy with this new version
 
-### Major upgarades with minimal downtime
+### Major upgrades with minimal downtime
 
 There is only one operation that has to be coordinated cluster-wide: the switch of one version of the internal RPC protocol to the next.
 This means that an upgrade with very limited downtime can simply be performed from one major version to the next by restarting all nodes

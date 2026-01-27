@@ -94,7 +94,7 @@ delete a tombstone, the following condition has to be met:
 
 - All nodes responsible for storing this entry are aware of the existence of
   the tombstone, i.e. they cannot hold another version of the entry that is
-  superseeded by the tombstone. This ensures that deleting the tombstone is
+  superseded by the tombstone. This ensures that deleting the tombstone is
   safe and that no deleted value will come back in the system.
 
 Garage uses atomic database operations (such as compare-and-swap and
@@ -141,4 +141,3 @@ rebalance of data, this would have led to the disk utilization to explode
 during the rebalancing, only to shrink again after 24 hours. The 10-minute
 delay is a compromise that gives good security while not having this problem of
 disk space explosion on rebalance.
-

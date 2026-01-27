@@ -242,7 +242,7 @@ dc3                 Tags   Partitions        Capacity   Usable capacity
   TOTAL                    256 (256 unique)  2.0 GB     1000.0 MB (50.0%)
 ```
 
-As we can see, the node that was moved to `dc3` (node4) is only used at 25% (approximatively),
+As we can see, the node that was moved to `dc3` (node4) is only used at 25% (approximately),
 whereas the node that was already in `dc3` (node3) is used at 75%.
 
 This can be explained by the following:
@@ -260,7 +260,7 @@ This can be explained by the following:
  data can be removed to be moved to node1.
 
 - Garage will move data in equal proportions from all possible sources, in this
-  case it means that it will tranfer 25% of the entire data set from node3 to
+  case it means that it will transfer 25% of the entire data set from node3 to
   node1 and another 25% from node4 to node1.
 
 This explains why node3 ends with 75% utilization (100% from before minus 25%

@@ -19,7 +19,7 @@ The migration steps are as follows:
 2. Disable API and web access. Garage does not support disabling
    these endpoints but you can change the port number or stop your reverse
    proxy for instance.
-3. Check once again that your cluster is healty. Run again `garage repair --all-nodes --yes tables` which is quick.
+3. Check once again that your cluster is healthy. Run again `garage repair --all-nodes --yes tables` which is quick.
    Also check your queues are empty, run `garage stats` to query them.
 4. Turn off Garage v0.6
 5. Backup the metadata folder of all your nodes: `cd /var/lib/garage ; tar -acf meta-v0.6.tar.zst meta/`

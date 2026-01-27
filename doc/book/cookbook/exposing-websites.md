@@ -9,7 +9,7 @@ There are three methods to expose buckets as website:
 
 1. using the PutBucketWebsite S3 API call, which is allowed for access keys that have the owner permission bit set
 
-2. from the Garage CLI, by an adminstrator of the cluster
+2. from the Garage CLI, by an administrator of the cluster
 
 3. using the Garage administration API
 

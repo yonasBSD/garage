@@ -51,4 +51,4 @@ We are currently building this SDK for [Python](@/documentation/build/python.md#
 
 More information:
   - [In the reference manual](@/documentation/reference-manual/admin-api.md)
-  - [Full specifiction](https://garagehq.deuxfleurs.fr/api/garage-admin-v0.html)
+  - [Full specification](https://garagehq.deuxfleurs.fr/api/garage-admin-v0.html)

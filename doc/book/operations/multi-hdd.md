@@ -40,7 +40,7 @@ First of all, Garage divides the set of all possible block hashes
 in a fixed number of slices (currently 1024), and assigns
 to each slice a primary storage location among the specified data directories.
 The number of slices having their primary location in each data directory
-is proportionnal to the capacity specified in the config file.
+is proportional to the capacity specified in the config file.
 
 When Garage receives a block to write, it will always write it in the primary
 directory of the slice that contains its hash.

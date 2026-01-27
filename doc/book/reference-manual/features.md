@@ -46,7 +46,7 @@ to select the replication mode best suited to your use case (hint: in most cases
 
 ### Compression and deduplication
 
-All data stored in Garage is deduplicated, and optionnally compressed using
+All data stored in Garage is deduplicated, and optionally compressed using
 Zstd.  Objects uploaded to Garage are chunked in blocks of constant sizes (see
 [`block_size`](@/documentation/reference-manual/configuration.md#block_size)),
 and the hashes of individual blocks are used to dispatch them to storage nodes
@@ -84,13 +84,13 @@ exposing the same content under different domain names.
 
 Garage also supports bucket aliases which are local to a single user:
 this allows different users to have different buckets with the same name, thus avoiding naming collisions.
-This can be helpfull for instance if you want to write an application that creates per-user buckets with always the same name.
+This can be helpful for instance if you want to write an application that creates per-user buckets with always the same name.
 
 This feature is totally invisible to S3 clients and does not break compatibility with AWS.
 
 ### Cluster administration API
 
-Garage provides a fully-fledged REST API to administer your cluster programatically.
+Garage provides a fully-fledged REST API to administer your cluster programmatically.
 Functionality included in the admin API include: setting up and monitoring
 cluster nodes, managing access credentials, and managing storage buckets and bucket aliases.
 A full reference of the administration API is available [here](@/documentation/reference-manual/admin-api.md).
@@ -100,7 +100,7 @@ A full reference of the administration API is available [here](@/documentation/r
 Garage makes some internal metrics available in the Prometheus data format,
 which allows you to build interactive dashboards to visualize the load and internal state of your storage cluster.
 
-For developpers and performance-savvy administrators,
+For developers and performance-savvy administrators,
 Garage also supports exporting traces of what it does internally in OpenTelemetry format.
 This allows to monitor the time spent at various steps of the processing of requests,
 in order to detect potential performance bottlenecks.

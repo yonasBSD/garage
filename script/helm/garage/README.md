@@ -29,7 +29,7 @@ S3-compatible object store for small self-hosted geo-distributed deployments
 | garage.dbEngine | string | `"lmdb"` | Can be changed for better performance on certain systems https://garagehq.deuxfleurs.fr/documentation/reference-manual/configuration/#db_engine |
 | garage.existingConfigMap | string | `""` | if not empty string, allow using an existing ConfigMap for the garage.toml, if set, ignores garage.toml |
 | garage.garageTomlString | string | `""` | String Template for the garage configuration if set, ignores above values. Values can be templated, see https://garagehq.deuxfleurs.fr/documentation/reference-manual/configuration/ |
-| garage.kubernetesSkipCrd | bool | `false` | Set to true if you want to use k8s discovery but install the CRDs manually outside of the helm chart, for example if you operate at namespace level without cluster ressources |
+| garage.kubernetesSkipCrd | bool | `false` | Set to true if you want to use k8s discovery but install the CRDs manually outside of the helm chart, for example if you operate at namespace level without cluster resources |
 | garage.replicationFactor | string | `"3"` | Default to 3 replicas, see the replication_factor section at https://garagehq.deuxfleurs.fr/documentation/reference-manual/configuration/#replication_factor |
 | garage.consistencyMode | string | `"consistent"` | Default to read-after-write consistency, see the consistency_mode section at https://garagehq.deuxfleurs.fr/documentation/reference-manual/configuration/#consistency_mode |
 | garage.metadataAutoSnapshotInterval | string | `""` | If this value is set, Garage will automatically take a snapshot of the metadata DB file at a regular interval and save it in the metadata directory. https://garagehq.deuxfleurs.fr/documentation/reference-manual/configuration/#metadata_auto_snapshot_interval |
@@ -76,7 +76,7 @@ S3-compatible object store for small self-hosted geo-distributed deployments
 | persistence.enabled | bool | `true` |  |
 | persistence.meta.hostPath | string | `"/var/lib/garage/meta"` |  |
 | persistence.meta.size | string | `"100Mi"` |  |
-| podAnnotations | object | `{}` | additonal pod annotations |
+| podAnnotations | object | `{}` | additional pod annotations |
 | podSecurityContext.fsGroup | int | `1000` |  |
 | podSecurityContext.runAsGroup | int | `1000` |  |
 | podSecurityContext.runAsNonRoot | bool | `true` |  |

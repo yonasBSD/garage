@@ -28,11 +28,11 @@ We should try to test in least invasive ways, i.e. minimize the impact of the te
 - Not making `garage` a shared library (launch using `execve`, it's perfectly fine)
 
 Instead, we should focus on building a clean outer interface for the `garage` binary,
-for example loading configuration using environnement variables instead of the configuration file if that's helpfull for writing the tests.
+for example loading configuration using environment variables instead of the configuration file if that's helpful for writing the tests.
 
 There are two reasons for this:
 
-- Keep the soure code clean and focused
+- Keep the source code clean and focused
 - Test something that is as close as possible as the true garage that will actually be running
 
 Reminder: rules of simplicity, concerning changes to Garage's source code.
@@ -71,5 +71,3 @@ Interesting blog posts on the blog of the Sled database:
 Misc:
   - [mutagen](https://github.com/llogiq/mutagen) - mutation testing is a way to assert our test quality by mutating the code and see if the mutation makes the tests fail
   - [fuzzing](https://rust-fuzz.github.io/book/) - cargo supports fuzzing, it could be a way to test our software reliability in presence of garbage data.
-  
-

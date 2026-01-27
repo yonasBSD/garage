@@ -54,7 +54,7 @@ garage bucket allow nextcloud --read --write --key nextcloud-key
 
 Now edit your Nextcloud configuration file to enable object storage.
 On my installation, the config. file is located at the following path: `/var/www/nextcloud/config/config.php`.  
-We will add a new root key to the `$CONFIG` dictionnary named `objectstore`:
+We will add a new root key to the `$CONFIG` dictionary named `objectstore`:
 
 ```php
 <?php
@@ -413,7 +413,7 @@ mc mirror --newer-than "3h" ./public/system/ garage/mastodon-data
 
 ## Matrix
 
-Matrix is a chat communication protocol. Its main stable server implementation, [Synapse](https://matrix-org.github.io/synapse/latest/), provides a module to store media on a S3 backend. Additionally, a server independent media store supporting S3 has been developped by the community, it has been made possible thanks to how the matrix API has been designed and will work with implementations like Conduit, Dendrite, etc.
+Matrix is a chat communication protocol. Its main stable server implementation, [Synapse](https://matrix-org.github.io/synapse/latest/), provides a module to store media on a S3 backend. Additionally, a server independent media store supporting S3 has been developed by the community, it has been made possible thanks to how the matrix API has been designed and will work with implementations like Conduit, Dendrite, etc.
 
 ### synapse-s3-storage-provider (synapse only)
 
@@ -450,7 +450,7 @@ media_storage_providers:
 
 Note that uploaded media will also be stored locally and this behavior can not be deactivated, it is even required for
 some operations like resizing images.
-In fact, your local filesysem is considered as a cache but without any automated way to garbage collect it.
+In fact, your local filesystem is considered as a cache but without any automated way to garbage collect it.
 
 We can build our garbage collector with `s3_media_upload`, a tool provided with the module.
 If you installed the module with the command provided before, you should be able to bring it in your path:
@@ -646,7 +646,7 @@ s3:
     b2-eu-cen: # Don't change this key, it is hardcoded
         key: <keyID> 
         secret: <keySecret>
-        endpoint: garage:3900 # publically accessible endpoint of your garage instance
+        endpoint: garage:3900 # publicly accessible endpoint of your garage instance
         region: garage
         bucket: <yourbucketName>
         use_path_style: true
@@ -730,7 +730,7 @@ Pleroma have an internal migration tool that can encounter some fatal error
 
 So, use [your best tool](https://garagehq.deuxfleurs.fr/documentation/connect/cli/) to sync `/var/lib/pleroma/uploads/` in your S3.
 
-Then, to avoid some non existant problem (just in case of), run this command
+Then, to avoid some non existent problem (just in case of), run this command
 
 ```bash
 while true

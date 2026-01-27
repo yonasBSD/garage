@@ -23,7 +23,7 @@ To configure S3-compatible software to interact with Garage,
 you will need the following parameters:
 
 - An **API endpoint**: this corresponds to the HTTP or HTTPS address
-  used to contact the Garage server. When runing Garage locally this will usually
+  used to contact the Garage server. When running Garage locally this will usually
   be `http://127.0.0.1:3900`. In a real-world setting, you would usually have a reverse-proxy
   that adds TLS support and makes your Garage server available under a public hostname
   such as `https://garage.example.com`.

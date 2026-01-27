@@ -47,7 +47,7 @@ All possible configuration values can be found with:
 helm show values ./garage
 ```
 
-This is an example `values.overrride.yaml` for deploying in a microk8s cluster with a https s3 api ingress route:
+This is an example `values.override.yaml` for deploying in a microk8s cluster with a https s3 api ingress route:
 
 ```yaml
 garage:

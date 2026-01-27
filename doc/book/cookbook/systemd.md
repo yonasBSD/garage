@@ -38,7 +38,7 @@ WantedBy=multi-user.target
 id is dynamically allocated by systemd (set with `DynamicUser=true`). It cannot
 access (read or write) home folders (`/home`, `/root` and `/run/user`), the
 rest of the filesystem can only be read but not written, only the path seen as
-`/var/lib/garage` is writable as seen by the service. Additionnaly, the process
+`/var/lib/garage` is writable as seen by the service. Additionally, the process
 can not gain new privileges over time.
 
 For this to work correctly, your `garage.toml` must be set with

@@ -25,7 +25,7 @@ sudo apt-get install build-essential
 The primary location for Garage's source code is the
 [Forgejo repository](https://git.deuxfleurs.fr/Deuxfleurs/garage),
 which contains all of the released versions as well as the code
-for the developpement of the next version.
+for the development of the next version.
 
 Clone the repository and enter it as follows:
 
@@ -41,7 +41,7 @@ git tag  				# List available tags
 git checkout v0.8.0		# Change v0.8.0 with the version you wish to build
 ```
 
-Otherwise you will be building a developpement build from the `main` branch
+Otherwise you will be building a development build from the `main` branch
 that includes all of the changes to be released in the next version.
 Be careful that such a build might be unstable or contain bugs,
 and could be incompatible with nodes that run stable versions of Garage.

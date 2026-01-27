@@ -3,7 +3,7 @@ title = "S3 compatibility target"
 weight = 5
 +++
 
-If there is a specific S3 functionnality you have a need for, feel free to open
+If there is a specific S3 functionality you have a need for, feel free to open
 a PR to put the corresponding endpoints higher in the list.  Please explain
 your motivations for doing so in the PR message.
 

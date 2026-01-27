@@ -45,7 +45,7 @@ we suppose that OpenIO supports presigned URLs.
 All endpoints that are missing on Garage will return a 501 Not Implemented.
 Some `x-amz-` headers are not implemented.
 
-### Core endoints
+### Core endpoints
 
 | Endpoint                     | Garage                           | [Openstack Swift](https://docs.openstack.org/swift/latest/s3_compat.html) | [Ceph Object Gateway](https://docs.ceph.com/en/latest/radosgw/s3/) | [Riak CS](https://docs.riak.com/riak/cs/2.1.1/references/apis/storage/s3/index.html) | [OpenIO](https://docs.openio.io/latest/source/arch-design/s3_compliancy.html) |
 |------------------------------|----------------------------------|-----------------|---------------|---------|-----|
@@ -135,12 +135,12 @@ If you need this feature, please [share your use case in our dedicated issue](ht
 **PutBucketLifecycleConfiguration:** The only actions supported are
 `AbortIncompleteMultipartUpload` and `Expiration` (without the
 `ExpiredObjectDeleteMarker` field).  All other operations are dependent on
-either bucket versionning or storage classes which Garage currently does not
+either bucket versioning or storage classes which Garage currently does not
 implement. The deprecated `Prefix` member directly in the the `Rule`
 structure/XML tag is not supported, specified prefixes must be inside the
 `Filter` structure/XML tag.
 
-**GetBucketVersioning:** Stub implementation which always returns "versionning not enabled", since Garage does not yet support bucket versionning.
+**GetBucketVersioning:** Stub implementation which always returns "versioning not enabled", since Garage does not yet support bucket versioning.
 
 ### Replication endpoints
 
@@ -155,7 +155,7 @@ Please open an issue if you have a use case for replication.
 *Note: Ceph documentation briefly says that Ceph supports
 [replication through the S3 API](https://docs.ceph.com/en/latest/radosgw/multisite-sync-policy/#s3-replication-api)
 but with some limitations.
-Additionaly, replication endpoints are not documented in the S3 compatibility page so I don't know what kind of support we can expect.*
+Additionally, replication endpoints are not documented in the S3 compatibility page so I don't know what kind of support we can expect.*
 
 ### Locking objects
 
@@ -197,7 +197,7 @@ Please open an issue if you have a use case.
 
 ### Vendor specific endpoints
 
-<details><summary>Display Amazon specifc endpoints</summary>
+<details><summary>Display Amazon specific endpoints</summary>
 
 
 | Endpoint                     | Garage                           | [Openstack Swift](https://docs.openstack.org/swift/latest/s3_compat.html) | [Ceph Object Gateway](https://docs.ceph.com/en/latest/radosgw/s3/) | [Riak CS](https://docs.riak.com/riak/cs/2.1.1/references/apis/storage/s3/index.html) | [OpenIO](https://docs.openio.io/latest/source/arch-design/s3_compliancy.html) |
@@ -234,4 +234,3 @@ Please open an issue if you have a use case.
 | [SelectObjectContent](https://docs.aws.amazon.com/AmazonS3/latest/API/API_SelectObjectContent.html) | ❌ Missing | ❌| ❌| ❌| ❌|
 
 </details>
-

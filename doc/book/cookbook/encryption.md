@@ -33,7 +33,7 @@ by adding encryption at different levels.
 
 We would be very curious to know your needs and thougs about ideas such as
 encryption practices and things like key management, as we want Garage to be a
-serious base platform for the developpment of secure, encrypted applications.
+serious base platform for the development of secure, encrypted applications.
 Do not hesitate to come talk to us if you have any thoughts or questions on the
 subject.
 
@@ -59,7 +59,7 @@ For standard S3 API requests, Garage does not encrypt data at rest by itself.
 For the most generic at rest encryption of data, we recommend setting up your
 storage partitions on encrypted LUKS devices.
 
-If you are developping your own client software that makes use of S3 storage,
+If you are developing your own client software that makes use of S3 storage,
 we recommend implementing data encryption directly on the client side and never
 transmitting plaintext data to Garage. This makes it easy to use an external
 untrusted storage provider if necessary.
@@ -108,14 +108,14 @@ Protects against the following threats:
 
 - Stolen HDD
 
-Crucially, does not protect againt malicious sysadmins or remote attackers that
+Crucially, does not protect against malicious sysadmins or remote attackers that
 might gain access to your servers.
 
 Methods include full-disk encryption with tools such as LUKS.
 
 ## Encrypting data on the client side
 
-Protects againt the following threats:
+Protects against the following threats:
 
 - A honest-but-curious administrator
 - A malicious administrator that tries to corrupt your data

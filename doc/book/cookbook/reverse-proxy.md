@@ -272,7 +272,7 @@ Add the following configuration section [to compress response](https://doc.traef
 
 ### Add caching response
 
-Traefik's caching middleware is only available on [entreprise version](https://doc.traefik.io/traefik-enterprise/middlewares/http-cache/), however the freely-available [Souin plugin](https://github.com/darkweak/souin#tr%C3%A6fik-container) can also do the job. (section to be completed)
+Traefik's caching middleware is only available on [enterprise version](https://doc.traefik.io/traefik-enterprise/middlewares/http-cache/), however the freely-available [Souin plugin](https://github.com/darkweak/souin#tr%C3%A6fik-container) can also do the job. (section to be completed)
 
 ### Complete example
 

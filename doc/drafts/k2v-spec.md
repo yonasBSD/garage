@@ -35,7 +35,7 @@ Triples in K2V are constituted of three fields:
   partition key in which the client wants to read/delete lists of items
 
 - a sort key (`sk`), an utf8 string that defines the index of the triplet inside its
-  partition; triplets are uniquely idendified by their partition key + sort key
+  partition; triplets are uniquely identified by their partition key + sort key
 
 - a value (`v`), an opaque binary blob associated to the partition key + sort key;
   they are transmitted as binary when possible but in most case in the JSON API
@@ -74,7 +74,7 @@ are obsoleted by the new write.
 
 **Basic insertion.** To insert a new value `v4` with context `[(node1, t2), (node2, t3)]`, in a
 simple case where there was no insertion in-between reading the value
-mentionned above and writing `v4`, and supposing that node2 receives the
+mentioned above and writing `v4`, and supposing that node2 receives the
 InsertItem query:
 
 - `node2` generates a timestamp `t4` such that `t4 > t3`.
@@ -332,7 +332,7 @@ Inserts a single item. This request does not use JSON, the body is sent directly
 
 To supersede previous values, the HTTP header `X-Garage-Causality-Token` should
 be set to the causality token returned by a previous read on this key. This
-header can be ommitted for the first writes to the key.
+header can be omitted for the first writes to the key.
 
 Example query:
 
@@ -397,7 +397,7 @@ smallest partition key that exists.  It returns partition keys in increasing
 order, or decreasing order if `reverse` is set to `true`,
 and stops when either of the following conditions is met:
 
-1. if `end` is specfied, the partition key `end` is reached or surpassed (if it
+1. if `end` is specified, the partition key `end` is reached or surpassed (if it
    is reached exactly, it is not included in the result)
 
 2. if `limit` is specified, `limit` partition keys have been listed
@@ -491,7 +491,7 @@ the triplet is inserted for the first time, the causality token should be set to
 
 The value is expected to be a base64-encoded binary blob. The value `null` can
 also be used to delete the triplet while preserving causality information: this
-allows to know if a delete has happenned concurrently with an insert, in which
+allows to know if a delete has happened concurrently with an insert, in which
 case both are preserved and returned on reads (see below).
 
 Partition keys and sort keys are utf8 strings which are stored sorted by
@@ -540,7 +540,7 @@ JSON struct with the following fields:
 
 For each of the searches, triplets are listed and returned separately. The
 semantics of `prefix`, `start`, `end`, `limit` and `reverse` are the same as for ReadIndex. The
-additionnal parameter `singleItem` allows to get a single item, whose sort key
+additional parameter `singleItem` allows to get a single item, whose sort key
 is the one given in `start`. Parameters `conflictsOnly` and `tombstones`
 control additional filters on the items that are returned.
 

@@ -41,7 +41,7 @@ Some commands:
 # list buckets
 mc ls garage/
 
-# list objets in a bucket
+# list objects in a bucket
 mc ls garage/my_files
 
 # copy from your filesystem to garage
@@ -218,7 +218,7 @@ Within Cyberduck, a
 available within the `Preferences -> Profiles` section. This can enabled and
 then connections to Garage may be configured.
 
-### Instuctions for the CLI
+### Instructions for the CLI
 
 To configure duck (Cyberduck's CLI tool), start by creating its folder hierarchy:
 

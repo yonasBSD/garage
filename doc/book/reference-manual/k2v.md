@@ -19,7 +19,7 @@ The specification of the K2V API can be found
 [here](https://git.deuxfleurs.fr/Deuxfleurs/garage/src/commit/f8be15c37db857e177d543de7be863692628d567/doc/drafts/k2v-spec.md).
 This document also includes a high-level overview of K2V's design.
 
-The K2V API uses AWSv4 signatures for authentification, same as the S3 API.
+The K2V API uses AWSv4 signatures for authentication, same as the S3 API.
 The AWS region used for signature calculation is always the same as the one
 defined for the S3 API in the config file.
 
@@ -55,4 +55,3 @@ cargo build --features cli --bin k2v-cli
 The CLI utility is self-documented, run `k2v-cli --help` to learn how to use
 it. There is also a short README.md in the `src/k2v-client` folder with some
 instructions.
-

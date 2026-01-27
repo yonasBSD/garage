@@ -68,7 +68,7 @@ Workflow for DELETE:
 1. Check write permission (LDAP)
 2. Get current version (or versions) in object table
 3. Do the deletion of those versions NOT IN A BACKGROUND JOB THIS TIME
-4. Return succes to the user if we were able to delete blocks from the blocks table and entries from the object table
+4. Return success to the user if we were able to delete blocks from the blocks table and entries from the object table
 
 To delete a version:
 
@@ -92,7 +92,7 @@ Known issue: if someone is reading from a version that we want to delete and the
 - file path = /meta/(first 3 hex digits of hash)/(rest of hash)
 - map block hash -> set of version UUIDs where it is referenced
 
-Usefull metadata:
+Useful metadata:
 
 - list of versions that reference this block in the Casandra table, so that we can do GC by checking in Cassandra that the lines still exist
 - list of other nodes that we know have acknowledged a write of this block, useful in the rebalancing algorithm

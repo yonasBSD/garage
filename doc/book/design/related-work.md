@@ -37,7 +37,7 @@ However, Amazon S3 source code is not open but alternatives were proposed.
 We identified Minio, Pithos, Swift and Ceph.
 Minio/Ceph enforces a total order, so properties similar to a (relaxed) filesystem.
 Swift and Pithos are probably the most similar to AWS S3 with their consistent hashing ring.
-However Pithos is not maintained anymore. More precisely the company that published Pithos version 1 has developped a second version 2 but has not open sourced it.
+However Pithos is not maintained anymore. More precisely the company that published Pithos version 1 has developed a second version 2 but has not open sourced it.
 Some tests conducted by the [ACIDES project](https://acides.org/) have shown that Openstack Swift consumes way more resources (CPU+RAM) that we can afford. Furthermore, people developing Swift have not designed their software for geo-distribution.
 
 There were many attempts in research too. I am only thinking to [LBFS](https://pdos.csail.mit.edu/papers/lbfs:sosp01/lbfs.pdf) that was used as a basis for Seafile. But none of them have been effectively implemented yet.
@@ -63,7 +63,7 @@ Due to its industry oriented design, Ceph is also far from being *Simple* to ope
 In a certain way, Ceph and MinIO are closer together than they are from Garage or OpenStack Swift.
 
 **[Pithos](https://github.com/exoscale/pithos):**
-Pithos has been abandonned and should probably not used yet, in the following we explain why we did not pick their design.
+Pithos has been abandoned and should probably not used yet, in the following we explain why we did not pick their design.
 Pithos was relying as a S3 proxy in front of Cassandra (and was working with Scylla DB too).
 From its designers' mouth, storing data in Cassandra has shown its limitations justifying the project abandonment.
 They built a closed-source version 2 that does not store blobs in the database (only metadata) but did not communicate further on it.

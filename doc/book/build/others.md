@@ -5,13 +5,13 @@ weight = 99
 
 ## S3
 
-If you are developping a new application, you may want to use Garage to store your user's media.
+If you are developing a new application, you may want to use Garage to store your user's media.
 
 The S3 API that Garage uses is a standard REST API, so as long as you can make HTTP requests,
 you can query it. You can check the [S3 REST API Reference](https://docs.aws.amazon.com/AmazonS3/latest/API/API_Operations_Amazon_Simple_Storage_Service.html) from Amazon to learn more.
 
-Developping your own wrapper around the REST API is time consuming and complicated.
-Instead, there are some libraries already avalaible.
+Developing your own wrapper around the REST API is time consuming and complicated.
+Instead, there are some libraries already available.
 
 Some of them are maintained by Amazon, some by Minio, others by the community.
 

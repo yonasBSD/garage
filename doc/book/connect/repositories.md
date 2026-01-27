@@ -201,11 +201,9 @@ on the binary cache, the client will download the result from the cache instead 
 
 ### Channels
 
-Channels additionnaly serve Nix definitions, ie. a `.nix` file referencing
+Channels additionally serve Nix definitions, ie. a `.nix` file referencing
 all the derivations you want to serve.
 
 ## Gitlab
 
 *External link:* [Gitlab Documentation > Object storage](https://docs.gitlab.com/ee/administration/object_storage.html)
-
-

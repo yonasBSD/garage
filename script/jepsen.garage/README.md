@@ -127,7 +127,7 @@ They are due to the download being interrupted in the middle (^C during first la
 Add `:force?` to the `cached-wget!` call in `daemon.clj` to re-download the binary,
 or restar the VMs to clear temporary files.
 
-### In `jepsen.garage`: prefix wierdness
+### In `jepsen.garage`: prefix weirdness
 
 In `store/garage set1/20231019T163358.615+0200`:
 
@@ -146,12 +146,12 @@ and passing all values that were previously in the context (creds and prefix) as
 The reg2 test is our custom checker for CRDT read-after-write on individual object keys, acting as registers which can be updated.
 The test fails without the timestamp fix, which is expected as the clock scrambler will prevent nodes from having a correct ordering of objects.
 
-With the timestamp fix (`--patch tsfix1`), the happenned-before relationship should at least be respected, meaning that when a PutObject call starts
+With the timestamp fix (`--patch tsfix1`), the happened-before relationship should at least be respected, meaning that when a PutObject call starts
 after another PutObject call has ended, the second call should overwrite the value of the first call, and that value should not be
 readable by future GetObject calls.
 However, we observed inconsistencies even with the timestamp fix.
 
-The inconsistencies seemed to always happenned after writing a nil value, which translates to a DeleteObject call
+The inconsistencies seemed to always happened after writing a nil value, which translates to a DeleteObject call
 instead of a PutObject. By removing the possibility of writing nil values, therefore only doing
 PutObject calls, the issue disappears. There is therefore an issue to fix in DeleteObject.
 
