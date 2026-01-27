@@ -191,10 +191,10 @@ pub async fn handle_head_without_ctx(
 
 	let checksum_mode = checksum_mode(&req);
 
-	if let Some(pn) = part_number {
+	if let Some(part_number) = part_number {
 		match version_data {
 			ObjectVersionData::Inline(_, _) => {
-				if pn != 1 {
+				if part_number != 1 {
 					return Err(Error::InvalidPart);
 				}
 				let bytes_len = version_meta.size;
@@ -223,7 +223,7 @@ pub async fn handle_head_without_ctx(
 				check_version_not_deleted(&version)?;
 
 				let (part_offset, part_end) =
-					calculate_part_bounds(&version, pn).ok_or(Error::InvalidPart)?;
+					calculate_part_bounds(&version, part_number).ok_or(Error::InvalidPart)?;
 
 				Ok(object_headers(
 					object_version,
