@@ -236,7 +236,7 @@ impl PeeringManager {
 		);
 		known_hosts.update_hash();
 
-		let strat = Arc::new(Self {
+		let strategy = Arc::new(Self {
 			netapp: netapp.clone(),
 			known_hosts: RwLock::new(known_hosts),
 			public_peer_list: ArcSwap::new(Arc::new(Vec::new())),
@@ -246,22 +246,22 @@ impl PeeringManager {
 			ping_timeout_millis: DEFAULT_PING_TIMEOUT_MILLIS.into(),
 		});
 
-		strat.update_public_peer_list(&strat.known_hosts.read().unwrap());
+		strategy.update_public_peer_list(&strategy.known_hosts.read().unwrap());
 
-		strat.ping_endpoint.set_handler(strat.clone());
-		strat.peer_list_endpoint.set_handler(strat.clone());
+		strategy.ping_endpoint.set_handler(strategy.clone());
+		strategy.peer_list_endpoint.set_handler(strategy.clone());
 
-		let strat2 = strat.clone();
+		let strategy2 = strategy.clone();
 		netapp.on_connected(move |id: NodeID, addr: SocketAddr, is_incoming: bool| {
-			strat2.on_connected(id, addr, is_incoming);
+			strategy2.on_connected(id, addr, is_incoming);
 		});
 
-		let strat2 = strat.clone();
+		let strategy2 = strategy.clone();
 		netapp.on_disconnected(move |id: NodeID, is_incoming: bool| {
-			strat2.on_disconnected(id, is_incoming);
+			strategy2.on_disconnected(id, is_incoming);
 		});
 
-		strat
+		strategy
 	}
 
 	/// Run the full mesh peering strategy.

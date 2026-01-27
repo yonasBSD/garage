@@ -162,7 +162,7 @@ impl RpcHelper {
 		endpoint: &Endpoint<M, H>,
 		to: Uuid,
 		msg: N,
-		strat: RequestStrategy<()>,
+		strategy: RequestStrategy<()>,
 	) -> Result<S, Error>
 	where
 		M: Rpc<Response = Result<S, Error>>,
@@ -185,12 +185,12 @@ impl RpcHelper {
 
 		let node_id = to.into();
 		let rpc_call = endpoint
-			.call_streaming(&node_id, msg, strat.rs_priority)
+			.call_streaming(&node_id, msg, strategy.rs_priority)
 			.with_context(Context::current_with_span(span))
 			.record_duration(&self.0.metrics.rpc_duration, &metric_tags);
 
 		let timeout = async {
-			match strat.rs_timeout {
+			match strategy.rs_timeout {
 				Timeout::None => futures::future::pending().await,
 				Timeout::Default => tokio::time::sleep(self.0.rpc_timeout).await,
 				Timeout::Custom(t) => tokio::time::sleep(t).await,
@@ -222,7 +222,7 @@ impl RpcHelper {
 		endpoint: &Endpoint<M, H>,
 		to: &[Uuid],
 		msg: N,
-		strat: RequestStrategy<()>,
+		strategy: RequestStrategy<()>,
 	) -> Result<Vec<(Uuid, Result<S, Error>)>, Error>
 	where
 		M: Rpc<Response = Result<S, Error>>,
@@ -237,7 +237,7 @@ impl RpcHelper {
 
 		let resps = join_all(
 			to.iter()
-				.map(|to| self.call(endpoint, *to, msg.clone(), strat.clone())),
+				.map(|to| self.call(endpoint, *to, msg.clone(), strategy.clone())),
 		)
 		.with_context(Context::current_with_span(span))
 		.await;
@@ -252,7 +252,7 @@ impl RpcHelper {
 		&self,
 		endpoint: &Endpoint<M, H>,
 		msg: N,
-		strat: RequestStrategy<()>,
+		strategy: RequestStrategy<()>,
 	) -> Result<Vec<(Uuid, Result<S, Error>)>, Error>
 	where
 		M: Rpc<Response = Result<S, Error>>,
@@ -266,7 +266,7 @@ impl RpcHelper {
 			.iter()
 			.map(|p| p.id.into())
 			.collect::<Vec<_>>();
-		self.call_many(endpoint, &to[..], msg, strat).await
+		self.call_many(endpoint, &to[..], msg, strategy).await
 	}
 
 	/// Make a RPC call to multiple servers, returning either a Vec of responses,
