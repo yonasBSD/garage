@@ -262,7 +262,7 @@ pub struct GetClusterHealthResponse {
 	pub status: String,
 	/// the number of nodes this Garage node has had a TCP connection to since the daemon started
 	pub known_nodes: usize,
-	/// the nubmer of nodes this Garage node currently has an open connection to
+	/// the number of nodes this Garage node currently has an open connection to
 	pub connected_nodes: usize,
 	/// the number of storage nodes currently registered in the cluster layout
 	pub storage_nodes: usize,
@@ -387,7 +387,7 @@ pub struct UpdateAdminTokenRequestBody {
 	/// `GetClusterStatus`, etc), or the special value `*` to allow all
 	/// admin endpoints. **WARNING:** Granting a scope of `CreateAdminToken` or
 	/// `UpdateAdminToken` trivially allows for privilege escalation, and is thus
-	/// functionnally equivalent to granting a scope of `*`.
+	/// functionally equivalent to granting a scope of `*`.
 	pub scope: Option<Vec<String>>,
 }
 
@@ -841,7 +841,7 @@ pub struct GetBucketInfoResponse {
 	pub created: DateTime<Utc>,
 	/// List of global aliases for this bucket
 	pub global_aliases: Vec<String>,
-	/// Whether website acces is enabled for this bucket
+	/// Whether website access is enabled for this bucket
 	pub website_access: bool,
 	#[serde(default)]
 	/// Website configuration for this bucket

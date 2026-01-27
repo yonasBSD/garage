@@ -150,7 +150,7 @@ impl TryFrom<HelperError> for CommonError {
 pub fn pass_helper_error(err: HelperError) -> CommonError {
 	match CommonError::try_from(err) {
 		Ok(e) => e,
-		Err(e) => panic!("Helper error `{}` should hot have happenned here", e),
+		Err(e) => panic!("Helper error `{}` should hot have happened here", e),
 	}
 }
 

@@ -133,7 +133,7 @@ impl Db {
 				Err(TxError::Db(tx_e))
 			}
 			(Err(TxError::Db(tx_e)), Some(Ok(_))) => {
-				// Transaction encounterred a DB error when commiting the transaction,
+				// Transaction encounterred a DB error when committing the transaction,
 				// after user code was called
 				Err(TxError::Db(tx_e))
 			}

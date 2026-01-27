@@ -644,7 +644,7 @@ fn path_to_keys(
 	} else {
 		Ok(RoutingResult::LoadOrRedirect {
 			redirect_if_exists: Some(format!("{key}/{index}")),
-			// we can't use `path` because key might have changed substentially in case of
+			// we can't use `path` because key might have changed substantially in case of
 			// routing rules
 			redirect_url: percent_encoding::percent_encode(
 				format!("/{key}/").as_bytes(),

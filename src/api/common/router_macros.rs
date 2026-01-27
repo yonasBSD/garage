@@ -191,7 +191,7 @@ macro_rules! router_match {
     }};
     (@@parse_param $query:expr, parse_default($default:expr), $param:ident) => {{
         // extract and parse optional query parameter
-        // using provided value as default if paramter is missing
+        // using provided value as default if parameter is missing
         $query.$param.take().map(|x| x
             .parse()
             .map_err(|_| Error::bad_request("Failed to parse query parameter")))

@@ -336,14 +336,14 @@ impl RpcHelper {
 	{
 		// Once quorum is reached, other requests don't matter.
 		// What we do here is only send the required number of requests
-		// to reach a quorum, priorizing nodes with the lowest latency.
+		// to reach a quorum, prioritizing nodes with the lowest latency.
 		// When there are errors, we start new requests to compensate.
 
 		// TODO: this could be made more aggressive, e.g. if after 2x the
 		// average ping of a given request, the response is not yet received,
 		// preemptively send an additional request to any remaining nodes.
 
-		// Reorder requests to priorize closeness / low latency
+		// Reorder requests to prioritize closeness / low latency
 		let request_order =
 			self.request_order(self.0.layout.read().unwrap().current()?, to.iter().copied());
 		let send_all_at_once = strategy.rs_send_all_at_once.unwrap_or(false);
@@ -558,7 +558,7 @@ impl RpcHelper {
 	///
 	/// 1. ask first all nodes of all currently active layout versions
 	///   -> ask the preferred node in all layout versions (older to newer),
-	///      then the second preferred onde in all verions, etc.
+	///      then the second preferred onde in all versions, etc.
 	///   -> we start by the oldest active layout version first, because a majority
 	///      of blocks will have been saved before the layout change
 	/// 2. ask all nodes of historical layout versions, for blocks which have not
@@ -635,8 +635,8 @@ impl RpcHelper {
 		// The tuples are as follows:
 		//         (is another node?, is another zone?, latency, node ID, request future)
 		// We store all of these tuples in a vec that we can sort.
-		// By sorting this vec, we priorize ourself, then nodes in the same zone,
-		// and within a same zone we priorize nodes with the lowest latency.
+		// By sorting this vec, we prioritize ourself, then nodes in the same zone,
+		// and within a same zone we prioritize nodes with the lowest latency.
 		let mut nodes = nodes
 			.map(|to| {
 				let peer_zone = layout.get_node_zone(&to).unwrap_or("");
@@ -654,7 +654,7 @@ impl RpcHelper {
 			})
 			.collect::<Vec<_>>();
 
-		// Sort requests by (priorize ourself, priorize same zone, priorize low latency)
+		// Sort requests by (prioritize ourself, prioritize same zone, prioritize low latency)
 		nodes.sort_by_key(|(diffnode, diffzone, ping, _to)| (*diffnode, *diffzone, *ping));
 
 		nodes

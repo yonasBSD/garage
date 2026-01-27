@@ -10,7 +10,7 @@
 //!
 //! Of particular interest, read the documentation for the `netapp::NetApp` type,
 //! the `message::Message` trait, and `proto::RequestPriority` to learn more
-//! about message priorization.
+//! about message prioritization.
 //! Also check out the examples to learn how to use this crate.
 
 pub mod bytes_buf;

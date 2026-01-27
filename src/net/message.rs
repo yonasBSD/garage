@@ -14,7 +14,7 @@ use crate::util::*;
 
 /// Priority of a request (click to read more about priorities).
 ///
-/// This priority value is used to priorize messages
+/// This priority value is used to prioritize messages
 /// in the send queue of the client, and their responses in the send queue of the
 /// server. Lower values mean higher priority.
 ///

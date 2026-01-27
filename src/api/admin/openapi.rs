@@ -878,9 +878,9 @@ impl Modify for SecurityAddon {
     info(
         version = "v2.2.0",
         title = "Garage administration API",
-        description = "Administrate your Garage cluster programatically, including status, layout, keys, buckets, and maintainance tasks.
+        description = "Administrate your Garage cluster programmatically, including status, layout, keys, buckets, and maintenance tasks.
 
-*Disclaimer: This API may change in future Garage versions. Read the changelog and upgrade your scripts before upgrading. Additionnaly, this specification is early stage and can contain bugs, so be careful and please report any issues on our issue tracker.*",
+*Disclaimer: This API may change in future Garage versions. Read the changelog and upgrade your scripts before upgrading. Additionally, this specification is early stage and can contain bugs, so be careful and please report any issues on our issue tracker.*",
         contact(
             name = "The Garage team",
             email = "garagehq@deuxfleurs.fr",

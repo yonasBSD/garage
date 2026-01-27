@@ -344,7 +344,7 @@ impl BlockManager {
 	/// Returns the set of nodes that should store a copy of a given block.
 	/// These are the nodes assigned to the block's hash in the current
 	/// layout version only: since blocks are immutable, we don't need to
-	/// do complex logic when several layour versions are active at once,
+	/// do complex logic when several layout versions are active at once,
 	/// just move them directly to the new nodes.
 	pub(crate) fn storage_nodes_of(&self, hash: &Hash) -> Result<Vec<Uuid>, Error> {
 		let cluster_layout = self.system.cluster_layout();

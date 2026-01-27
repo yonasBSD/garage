@@ -378,7 +378,7 @@ pub async fn handle_get_without_ctx(
 pub(crate) fn check_version_not_deleted(version: &Version) -> Result<(), Error> {
 	if version.deleted.get() {
 		// the version was deleted between when the object_table was consulted
-		// and now, this could mean the object was deleted, or overriden.
+		// and now, this could mean the object was deleted, or overridden.
 		// Rather than say the key doesn't exist, return a transient error
 		// to signal the client to try again.
 		return Err(CommonError::InternalError(UtilError::Message(

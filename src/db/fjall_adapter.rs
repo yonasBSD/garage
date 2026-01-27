@@ -272,7 +272,7 @@ impl<'a> FjallTx<'a> {
 	fn get_tree(&self, i: usize) -> TxOpResult<&TransactionalPartitionHandle> {
 		self.trees.get(i).map(|tup| &tup.1).ok_or_else(|| {
 			TxOpError(Error(
-				"invalid tree id (it might have been openned after the transaction started)".into(),
+				"invalid tree id (it might have been opened after the transaction started)".into(),
 			))
 		})
 	}

@@ -293,7 +293,7 @@ mod v010 {
 		pub roles: LwwMap<Uuid, NodeRoleV>,
 	}
 
-	/// The tracker of acknowlegments and data syncs around the cluster
+	/// The tracker of acknowledgments and data syncs around the cluster
 	#[derive(Clone, Debug, Serialize, Deserialize, Default, PartialEq)]
 	pub struct UpdateTrackers {
 		/// The highest layout version number each node has ack'ed

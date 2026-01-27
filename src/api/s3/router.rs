@@ -355,7 +355,7 @@ impl Endpoint {
 		if let Some(x_id) = query.x_id.take() {
 			if x_id != res.name() {
 				// I think AWS ignores the x-id parameter.
-				// Let's make this at least be a warnin to help debugging.
+				// Let's make this at least be a warning to help debugging.
 				warn!(
 					"x-id ({}) does not match parsed endpoint ({})",
 					x_id,
@@ -949,7 +949,7 @@ mod tests {
 			GET "/?uploads&delimiter=/&prefix=photos/2006/" => ListMultipartUploads
 			GET "/?uploads&delimiter=D&encoding-type=EncodingType&key-marker=KeyMarker&max-uploads=1&prefix=Prefix&upload-id-marker=UploadIdMarker" => ListMultipartUploads
 			GET "/" => ListObjects
-			GET "/?prefix=N&marker=Ned&max-keys=40" => ListObjects
+			GET "/?prefix=N&marker=Need&max-keys=40" => ListObjects
 			GET "/?delimiter=/" => ListObjects
 			GET "/?prefix=photos/2006/&delimiter=/" => ListObjects
 

@@ -213,7 +213,7 @@ impl WebsiteConfiguration {
 		}
 		if self.routing_rules.rules.len() > 1000 {
 			// we will do linear scans, best to avoid overly long configuration. The
-			// limit was choosen arbitrarily
+			// limit was chosen arbitrarily
 			return Err(Error::bad_request(
 				"Bad XML: RoutingRules can't have more than 1000 child elements",
 			));
@@ -225,7 +225,7 @@ impl WebsiteConfiguration {
 	pub fn into_garage_website_config(self) -> Result<WebsiteConfig, Error> {
 		if self.redirect_all_requests_to.is_some() {
 			Err(Error::NotImplemented(
-				"RedirectAllRequestsTo is not currently implemented in Garage, however its effect can be emulated using a single inconditional RoutingRule.".into(),
+				"RedirectAllRequestsTo is not currently implemented in Garage, however its effect can be emulated using a single unconditional RoutingRule.".into(),
 			))
 		} else {
 			Ok(WebsiteConfig {
@@ -251,7 +251,7 @@ impl WebsiteConfiguration {
 								hostname: rule.redirect.hostname.map(|h| h.0),
 								protocol: rule.redirect.protocol.map(|p| p.0),
 								// aws default to 301, which i find punitive in case of
-								// missconfiguration (can be permanently cached on the
+								// misconfiguration (can be permanently cached on the
 								// user agent)
 								http_redirect_code: rule
 									.redirect

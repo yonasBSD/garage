@@ -88,7 +88,7 @@ pub fn handle_options_api(
 	// the same name, its CORS rules won't be applied
 	// and will be shadowed by the rules of the globally
 	// existing bucket (but this is inevitable because
-	// OPTIONS calls are not auhtenticated).
+	// OPTIONS calls are not authenticated).
 	if let Some(bn) = bucket_name {
 		let helper = garage.bucket_helper();
 		let bucket_opt = helper.resolve_global_bucket_fast(&bn)?;
