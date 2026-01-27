@@ -438,7 +438,7 @@ This might reduce the risk that a data block is lost in rare
 situations such as simultaneous node losing power,
 at the cost of a moderate drop in write performance.
 
-Similarly to `metatada_fsync`, this is likely not necessary
+Similarly to `metadata_fsync`, this is likely not necessary
 if geographical replication is used.
 
 #### `metadata_auto_snapshot_interval` (since `v0.9.4`) {#metadata_auto_snapshot_interval}
