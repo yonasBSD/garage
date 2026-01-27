@@ -16,6 +16,11 @@ steps:
     commands:
       - nix-build -j4 --attr flakePackages.fmt
 
+  - name: check typos
+    image: nixpkgs/nix:nixos-24.05
+    commands:
+      - nix-shell --attr ci --run typos
+
   - name: build
     image: nixpkgs/nix:nixos-24.05
     commands:

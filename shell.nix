@@ -34,6 +34,7 @@ in
       openssl
       curl
       jq
+      typos
     ];
     shellHook = ''
       export AWS_REQUEST_CHECKSUM_CALCULATION='when_required'
