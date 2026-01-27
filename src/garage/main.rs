@@ -181,13 +181,18 @@ async fn run(opt: Opt) -> Result<(), Error> {
 	}
 }
 
+/// # Safety
+///
+/// should be called before tokio runtime initialization
+/// to limit multithread problem with `std::env::set_var` which is unsafe
 fn init_logging(opt: &Opt) {
 	if std::env::var("RUST_LOG").is_err() {
 		let default_log = match &opt.cmd {
 			Command::Server => "netapp=info,garage=info",
 			_ => "netapp=warn,garage=warn",
 		};
-		std::env::set_var("RUST_LOG", default_log)
+
+		unsafe { std::env::set_var("RUST_LOG", default_log) };
 	}
 
 	let env_filter = tracing_subscriber::filter::EnvFilter::from_default_env();

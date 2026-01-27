@@ -388,9 +388,12 @@ impl Filter {
 	}
 }
 
+/// # Safety
+///
+/// initialize `RUST_LOG` env var before start tokio runtime to limit multithread problem with `std::env::set_var` which is unsafe
 fn main() -> Result<(), Error> {
 	if std::env::var("RUST_LOG").is_err() {
-		std::env::set_var("RUST_LOG", "warn")
+		unsafe { std::env::set_var("RUST_LOG", "warn") };
 	}
 
 	tracing_subscriber::fmt()
