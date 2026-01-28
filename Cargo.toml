@@ -41,7 +41,7 @@ k2v-client = { version = "0.0.4", path = "src/k2v-client" }
 # External crates from crates.io
 arc-swap = "1.1"
 argon2 = "0.5"
-async-trait = "0.1.7"
+async-trait = "0.1"
 backtrace = "0.3"
 base64 = "0.21"
 blake2 = "0.10"
@@ -52,7 +52,7 @@ chrono = { version = "0.4", features = ["serde"] }
 crc-fast = "1.6"
 crypto-common = "0.1"
 gethostname = "0.4"
-git-version = "0.3.4"
+git-version = "0.3"
 hex = "0.4"
 hexdump = "0.1"
 hmac = "0.12"
@@ -83,7 +83,7 @@ pretty_env_logger = "0.5"
 structopt = { version = "0.3", default-features = false }
 syslog-tracing = "0.3"
 tracing = "0.1"
-tracing-journald = "0.3.1"
+tracing-journald = "0.3"
 tracing-subscriber = { version = "0.3", features = ["env-filter"] }
 
 heed = { version = "0.22", default-features = false, features = [] }
@@ -141,7 +141,7 @@ thiserror = "2.0"
 
 # ---- used only as build / dev dependencies ----
 assert-json-diff = "2.0"
-rustc_version = "0.4.0"
+rustc_version = "0.4"
 static_init = "1.0"
 aws-smithy-runtime = { version = "1.8", default-features = false, features = ["tls-rustls"] }
 aws-sdk-config = { version = "1.62", default-features = false }
