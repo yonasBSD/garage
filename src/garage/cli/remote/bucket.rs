@@ -295,13 +295,20 @@ impl Cli {
 			));
 		}
 
+		// Destructure becket info to allow separate use of `id` and `website_config`
+		let GetBucketInfoResponse {
+			id: bucket_id,
+			website_config: bucket_website_config,
+			..
+		} = bucket;
+
 		let wa = if opt.allow {
 			UpdateBucketWebsiteAccess {
 				enabled: true,
 				index_document: Some(opt.index_document.clone()),
 				error_document: opt
 					.error_document
-					.or(bucket.website_config.and_then(|x| x.error_document.clone())),
+					.or_else(|| bucket_website_config.and_then(|x| x.error_document.clone())),
 			}
 		} else {
 			UpdateBucketWebsiteAccess {
@@ -313,7 +320,7 @@ impl Cli {
 
 		let res = self
 			.api_request(UpdateBucketRequest {
-				id: bucket.id,
+				id: bucket_id,
 				body: UpdateBucketRequestBody {
 					website_access: Some(wa),
 					quotas: None,
