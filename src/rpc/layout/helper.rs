@@ -169,7 +169,7 @@ impl LayoutHelper {
 		Ok(versions
 			.iter()
 			.find(|x| x.version == sync_min)
-			.or(versions.last())
+			.or_else(|| versions.last())
 			.unwrap())
 	}
 
@@ -271,7 +271,7 @@ impl LayoutHelper {
 					.map(|x| x.load(Ordering::Relaxed) == 0)
 					.unwrap_or(true)
 			})
-			.unwrap_or(self.inner().current().version);
+			.unwrap_or_else(|| self.inner().current().version);
 		let changed = self.update(|layout| {
 			layout
 				.update_trackers

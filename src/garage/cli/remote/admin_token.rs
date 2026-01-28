@@ -1,3 +1,5 @@
+use std::borrow::Cow;
+
 use format_table::format_table;
 
 use chrono::Local;
@@ -42,18 +44,18 @@ impl Cli {
 				table_list_abbr(&tok.scope)
 			};
 			let exp = if tok.expired {
-				"expired".to_string()
+				Cow::Borrowed("expired")
 			} else {
 				tok.expiration
-					.map(|x| x.with_timezone(&Local).to_string())
-					.unwrap_or("never".into())
+					.map(|x| x.with_timezone(&Local).to_string().into())
+					.unwrap_or(Cow::Borrowed("never"))
 			};
 			table.push(format!(
 				"{}\t{}\t{}\t{}\t{}",
 				tok.id.as_deref().unwrap_or("-"),
 				tok.created
-					.map(|x| x.with_timezone(&Local).date_naive().to_string())
-					.unwrap_or("-".into()),
+					.map(|x| x.with_timezone(&Local).date_naive().to_string().into())
+					.unwrap_or(Cow::Borrowed("-")),
 				tok.name,
 				exp,
 				scope,
@@ -236,8 +238,8 @@ fn print_token_info(token: &GetAdminTokenInfoResponse) {
 			"Expiration:\t{}",
 			token
 				.expiration
-				.map(|x| x.with_timezone(&Local).to_string())
-				.unwrap_or("never".into())
+				.map(|x| x.with_timezone(&Local).to_string().into())
+				.unwrap_or(Cow::Borrowed("never"))
 		),
 		String::new(),
 	];

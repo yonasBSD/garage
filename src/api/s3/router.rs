@@ -330,7 +330,7 @@ impl Endpoint {
 		} else {
 			path.split_once('/')
 				.map(|(b, p)| (b.to_owned(), p.trim_start_matches('/')))
-				.unwrap_or((path.to_owned(), ""))
+				.unwrap_or_else(|| (path.to_owned(), ""))
 		};
 
 		if *req.method() == Method::OPTIONS {

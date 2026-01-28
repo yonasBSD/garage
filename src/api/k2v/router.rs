@@ -62,7 +62,7 @@ impl Endpoint {
 		let (bucket, partition_key) = path
 			.split_once('/')
 			.map(|(b, p)| (b.to_owned(), p.trim_start_matches('/')))
-			.unwrap_or((path.to_owned(), ""));
+			.unwrap_or_else(|| (path.to_owned(), ""));
 
 		if bucket.is_empty() {
 			return Err(Error::bad_request("Missing bucket name"));

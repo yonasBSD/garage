@@ -65,7 +65,11 @@ pub fn register_bg_vars(
 	vars: &mut vars::BgVars,
 ) {
 	vars.register_ro(persister, "lifecycle-last-completed", |p| {
-		p.get_with(|x| x.last_completed.clone().unwrap_or("never".to_string()))
+		p.get_with(|x| {
+			x.last_completed
+				.clone()
+				.unwrap_or_else(|| "never".to_string())
+		})
 	});
 }
 
