@@ -12,7 +12,7 @@ pub fn build_client(key: &Key) -> Client {
 		.endpoint_url(format!("http://127.0.0.1:{}", DEFAULT_PORT))
 		.region(super::REGION)
 		.credentials_provider(credentials)
-		.behavior_version(BehaviorVersion::v2024_03_28())
+		.behavior_version(BehaviorVersion::latest())
 		.build();
 
 	Client::from_conf(config)
