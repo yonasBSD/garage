@@ -69,8 +69,16 @@ pub enum Error {
 	InvalidUtf8String(#[from] std::string::FromUtf8Error),
 
 	/// The client sent invalid XML data
-	#[error("Invalid XML: {0}")]
-	InvalidXml(String),
+	#[error("failed to deserialize XML")]
+	InvalidXml(#[from] roxmltree::Error),
+
+	/// The client sent invalid XML data
+	#[error("XML deserialization failed")]
+	InvalidXmlDe(#[from] quick_xml::de::DeError),
+
+	/// The server failed to serialize data into XML
+	#[error("failed to serialize XML")]
+	InvalidXmlSe(#[from] quick_xml::se::SeError),
 
 	/// The client sent a range header with invalid value
 	#[error("Invalid HTTP range: {0:?}")]
@@ -102,18 +110,6 @@ impl From<HelperError> for Error {
 impl From<(http_range::HttpRangeParseError, u64)> for Error {
 	fn from(err: (http_range::HttpRangeParseError, u64)) -> Error {
 		Error::InvalidRange(err)
-	}
-}
-
-impl From<roxmltree::Error> for Error {
-	fn from(err: roxmltree::Error) -> Self {
-		Self::InvalidXml(format!("{}", err))
-	}
-}
-
-impl From<quick_xml::de::DeError> for Error {
-	fn from(err: quick_xml::de::DeError) -> Self {
-		Self::InvalidXml(format!("{}", err))
 	}
 }
 
@@ -149,6 +145,8 @@ impl Error {
 			Error::AuthorizationHeaderMalformed(_) => "AuthorizationHeaderMalformed",
 			Error::NotImplemented(_) => "NotImplemented",
 			Error::InvalidXml(_) => "MalformedXML",
+			Error::InvalidXmlDe(_) => "MalformedXML",
+			Error::InvalidXmlSe(_) => "InternalError",
 			Error::InvalidRange(_) => "InvalidRange",
 			Error::InvalidDigest(_) => "InvalidDigest",
 			Error::InvalidUtf8Str(_) | Error::InvalidUtf8String(_) => "InvalidRequest",
@@ -166,6 +164,7 @@ impl ApiError for Error {
 			Error::PreconditionFailed => StatusCode::PRECONDITION_FAILED,
 			Error::InvalidRange(_) => StatusCode::RANGE_NOT_SATISFIABLE,
 			Error::NotImplemented(_) => StatusCode::NOT_IMPLEMENTED,
+			Error::InvalidXmlSe(_) => StatusCode::INTERNAL_SERVER_ERROR,
 			Error::AuthorizationHeaderMalformed(_)
 			| Error::InvalidPart
 			| Error::InvalidPartOrder
@@ -173,6 +172,7 @@ impl ApiError for Error {
 			| Error::InvalidDigest(_)
 			| Error::InvalidEncryptionAlgorithm(_)
 			| Error::InvalidXml(_)
+			| Error::InvalidXmlDe(_)
 			| Error::InvalidUtf8Str(_)
 			| Error::InvalidUtf8String(_) => StatusCode::BAD_REQUEST,
 		}
