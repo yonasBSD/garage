@@ -1,7 +1,6 @@
-use std::mem::MaybeUninit;
 use std::path::{Path, PathBuf};
 use std::process;
-use std::sync::Once;
+use std::sync::{Mutex, OnceLock};
 
 use serde_json::json;
 
@@ -20,7 +19,7 @@ pub struct Key {
 }
 
 pub struct Instance {
-	process: process::Child,
+	process: Mutex<process::Child>,
 	pub path: PathBuf,
 	pub default_key: Key,
 	pub s3_port: u16,
@@ -111,7 +110,7 @@ api_bind_addr = "127.0.0.1:{admin_port}"
 			.expect("Could not start garage");
 
 		Instance {
-			process: child,
+			process: Mutex::new(child),
 			path,
 			default_key: Key::default(),
 			s3_port: port,
@@ -162,9 +161,11 @@ api_bind_addr = "127.0.0.1:{admin_port}"
 			.expect_success_status("Could not apply garage node layout");
 	}
 
-	fn terminate(&mut self) {
+	fn terminate(&self) {
 		// TODO: Terminate "gracefully" the process with SIGTERM instead of directly SIGKILL it.
 		self.process
+			.lock()
+			.expect("could not lock access to garage child process mutex")
 			.kill()
 			.expect("Could not terminate garage process");
 	}
@@ -213,31 +214,21 @@ api_bind_addr = "127.0.0.1:{admin_port}"
 	}
 }
 
-static mut INSTANCE: MaybeUninit<Instance> = MaybeUninit::uninit();
-static INSTANCE_INIT: Once = Once::new();
+static INSTANCE: OnceLock<Instance> = OnceLock::new();
 
 #[static_init::destructor]
 extern "C" fn terminate_instance() {
-	if INSTANCE_INIT.is_completed() {
-		// This block is sound as it depends on `INSTANCE_INIT` being completed, meaning `INSTANCE`
-		// is actually initialized.
-		unsafe {
-			INSTANCE.assume_init_mut().terminate();
-		}
+	if let Some(instance) = INSTANCE.get() {
+		instance.terminate();
 	}
 }
 
 pub fn instance() -> &'static Instance {
-	INSTANCE_INIT.call_once(|| unsafe {
+	INSTANCE.get_or_init(|| {
 		let mut instance = Instance::new();
 		instance.setup();
-
-		INSTANCE.write(instance);
-	});
-
-	// This block is sound as it depends on `INSTANCE_INIT` being completed by calling `call_once` (blocking),
-	// meaning `INSTANCE` is actually initialized.
-	unsafe { INSTANCE.assume_init_ref() }
+		instance
+	})
 }
 
 pub fn command(config_path: &Path) -> process::Command {
