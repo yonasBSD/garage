@@ -151,7 +151,7 @@ pub fn fasthash(data: &[u8]) -> FastHash {
 
 /// Generate a random 32 bytes UUID
 pub fn gen_uuid() -> Uuid {
-	rand::thread_rng().gen::<[u8; 32]>().into()
+	rand::rng().random::<[u8; 32]>().into()
 }
 
 #[cfg(test)]

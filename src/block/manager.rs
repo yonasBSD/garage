@@ -780,7 +780,7 @@ impl BlockManagerLocked {
 		assert!(to_delete.as_ref() != Some(&tgt_path));
 
 		let mut path_tmp = tgt_path.clone();
-		let tmp_extension = format!("tmp{}", hex::encode(thread_rng().gen::<[u8; 4]>()));
+		let tmp_extension = format!("tmp{}", hex::encode(rand::rng().random::<[u8; 4]>()));
 		path_tmp.set_extension(tmp_extension);
 
 		fs::create_dir_all(&directory).await?;

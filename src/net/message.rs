@@ -78,7 +78,7 @@ impl OrderTag {
 	/// let tag_2 = stream.order(2);
 	/// ```
 	pub fn stream() -> OrderTagStream {
-		OrderTagStream(thread_rng().gen())
+		OrderTagStream(rand::rng().random())
 	}
 }
 impl OrderTagStream {

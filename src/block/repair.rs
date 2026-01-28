@@ -248,7 +248,7 @@ fn randomize_next_scrub_run_time(timestamp: u64) -> u64 {
 	timestamp
 		+ SCRUB_INTERVAL
 			.saturating_add(Duration::from_secs(
-				rand::thread_rng().gen_range(0..3600 * 24 * 10),
+				rand::rng().random_range(0..3600 * 24 * 10),
 			))
 			.as_millis() as u64
 }

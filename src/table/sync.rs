@@ -510,7 +510,7 @@ impl<F: TableSchema, R: TableReplication> SyncWorker<F, R> {
 					partitions.layout_version
 				);
 
-				partitions.partitions.shuffle(&mut thread_rng());
+				partitions.partitions.shuffle(&mut rand::rng());
 				self.todo = Some(partitions);
 			}
 			Err(e) => {
