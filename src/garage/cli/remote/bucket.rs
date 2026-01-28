@@ -437,8 +437,8 @@ impl Cli {
 				let bs = bytesize::ByteSize::b(size);
 				tab.push(format!(
 					"Size:\t{} ({})",
-					bs.to_string_as(true),
-					bs.to_string_as(false)
+					bs.display().si(),
+					bs.display().iec()
 				));
 				tab.push(format!("Size (exact):\t{}", size));
 				if !ver.blocks.is_empty() {
@@ -488,11 +488,7 @@ fn print_bucket_info(bucket: &GetBucketInfoResponse) {
 		String::new(),
 		{
 			let size = bytesize::ByteSize::b(bucket.bytes as u64);
-			format!(
-				"Size:\t{} ({})",
-				size.to_string_as(true),
-				size.to_string_as(false)
-			)
+			format!("Size:\t{} ({})", size.display().si(), size.display().iec())
 		},
 		format!("Objects:\t{}", bucket.objects),
 	];
@@ -509,8 +505,8 @@ fn print_bucket_info(bucket: &GetBucketInfoResponse) {
 					bytesize::ByteSize::b(bucket.unfinished_multipart_upload_bytes as u64);
 				format!(
 					"Size of unfinished multipart uploads:\t{} ({})",
-					mpu_size.to_string_as(true),
-					mpu_size.to_string_as(false),
+					mpu_size.display().si(),
+					mpu_size.display().iec(),
 				)
 			},
 		]);
@@ -538,8 +534,8 @@ fn print_bucket_info(bucket: &GetBucketInfoResponse) {
 			let ms = bytesize::ByteSize::b(ms);
 			info.push(format!(
 				"  maximum size:\t{} ({})",
-				ms.to_string_as(true),
-				ms.to_string_as(false)
+				ms.display().si(),
+				ms.display().iec()
 			));
 		}
 		if let Some(mo) = bucket.quotas.max_objects {

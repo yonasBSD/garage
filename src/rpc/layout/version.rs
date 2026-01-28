@@ -359,13 +359,13 @@ impl LayoutVersion {
 		if old_assignment_opt.is_some() {
 			msg.push(format!(
 				"Optimal partition size:                     {} ({} in previous layout)",
-				ByteSize::b(partition_size).to_string_as(false),
-				ByteSize::b(self.partition_size).to_string_as(false)
+				ByteSize::b(partition_size).display().iec(),
+				ByteSize::b(self.partition_size).display().iec()
 			));
 		} else {
 			msg.push(format!(
 				"Optimal partition size:                     {}",
-				ByteSize::b(partition_size).to_string_as(false)
+				ByteSize::b(partition_size).display().iec()
 			));
 		}
 		// We write the partition size.
@@ -722,14 +722,16 @@ impl LayoutVersion {
 		let percent_cap = 100.0 * (used_cap as f32) / (total_cap as f32);
 		msg.push(format!(
 			"Usable capacity / total cluster capacity:   {} / {} ({:.1} %)",
-			ByteSize::b(used_cap).to_string_as(false),
-			ByteSize::b(total_cap).to_string_as(false),
+			ByteSize::b(used_cap).display().iec(),
+			ByteSize::b(total_cap).display().iec(),
 			percent_cap
 		));
 		msg.push(format!(
 			"Effective capacity (replication factor {}):  {}",
 			self.replication_factor,
-			ByteSize::b(used_cap / self.replication_factor as u64).to_string_as(false)
+			ByteSize::b(used_cap / self.replication_factor as u64)
+				.display()
+				.iec()
 		));
 		if percent_cap < 80. {
 			msg.push("".into());
@@ -838,8 +840,8 @@ impl LayoutVersion {
 					tags_n,
 					stored_partitions[*n],
 					new_partitions[*n],
-					ByteSize::b(total_cap_n).to_string_as(false),
-					ByteSize::b(available_cap_n).to_string_as(false),
+					ByteSize::b(total_cap_n).display().iec(),
+					ByteSize::b(available_cap_n).display().iec(),
 					(available_cap_n as f32) / (total_cap_n as f32) * 100.0,
 				));
 			}
@@ -849,8 +851,8 @@ impl LayoutVersion {
 				replicated_partitions,
 				stored_partitions_zone[z],
 				//new_partitions_zone[z],
-				ByteSize::b(total_cap_z).to_string_as(false),
-				ByteSize::b(available_cap_z).to_string_as(false),
+				ByteSize::b(total_cap_z).display().iec(),
+				ByteSize::b(available_cap_z).display().iec(),
 				percent_cap_z
 			));
 			table.push("".into());
