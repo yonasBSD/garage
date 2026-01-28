@@ -15,8 +15,7 @@ use garage_web::WebServer;
 use garage_api_k2v::api_server::K2VApiServer;
 
 use crate::secrets::{fill_secrets, Secrets};
-#[cfg(feature = "telemetry-otlp")]
-use crate::tracing_setup::*;
+use crate::tracing_setup::init_tracing;
 
 async fn wait_from(mut chan: watch::Receiver<bool>) {
 	while !*chan.borrow() {
@@ -54,12 +53,7 @@ pub async fn run_server(config_file: PathBuf, secrets: Secrets) -> Result<(), Er
 
 	if let Some(admin_trace_sink) = &config.admin.trace_sink {
 		info!("Initialize tracing...");
-
-		#[cfg(feature = "telemetry-otlp")]
 		init_tracing(admin_trace_sink, garage.system.id)?;
-
-		#[cfg(not(feature = "telemetry-otlp"))]
-		error!("Garage was built without OTLP exporter, admin.trace_sink is ignored.");
 	}
 
 	info!("Initialize Admin API server and metrics collector...");

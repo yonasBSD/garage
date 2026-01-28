@@ -7,7 +7,6 @@ extern crate tracing;
 mod cli;
 mod secrets;
 mod server;
-#[cfg(feature = "telemetry-otlp")]
 mod tracing_setup;
 
 #[cfg(not(any(feature = "bundled-libs", feature = "system-libs")))]
