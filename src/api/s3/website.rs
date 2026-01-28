@@ -416,7 +416,8 @@ mod tests {
       </RoutingRule>
    </RoutingRules>
 </WebsiteConfiguration>"#;
-		let conf: WebsiteConfiguration = from_str(message).unwrap();
+		let conf: WebsiteConfiguration =
+			from_str(message).expect("failed to deserialize xml in `WebsiteConfiguration`");
 		let ref_value = WebsiteConfiguration {
 			xmlns: (),
 			error_document: Some(Key {

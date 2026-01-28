@@ -228,7 +228,8 @@ mod tests {
    <ExposeHeader>*</ExposeHeader>
  </CORSRule>
 </CORSConfiguration>"#;
-		let conf: CorsConfiguration = from_str(message).unwrap();
+		let conf: CorsConfiguration =
+			from_str(message).expect("failed to deserialize xml into `CorsConfiguration` struct");
 		let ref_value = CorsConfiguration {
 			xmlns: (),
 			cors_rules: vec![
