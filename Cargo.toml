@@ -104,9 +104,14 @@ toml = { version = "0.9", default-features = false, features = ["parse", "serde"
 utoipa = { version = "5.4", features = ["chrono"] }
 
 # newer version requires rust edition 2021
-k8s-openapi = { version = "0.21", features = ["v1_24"] }
-kube = { version = "0.88", default-features = false, features = ["runtime", "derive", "client", "rustls-tls"] }
-schemars = "0.8"
+k8s-openapi = { version = "0.27", features = ["v1_35"] }
+kube = { version = "3.0", default-features = false, features = [
+    "runtime",
+    "derive",
+    "client",
+    "rustls-tls",
+] }
+schemars = "1.2"
 reqwest = { version = "0.13", default-features = false, features = [
     "rustls",
     "json",
