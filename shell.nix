@@ -52,7 +52,7 @@ in
       function to_docker {
         executor  \
           --force \
-          --customPlatform="$(echo "''${DOCKER_PLATFORM}" | sed 's/i386/386/')" \
+          --custom-platform="$(echo "''${DOCKER_PLATFORM}" | sed 's/i386/386/')" \
           --destination "$(echo "''${CONTAINER_NAME}" | sed 's/i386/386/'):''${CONTAINER_TAG}" \
           --context dir://`pwd` \
           --verbosity=debug
