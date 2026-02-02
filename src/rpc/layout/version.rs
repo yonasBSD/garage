@@ -271,7 +271,7 @@ impl LayoutVersion {
 		// Check that the partition size stored is the one computed by the asignation
 		// algorithm.
 		let cl2 = self.clone();
-		let (_, zone_to_id) = cl2.generate_nongateway_zone_ids().unwrap();
+		let (_, zone_to_id) = cl2.generate_nongateway_zone_ids();
 		match cl2.compute_optimal_partition_size(&zone_to_id, zone_redundancy) {
 			Ok(s) if s != self.partition_size => {
 				return Err(format!(
@@ -330,7 +330,7 @@ impl LayoutVersion {
 
 		// We generate for once numerical ids for the zones of non gateway nodes,
 		// to use them as indices in the flow graphs.
-		let (id_to_zone, zone_to_id) = self.generate_nongateway_zone_ids()?;
+		let (id_to_zone, zone_to_id) = self.generate_nongateway_zone_ids();
 
 		if self.nongateway_nodes().len() < self.replication_factor {
 			return Err(Error::Message(format!(
@@ -489,9 +489,7 @@ impl LayoutVersion {
 
 	/// This function generates ids for the zone of the nodes appearing in
 	/// `self.node_id_vec`.
-	pub(crate) fn generate_nongateway_zone_ids(
-		&self,
-	) -> Result<(Vec<String>, HashMap<String, usize>), Error> {
+	pub(crate) fn generate_nongateway_zone_ids(&self) -> (Vec<String>, HashMap<String, usize>) {
 		let mut id_to_zone = Vec::<String>::new();
 		let mut zone_to_id = HashMap::<String, usize>::new();
 
@@ -502,7 +500,7 @@ impl LayoutVersion {
 				id_to_zone.push(r.zone.clone());
 			}
 		}
-		Ok((id_to_zone, zone_to_id))
+		(id_to_zone, zone_to_id)
 	}
 
 	/// This function computes by dichotomy the largest realizable partition size, given

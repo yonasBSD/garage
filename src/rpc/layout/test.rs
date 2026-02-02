@@ -2,7 +2,6 @@ use std::cmp::min;
 use std::collections::HashMap;
 
 use garage_util::crdt::Crdt;
-use garage_util::error::*;
 
 use crate::layout::*;
 use crate::replication_mode::ReplicationFactor;
@@ -21,14 +20,14 @@ use crate::replication_mode::ReplicationFactor;
 // number of tokens by zone : (A, 4), (B,1), (C,4), (D, 4), (E, 2)
 // With these parameters, the naive algo fails, whereas there is a solution:
 // (A,A,C,D,E) , (A,B,C,D,D) (A,C,C,D,E)
-fn check_against_naive(cl: &LayoutVersion) -> Result<bool, Error> {
+fn check_against_naive(cl: &LayoutVersion) -> bool {
 	let over_size = cl.partition_size + 1;
 	let mut zone_token = HashMap::<String, usize>::new();
 
-	let (zones, zone_to_id) = cl.generate_nongateway_zone_ids()?;
+	let (zones, zone_to_id) = cl.generate_nongateway_zone_ids();
 
 	if zones.is_empty() {
-		return Ok(false);
+		return false;
 	}
 
 	for z in zones.iter() {
@@ -66,7 +65,7 @@ fn check_against_naive(cl: &LayoutVersion) -> Result<bool, Error> {
 			{
 				curr_zone += 1;
 				if curr_zone >= zones.len() {
-					return Ok(true);
+					return true;
 				}
 			}
 			id_zone_token[curr_zone] -= 1;
@@ -77,7 +76,7 @@ fn check_against_naive(cl: &LayoutVersion) -> Result<bool, Error> {
 		}
 	}
 
-	Ok(false)
+	false
 }
 
 fn show_msg(msg: &Message) {
@@ -127,7 +126,7 @@ fn test_assignment() {
 	let (mut cl, msg) = cl.apply_staged_changes(v + 1).unwrap();
 	show_msg(&msg);
 	assert_eq!(cl.check(), Ok(()));
-	assert!(check_against_naive(cl.current()).unwrap());
+	assert!(check_against_naive(cl.current()));
 
 	node_capacity_vec = vec![4000, 1000, 1000, 3000, 1000, 1000, 2000, 10000, 2000];
 	node_zone_vec = vec!["A", "B", "C", "C", "C", "B", "G", "H", "I"];
@@ -136,7 +135,7 @@ fn test_assignment() {
 	let (mut cl, msg) = cl.apply_staged_changes(v + 1).unwrap();
 	show_msg(&msg);
 	assert_eq!(cl.check(), Ok(()));
-	assert!(check_against_naive(cl.current()).unwrap());
+	assert!(check_against_naive(cl.current()));
 
 	node_capacity_vec = vec![4000, 1000, 2000, 7000, 1000, 1000, 2000, 10000, 2000];
 	update_layout(&mut cl, &node_capacity_vec, &node_zone_vec, 3);
@@ -144,7 +143,7 @@ fn test_assignment() {
 	let (mut cl, msg) = cl.apply_staged_changes(v + 1).unwrap();
 	show_msg(&msg);
 	assert_eq!(cl.check(), Ok(()));
-	assert!(check_against_naive(cl.current()).unwrap());
+	assert!(check_against_naive(cl.current()));
 
 	node_capacity_vec = vec![
 		4000000, 4000000, 2000000, 7000000, 1000000, 9000000, 2000000, 10000, 2000000,
@@ -154,5 +153,5 @@ fn test_assignment() {
 	let (cl, msg) = cl.apply_staged_changes(v + 1).unwrap();
 	show_msg(&msg);
 	assert_eq!(cl.check(), Ok(()));
-	assert!(check_against_naive(cl.current()).unwrap());
+	assert!(check_against_naive(cl.current()));
 }

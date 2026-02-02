@@ -186,6 +186,7 @@ doc_markdown = "warn"
 manual_midpoint = "warn"
 semicolon_if_nothing_returned = "warn"
 unnecessary_semicolon = "warn"
+unnecessary_wraps = "warn"
 
 # nursery lints configuration
 # or_fun_call = "warn" # enable it to help detect non trivial code used in `_or` method

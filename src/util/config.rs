@@ -305,6 +305,7 @@ fn default_consistency_mode() -> String {
 	"consistent".into()
 }
 
+#[expect(clippy::unnecessary_wraps)]
 fn default_compression() -> Option<i32> {
 	Some(1)
 }
