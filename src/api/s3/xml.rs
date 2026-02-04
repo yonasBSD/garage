@@ -97,7 +97,7 @@ pub struct DeleteError {
 	pub key: Option<Value>,
 	#[serde(rename = "Message")]
 	pub message: Value,
-	#[serde(rename = "VersionId")]
+	#[serde(rename = "VersionId", skip_serializing_if = "Option::is_none")]
 	pub version_id: Option<Value>,
 }
 
@@ -135,17 +135,17 @@ pub struct CompleteMultipartUploadResult {
 	pub key: Value,
 	#[serde(rename = "ETag")]
 	pub etag: Value,
-	#[serde(rename = "ChecksumCRC32")]
+	#[serde(rename = "ChecksumCRC32", skip_serializing_if = "Option::is_none")]
 	pub checksum_crc32: Option<Value>,
-	#[serde(rename = "ChecksumCRC32C")]
+	#[serde(rename = "ChecksumCRC32C", skip_serializing_if = "Option::is_none")]
 	pub checksum_crc32c: Option<Value>,
-	#[serde(rename = "ChecksumCR64NVME")]
+	#[serde(rename = "ChecksumCR64NVME", skip_serializing_if = "Option::is_none")]
 	pub checksum_crc64nvme: Option<Value>,
-	#[serde(rename = "ChecksumSHA1")]
+	#[serde(rename = "ChecksumSHA1", skip_serializing_if = "Option::is_none")]
 	pub checksum_sha1: Option<Value>,
-	#[serde(rename = "ChecksumSHA256")]
+	#[serde(rename = "ChecksumSHA256", skip_serializing_if = "Option::is_none")]
 	pub checksum_sha256: Option<Value>,
-	#[serde(rename = "ChecksumType")]
+	#[serde(rename = "ChecksumType", skip_serializing_if = "Option::is_none")]
 	pub checksum_type: Option<Value>,
 }
 
@@ -179,17 +179,17 @@ pub struct ListMultipartUploadsResult {
 	pub xmlns: (),
 	#[serde(rename = "Bucket")]
 	pub bucket: Value,
-	#[serde(rename = "KeyMarker")]
+	#[serde(rename = "KeyMarker", skip_serializing_if = "Option::is_none")]
 	pub key_marker: Option<Value>,
-	#[serde(rename = "UploadIdMarker")]
+	#[serde(rename = "UploadIdMarker", skip_serializing_if = "Option::is_none")]
 	pub upload_id_marker: Option<Value>,
-	#[serde(rename = "NextKeyMarker")]
+	#[serde(rename = "NextKeyMarker", skip_serializing_if = "Option::is_none")]
 	pub next_key_marker: Option<Value>,
-	#[serde(rename = "NextUploadIdMarker")]
+	#[serde(rename = "NextUploadIdMarker", skip_serializing_if = "Option::is_none")]
 	pub next_upload_id_marker: Option<Value>,
 	#[serde(rename = "Prefix")]
 	pub prefix: Value,
-	#[serde(rename = "Delimiter")]
+	#[serde(rename = "Delimiter", skip_serializing_if = "Option::is_none")]
 	pub delimiter: Option<Value>,
 	#[serde(rename = "MaxUploads")]
 	pub max_uploads: IntValue,
@@ -199,7 +199,7 @@ pub struct ListMultipartUploadsResult {
 	pub upload: Vec<ListMultipartItem>,
 	#[serde(rename = "CommonPrefixes")]
 	pub common_prefixes: Vec<CommonPrefix>,
-	#[serde(rename = "EncodingType")]
+	#[serde(rename = "EncodingType", skip_serializing_if = "Option::is_none")]
 	pub encoding_type: Option<Value>,
 }
 
@@ -213,15 +213,15 @@ pub struct PartItem {
 	pub part_number: IntValue,
 	#[serde(rename = "Size")]
 	pub size: IntValue,
-	#[serde(rename = "ChecksumCRC32")]
+	#[serde(rename = "ChecksumCRC32", skip_serializing_if = "Option::is_none")]
 	pub checksum_crc32: Option<Value>,
-	#[serde(rename = "ChecksumCRC32C")]
+	#[serde(rename = "ChecksumCRC32C", skip_serializing_if = "Option::is_none")]
 	pub checksum_crc32c: Option<Value>,
-	#[serde(rename = "ChecksumCRC64NVME")]
+	#[serde(rename = "ChecksumCRC64NVME", skip_serializing_if = "Option::is_none")]
 	pub checksum_crc64nvme: Option<Value>,
-	#[serde(rename = "ChecksumSHA1")]
+	#[serde(rename = "ChecksumSHA1", skip_serializing_if = "Option::is_none")]
 	pub checksum_sha1: Option<Value>,
-	#[serde(rename = "ChecksumSHA256")]
+	#[serde(rename = "ChecksumSHA256", skip_serializing_if = "Option::is_none")]
 	pub checksum_sha256: Option<Value>,
 }
 
@@ -235,9 +235,12 @@ pub struct ListPartsResult {
 	pub key: Value,
 	#[serde(rename = "UploadId")]
 	pub upload_id: Value,
-	#[serde(rename = "PartNumberMarker")]
+	#[serde(rename = "PartNumberMarker", skip_serializing_if = "Option::is_none")]
 	pub part_number_marker: Option<IntValue>,
-	#[serde(rename = "NextPartNumberMarker")]
+	#[serde(
+		rename = "NextPartNumberMarker",
+		skip_serializing_if = "Option::is_none"
+	)]
 	pub next_part_number_marker: Option<IntValue>,
 	#[serde(rename = "MaxParts")]
 	pub max_parts: IntValue,
@@ -281,23 +284,26 @@ pub struct ListBucketResult {
 	pub name: Value,
 	#[serde(rename = "Prefix")]
 	pub prefix: Value,
-	#[serde(rename = "Marker")]
+	#[serde(rename = "Marker", skip_serializing_if = "Option::is_none")]
 	pub marker: Option<Value>,
-	#[serde(rename = "NextMarker")]
+	#[serde(rename = "NextMarker", skip_serializing_if = "Option::is_none")]
 	pub next_marker: Option<Value>,
-	#[serde(rename = "StartAfter")]
+	#[serde(rename = "StartAfter", skip_serializing_if = "Option::is_none")]
 	pub start_after: Option<Value>,
-	#[serde(rename = "ContinuationToken")]
+	#[serde(rename = "ContinuationToken", skip_serializing_if = "Option::is_none")]
 	pub continuation_token: Option<Value>,
-	#[serde(rename = "NextContinuationToken")]
+	#[serde(
+		rename = "NextContinuationToken",
+		skip_serializing_if = "Option::is_none"
+	)]
 	pub next_continuation_token: Option<Value>,
-	#[serde(rename = "KeyCount")]
+	#[serde(rename = "KeyCount", skip_serializing_if = "Option::is_none")]
 	pub key_count: Option<IntValue>,
 	#[serde(rename = "MaxKeys")]
 	pub max_keys: IntValue,
-	#[serde(rename = "Delimiter")]
+	#[serde(rename = "Delimiter", skip_serializing_if = "Option::is_none")]
 	pub delimiter: Option<Value>,
-	#[serde(rename = "EncodingType")]
+	#[serde(rename = "EncodingType", skip_serializing_if = "Option::is_none")]
 	pub encoding_type: Option<Value>,
 	#[serde(rename = "IsTruncated")]
 	pub is_truncated: Value,
@@ -311,7 +317,7 @@ pub struct ListBucketResult {
 pub struct VersioningConfiguration {
 	#[serde(rename = "@xmlns", serialize_with = "xmlns_tag")]
 	pub xmlns: (),
-	#[serde(rename = "Status")]
+	#[serde(rename = "Status", skip_serializing_if = "Option::is_none")]
 	pub status: Option<Value>,
 }
 
@@ -335,7 +341,7 @@ pub struct Grantee {
 	pub xmlns_xsi: (),
 	#[serde(rename = "@xsi:type")]
 	pub typ: String,
-	#[serde(rename = "DisplayName")]
+	#[serde(rename = "DisplayName", skip_serializing_if = "Option::is_none")]
 	pub display_name: Option<Value>,
 	#[serde(rename = "ID")]
 	pub id: Option<Value>,
@@ -359,7 +365,7 @@ pub struct AccessControlList {
 pub struct AccessControlPolicy {
 	#[serde(rename = "@xmlns", serialize_with = "xmlns_tag")]
 	pub xmlns: (),
-	#[serde(rename = "Owner")]
+	#[serde(rename = "Owner", skip_serializing_if = "Option::is_none")]
 	pub owner: Option<Owner>,
 	#[serde(rename = "AccessControlList")]
 	pub acl: AccessControlList,

@@ -94,9 +94,9 @@ pub struct CorsConfiguration {
 
 #[derive(Debug, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
 pub struct CorsRule {
-	#[serde(rename = "ID")]
+	#[serde(rename = "ID", skip_serializing_if = "Option::is_none")]
 	pub id: Option<Value>,
-	#[serde(rename = "MaxAgeSeconds")]
+	#[serde(rename = "MaxAgeSeconds", skip_serializing_if = "Option::is_none")]
 	pub max_age_seconds: Option<IntValue>,
 	#[serde(rename = "AllowedOrigin")]
 	pub allowed_origins: Vec<Value>,

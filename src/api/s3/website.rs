@@ -168,23 +168,29 @@ pub struct Target {
 
 #[derive(Debug, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Condition {
-	#[serde(rename = "HttpErrorCodeReturnedEquals")]
+	#[serde(
+		rename = "HttpErrorCodeReturnedEquals",
+		skip_serializing_if = "Option::is_none"
+	)]
 	pub http_error_code: Option<IntValue>,
-	#[serde(rename = "KeyPrefixEquals")]
+	#[serde(rename = "KeyPrefixEquals", skip_serializing_if = "Option::is_none")]
 	pub prefix: Option<Value>,
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Redirect {
-	#[serde(rename = "HostName")]
+	#[serde(rename = "HostName", skip_serializing_if = "Option::is_none")]
 	pub hostname: Option<Value>,
-	#[serde(rename = "Protocol")]
+	#[serde(rename = "Protocol", skip_serializing_if = "Option::is_none")]
 	pub protocol: Option<Value>,
-	#[serde(rename = "HttpRedirectCode")]
+	#[serde(rename = "HttpRedirectCode", skip_serializing_if = "Option::is_none")]
 	pub http_redirect_code: Option<IntValue>,
-	#[serde(rename = "ReplaceKeyPrefixWith")]
+	#[serde(
+		rename = "ReplaceKeyPrefixWith",
+		skip_serializing_if = "Option::is_none"
+	)]
 	pub replace_prefix: Option<Value>,
-	#[serde(rename = "ReplaceKeyWith")]
+	#[serde(rename = "ReplaceKeyWith", skip_serializing_if = "Option::is_none")]
 	pub replace_full: Option<Value>,
 }
 
