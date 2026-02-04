@@ -110,7 +110,7 @@ pub async fn handle_put_website(
 
 #[derive(Debug, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
 pub struct WebsiteConfiguration {
-	#[serde(serialize_with = "xmlns_tag", skip_deserializing)]
+	#[serde(rename = "@xmlns", serialize_with = "xmlns_tag", skip_deserializing)]
 	pub xmlns: (),
 	#[serde(rename = "ErrorDocument")]
 	pub error_document: Option<Key>,

@@ -86,7 +86,7 @@ pub async fn handle_put_cors(
 #[derive(Debug, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
 #[serde(rename = "CORSConfiguration")]
 pub struct CorsConfiguration {
-	#[serde(serialize_with = "xmlns_tag", skip_deserializing)]
+	#[serde(rename = "@xmlns", serialize_with = "xmlns_tag", skip_deserializing)]
 	pub xmlns: (),
 	#[serde(rename = "CORSRule")]
 	pub cors_rules: Vec<CorsRule>,

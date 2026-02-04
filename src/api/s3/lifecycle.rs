@@ -83,7 +83,7 @@ pub async fn handle_put_lifecycle(
 
 #[derive(Debug, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
 pub struct LifecycleConfiguration {
-	#[serde(serialize_with = "xmlns_tag", skip_deserializing)]
+	#[serde(rename = "@xmlns", serialize_with = "xmlns_tag", skip_deserializing)]
 	pub xmlns: (),
 	#[serde(rename = "Rule")]
 	pub lifecycle_rules: Vec<LifecycleRule>,

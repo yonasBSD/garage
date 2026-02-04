@@ -61,7 +61,7 @@ pub struct ListAllMyBucketsResult {
 
 #[derive(Debug, Serialize, PartialEq, Eq)]
 pub struct LocationConstraint {
-	#[serde(serialize_with = "xmlns_tag")]
+	#[serde(rename = "@xmlns", serialize_with = "xmlns_tag")]
 	pub xmlns: (),
 	#[serde(rename = "$value")]
 	pub region: String,
@@ -103,7 +103,7 @@ pub struct DeleteError {
 
 #[derive(Debug, Serialize, PartialEq, Eq)]
 pub struct DeleteResult {
-	#[serde(serialize_with = "xmlns_tag")]
+	#[serde(rename = "@xmlns", serialize_with = "xmlns_tag")]
 	pub xmlns: (),
 	#[serde(rename = "Deleted")]
 	pub deleted: Vec<Deleted>,
@@ -113,7 +113,7 @@ pub struct DeleteResult {
 
 #[derive(Debug, Serialize, PartialEq, Eq)]
 pub struct InitiateMultipartUploadResult {
-	#[serde(serialize_with = "xmlns_tag")]
+	#[serde(rename = "@xmlns", serialize_with = "xmlns_tag")]
 	pub xmlns: (),
 	#[serde(rename = "Bucket")]
 	pub bucket: Value,
@@ -125,7 +125,7 @@ pub struct InitiateMultipartUploadResult {
 
 #[derive(Debug, Serialize, PartialEq, Eq)]
 pub struct CompleteMultipartUploadResult {
-	#[serde(serialize_with = "xmlns_tag")]
+	#[serde(rename = "@xmlns", serialize_with = "xmlns_tag")]
 	pub xmlns: (),
 	#[serde(rename = "Location")]
 	pub location: Option<Value>,
@@ -175,7 +175,7 @@ pub struct ListMultipartItem {
 
 #[derive(Debug, Serialize, PartialEq, Eq)]
 pub struct ListMultipartUploadsResult {
-	#[serde(serialize_with = "xmlns_tag")]
+	#[serde(rename = "@xmlns", serialize_with = "xmlns_tag")]
 	pub xmlns: (),
 	#[serde(rename = "Bucket")]
 	pub bucket: Value,
@@ -227,7 +227,7 @@ pub struct PartItem {
 
 #[derive(Debug, Serialize, PartialEq, Eq)]
 pub struct ListPartsResult {
-	#[serde(serialize_with = "xmlns_tag")]
+	#[serde(rename = "@xmlns", serialize_with = "xmlns_tag")]
 	pub xmlns: (),
 	#[serde(rename = "Bucket")]
 	pub bucket: Value,
@@ -275,7 +275,7 @@ pub struct CommonPrefix {
 
 #[derive(Debug, Serialize, PartialEq, Eq)]
 pub struct ListBucketResult {
-	#[serde(serialize_with = "xmlns_tag")]
+	#[serde(rename = "@xmlns", serialize_with = "xmlns_tag")]
 	pub xmlns: (),
 	#[serde(rename = "Name")]
 	pub name: Value,
@@ -309,7 +309,7 @@ pub struct ListBucketResult {
 
 #[derive(Debug, Serialize, PartialEq, Eq)]
 pub struct VersioningConfiguration {
-	#[serde(serialize_with = "xmlns_tag")]
+	#[serde(rename = "@xmlns", serialize_with = "xmlns_tag")]
 	pub xmlns: (),
 	#[serde(rename = "Status")]
 	pub status: Option<Value>,
@@ -317,7 +317,7 @@ pub struct VersioningConfiguration {
 
 #[derive(Debug, Serialize, PartialEq, Eq)]
 pub struct PostObject {
-	#[serde(serialize_with = "xmlns_tag")]
+	#[serde(rename = "@xmlns", serialize_with = "xmlns_tag")]
 	pub xmlns: (),
 	#[serde(rename = "Location")]
 	pub location: Value,
@@ -331,9 +331,9 @@ pub struct PostObject {
 
 #[derive(Debug, Serialize, PartialEq, Eq)]
 pub struct Grantee {
-	#[serde(rename = "xmlns:xsi", serialize_with = "xmlns_xsi_tag")]
+	#[serde(rename = "@xmlns:xsi", serialize_with = "xmlns_xsi_tag")]
 	pub xmlns_xsi: (),
-	#[serde(rename = "xsi:type")]
+	#[serde(rename = "@xsi:type")]
 	pub typ: String,
 	#[serde(rename = "DisplayName")]
 	pub display_name: Option<Value>,
@@ -357,7 +357,7 @@ pub struct AccessControlList {
 
 #[derive(Debug, Serialize, PartialEq, Eq)]
 pub struct AccessControlPolicy {
-	#[serde(serialize_with = "xmlns_tag")]
+	#[serde(rename = "@xmlns", serialize_with = "xmlns_tag")]
 	pub xmlns: (),
 	#[serde(rename = "Owner")]
 	pub owner: Option<Owner>,
