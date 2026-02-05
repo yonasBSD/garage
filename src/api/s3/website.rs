@@ -373,6 +373,8 @@ impl Redirect {
 
 #[cfg(test)]
 mod tests {
+	use crate::unprettify_xml;
+
 	use super::*;
 
 	use quick_xml::de::from_str;
@@ -468,8 +470,7 @@ mod tests {
 
 		let message2 = to_xml_with_header(&ref_value)?;
 
-		let cleanup = |c: &str| c.replace(char::is_whitespace, "");
-		assert_eq!(cleanup(message), cleanup(&message2));
+		assert_eq!(unprettify_xml(message), unprettify_xml(&message2));
 
 		Ok(())
 	}
