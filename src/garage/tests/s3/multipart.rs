@@ -466,7 +466,7 @@ async fn test_uploadlistpart() {
 			.await
 			.unwrap();
 
-		assert!(r.part_number_marker.is_none());
+		assert_eq!(r.part_number_marker.as_deref(), None);
 		assert_eq!(r.next_part_number_marker.as_deref(), Some("1"));
 		assert_eq!(r.max_parts.unwrap(), 1_i32);
 		assert!(r.is_truncated.unwrap());
