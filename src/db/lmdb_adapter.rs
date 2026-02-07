@@ -7,8 +7,10 @@ use std::path::{Path, PathBuf};
 use std::pin::Pin;
 use std::sync::{Arc, RwLock};
 
-use heed::types::ByteSlice;
-use heed::{BytesDecode, Env, RoTxn, RwTxn, UntypedDatabase as Database};
+use heed::types::Bytes;
+use heed::{BytesDecode, Env, EnvFlags, RoTxn, RwTxn, WithTls};
+
+type Database = heed::Database<Bytes, Bytes>;
 
 use crate::{
 	open::{Engine, OpenOpt},
@@ -37,14 +39,15 @@ pub(crate) fn open_db(path: &PathBuf, opt: &OpenOpt) -> Result<Db> {
 	env_builder.max_dbs(100);
 	env_builder.map_size(map_size);
 	env_builder.max_readers(2048);
-	unsafe {
-		env_builder.flag(heed::flags::Flags::MdbNoRdAhead);
-		env_builder.flag(heed::flags::Flags::MdbNoMetaSync);
-		if !opt.fsync {
-			env_builder.flag(heed::flags::Flags::MdbNoSync);
-		}
+	let mut env_flags = EnvFlags::NO_READ_AHEAD | EnvFlags::NO_META_SYNC;
+	if !opt.fsync {
+		env_flags |= EnvFlags::NO_SYNC;
 	}
-	match env_builder.open(path) {
+	let open_res = unsafe {
+		env_builder.flags(env_flags);
+		env_builder.open(path)
+	};
+	match open_res {
 		Err(heed::Error::Io(e)) if e.kind() == std::io::ErrorKind::OutOfMemory => Err(Error(
 			"OutOfMemory error while trying to open LMDB database. This can happen \
                 if your operating system is not allowing you to use sufficient virtual \
@@ -109,7 +112,9 @@ impl IDb for LmdbDb {
 		if let Some(i) = trees.1.get(name) {
 			Ok(*i)
 		} else {
-			let tree = self.db.create_database(Some(name))?;
+			let mut wtxn = self.db.write_txn()?;
+			let tree = self.db.create_database(&mut wtxn, Some(name))?;
+			wtxn.commit()?;
 			let i = trees.0.len();
 			trees.0.push(tree);
 			trees.1.insert(name.to_string(), i);
@@ -118,29 +123,32 @@ impl IDb for LmdbDb {
 	}
 
 	fn list_trees(&self) -> Result<Vec<String>> {
-		let tree0 = match self.db.open_database::<heed::types::Str, ByteSlice>(None)? {
+		let rtxn = self.db.read_txn()?;
+		let tree0 = match self
+			.db
+			.open_database::<heed::types::Str, Bytes>(&rtxn, None)?
+		{
 			Some(x) => x,
 			None => return Ok(vec![]),
 		};
 
 		let mut ret = vec![];
-		let tx = self.db.read_txn()?;
-		for item in tree0.iter(&tx)? {
+		for item in tree0.iter(&rtxn)? {
 			let (tree_name, _) = item?;
 			ret.push(tree_name.to_string());
 		}
-		drop(tx);
 
 		let mut ret2 = vec![];
 		for tree_name in ret {
 			if self
 				.db
-				.open_database::<ByteSlice, ByteSlice>(Some(&tree_name))?
+				.open_database::<Bytes, Bytes>(&rtxn, Some(&tree_name))?
 				.is_some()
 			{
 				ret2.push(tree_name);
 			}
 		}
+		drop(rtxn);
 
 		Ok(ret2)
 	}
@@ -258,11 +266,11 @@ impl IDb for LmdbDb {
 				Ok(on_commit)
 			}
 			TxFnResult::Abort => {
-				tx.tx.abort().map_err(Error::from).map_err(TxError::Db)?;
+				tx.tx.abort();
 				Err(TxError::Abort(()))
 			}
 			TxFnResult::DbErr => {
-				tx.tx.abort().map_err(Error::from).map_err(TxError::Db)?;
+				tx.tx.abort();
 				Err(TxError::Db(Error(
 					"(this message will be discarded)".into(),
 				)))
@@ -275,7 +283,7 @@ impl IDb for LmdbDb {
 
 struct LmdbTx<'a> {
 	trees: &'a [Database],
-	tx: RwTxn<'a, 'a>,
+	tx: RwTxn<'a>,
 }
 
 impl<'a> LmdbTx<'a> {
@@ -355,15 +363,15 @@ impl<'a> ITx for LmdbTx<'a> {
 // therefore a bit of unsafe code (it is a self-referential struct)
 
 type IteratorItem<'a> = heed::Result<(
-	<ByteSlice as BytesDecode<'a>>::DItem,
-	<ByteSlice as BytesDecode<'a>>::DItem,
+	<Bytes as BytesDecode<'a>>::DItem,
+	<Bytes as BytesDecode<'a>>::DItem,
 )>;
 
 struct TxAndIterator<'a, I>
 where
 	I: Iterator<Item = IteratorItem<'a>> + 'a,
 {
-	tx: RoTxn<'a>,
+	tx: RoTxn<'a, WithTls>,
 	iter: Option<I>,
 	_pin: PhantomPinned,
 }
@@ -378,7 +386,7 @@ where
 	}
 
 	/// Safety: iterfun must not store its argument anywhere but in its result.
-	unsafe fn make<F>(tx: RoTxn<'a>, iterfun: F) -> Result<ValueIter<'a>>
+	unsafe fn make<F>(tx: RoTxn<'a, WithTls>, iterfun: F) -> Result<ValueIter<'a>>
 	where
 		F: FnOnce(&'a RoTxn<'a>) -> Result<I>,
 	{

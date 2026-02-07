@@ -130,10 +130,12 @@ fn test_lmdb_db() {
 	use crate::lmdb_adapter::LmdbDb;
 
 	let path = mktemp::Temp::new_dir().unwrap();
-	let db = heed::EnvOpenOptions::new()
-		.max_dbs(100)
-		.open(&path)
-		.unwrap();
+	let db = unsafe {
+		heed::EnvOpenOptions::new()
+			.max_dbs(100)
+			.open(&path)
+			.unwrap()
+	};
 	let db = LmdbDb::init(db);
 	test_suite(db);
 	drop(path);
