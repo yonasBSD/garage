@@ -63,8 +63,7 @@ struct Opt {
 	cmd: Command,
 }
 
-#[tokio::main]
-async fn main() {
+fn main() {
 	// Initialize version and features info
 	let features = &[
 		#[cfg(feature = "bundled-libs")]
@@ -145,7 +144,20 @@ async fn main() {
 
 	sodiumoxide::init().expect("Unable to init sodiumoxide");
 
-	let res = match opt.cmd {
+	let res = tokio::runtime::Builder::new_multi_thread()
+		.enable_all()
+		.build()
+		.expect("build tokio multi_thread runtime failed")
+		.block_on(run(opt));
+
+	if let Err(e) = res {
+		eprintln!("Error: {}", e);
+		std::process::exit(1);
+	}
+}
+
+async fn run(opt: Opt) -> Result<(), Error> {
+	match opt.cmd {
 		Command::Server => server::run_server(opt.config_file, opt.secrets).await,
 		Command::OfflineRepair(repair_opt) => {
 			cli::local::repair::offline_repair(opt.config_file, opt.secrets, repair_opt).await
@@ -166,21 +178,21 @@ async fn main() {
 			Ok(())
 		}
 		_ => cli_command(opt).await,
-	};
-
-	if let Err(e) = res {
-		eprintln!("Error: {}", e);
-		std::process::exit(1);
 	}
 }
 
+/// # Safety
+///
+/// should be called before tokio runtime initialization
+/// to limit multithread problem with `std::env::set_var` which is unsafe
 fn init_logging(opt: &Opt) {
 	if std::env::var("RUST_LOG").is_err() {
 		let default_log = match &opt.cmd {
 			Command::Server => "netapp=info,garage=info",
 			_ => "netapp=warn,garage=warn",
 		};
-		std::env::set_var("RUST_LOG", default_log)
+
+		unsafe { std::env::set_var("RUST_LOG", default_log) };
 	}
 
 	let env_filter = tracing_subscriber::filter::EnvFilter::from_default_env();

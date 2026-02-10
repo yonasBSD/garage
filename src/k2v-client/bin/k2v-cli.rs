@@ -388,10 +388,12 @@ impl Filter {
 	}
 }
 
-#[tokio::main]
-async fn main() -> Result<(), Error> {
+/// # Safety
+///
+/// initialize `RUST_LOG` env var before start tokio runtime to limit multithread problem with `std::env::set_var` which is unsafe
+fn main() -> Result<(), Error> {
 	if std::env::var("RUST_LOG").is_err() {
-		std::env::set_var("RUST_LOG", "warn")
+		unsafe { std::env::set_var("RUST_LOG", "warn") };
 	}
 
 	tracing_subscriber::fmt()
@@ -412,6 +414,14 @@ async fn main() -> Result<(), Error> {
 
 	let client = K2vClient::new(config)?;
 
+	tokio::runtime::Builder::new_current_thread()
+		.enable_all()
+		.build()
+		.unwrap()
+		.block_on(run(args))
+}
+
+async fn run(args: Args) -> Result<(), Error> {
 	match args.command {
 		Command::Insert {
 			partition_key,
@@ -603,6 +613,5 @@ async fn main() -> Result<(), Error> {
 			}
 		}
 	}
-
 	Ok(())
 }
