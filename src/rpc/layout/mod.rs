@@ -385,7 +385,7 @@ impl Crdt for LayoutStaging {
 impl NodeRole {
 	pub fn capacity_string(&self) -> String {
 		match self.capacity {
-			Some(c) => ByteSize::b(c).to_string_as(false),
+			Some(c) => ByteSize::b(c).display().iec().to_string(),
 			None => "gateway".to_string(),
 		}
 	}

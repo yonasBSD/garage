@@ -313,7 +313,7 @@ To know the correct value of the new layout version, invoke `garage layout show`
 
 pub fn capacity_string(v: Option<u64>) -> String {
 	match v {
-		Some(c) => ByteSize::b(c).to_string_as(false),
+		Some(c) => ByteSize::b(c).display().iec().to_string(),
 		None => "gateway".to_string(),
 	}
 }
@@ -383,7 +383,7 @@ pub fn print_cluster_layout(layout: &GetClusterLayoutResponse, empty_msg: &str) 
 				tags,
 				role.zone,
 				capacity_string(role.capacity),
-				ByteSize::b(usable_capacity).to_string_as(false),
+				ByteSize::b(usable_capacity).display().iec(),
 				(100.0 * usable_capacity as f32) / (capacity as f32)
 			));
 		} else {

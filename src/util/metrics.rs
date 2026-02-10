@@ -59,5 +59,5 @@ where
 // ----
 
 pub fn gen_trace_id() -> TraceId {
-	rand::thread_rng().gen::<[u8; 16]>().into()
+	rand::rng().random::<[u8; 16]>().into()
 }

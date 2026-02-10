@@ -130,7 +130,7 @@ impl Worker for AutoSnapshotWorker {
 
 		async_snapshot_metadata(&self.garage).await?;
 
-		let rand_factor = 1f32 + thread_rng().gen::<f32>() / 5f32;
+		let rand_factor = 1f32 + rand::rng().random::<f32>() / 5f32;
 		self.next_snapshot = Instant::now() + self.snapshot_interval.mul_f32(rand_factor);
 
 		Ok(WorkerState::Idle)
