@@ -158,7 +158,7 @@ fn main() {
 
 async fn run(opt: Opt) -> Result<(), Error> {
 	match opt.cmd {
-		Command::Server => server::run_server(opt.config_file, opt.secrets).await,
+		Command::Server(sopt) => server::run_server(opt.config_file, opt.secrets, sopt).await,
 		Command::OfflineRepair(repair_opt) => {
 			cli::local::repair::offline_repair(opt.config_file, opt.secrets, repair_opt).await
 		}
@@ -188,7 +188,7 @@ async fn run(opt: Opt) -> Result<(), Error> {
 fn init_logging(opt: &Opt) {
 	if std::env::var("RUST_LOG").is_err() {
 		let default_log = match &opt.cmd {
-			Command::Server => "netapp=info,garage=info",
+			Command::Server(_) => "netapp=info,garage=info",
 			_ => "netapp=warn,garage=warn",
 		};
 

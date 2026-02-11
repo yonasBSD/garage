@@ -8,7 +8,7 @@ use crate::cli::local::convert_db;
 pub enum Command {
 	/// Run Garage server
 	#[structopt(name = "server", version = garage_version())]
-	Server,
+	Server(ServerOpt),
 
 	/// Get network status
 	#[structopt(name = "status", version = garage_version())]
@@ -77,6 +77,17 @@ pub enum Command {
 		#[structopt(default_value = "null")]
 		payload: String,
 	},
+}
+
+// ---------------------------
+// ---- garage server ... ----
+// ---------------------------
+
+#[derive(StructOpt, Debug)]
+pub struct ServerOpt {
+	/// Automatically configure a single-node layout in the cluster
+	#[structopt(long = "single-node")]
+	pub(crate) single_node: bool,
 }
 
 // -------------------------

@@ -1,4 +1,5 @@
 use std::path::PathBuf;
+use std::sync::Arc;
 
 use tokio::sync::watch;
 
@@ -16,6 +17,7 @@ use garage_api_k2v::api_server::K2VApiServer;
 
 use crate::secrets::{fill_secrets, Secrets};
 use crate::tracing_setup::init_tracing;
+use crate::ServerOpt;
 
 async fn wait_from(mut chan: watch::Receiver<bool>) {
 	while !*chan.borrow() {
@@ -25,7 +27,11 @@ async fn wait_from(mut chan: watch::Receiver<bool>) {
 	}
 }
 
-pub async fn run_server(config_file: PathBuf, secrets: Secrets) -> Result<(), Error> {
+pub async fn run_server(
+	config_file: PathBuf,
+	secrets: Secrets,
+	opt: ServerOpt,
+) -> Result<(), Error> {
 	info!("Loading configuration...");
 	let config = fill_secrets(read_config(config_file)?, secrets)?;
 
@@ -66,6 +72,10 @@ pub async fn run_server(config_file: PathBuf, secrets: Secrets) -> Result<(), Er
 
 	info!("Launching internal Garage cluster communications...");
 	let run_system = tokio::spawn(garage.system.clone().run(watch_cancel.clone()));
+
+	// ---- Run initial configuration logic ----
+
+	initial_config(&garage, opt).await?;
 
 	// ---- Launch public-facing API servers ----
 
@@ -160,6 +170,64 @@ pub async fn run_server(config_file: PathBuf, secrets: Secrets) -> Result<(), Er
 	await_background_done.await?;
 
 	info!("Cleaning up...");
+
+	Ok(())
+}
+
+async fn initial_config(garage: &Arc<Garage>, opt: ServerOpt) -> Result<(), Error> {
+	use garage_rpc::layout::*;
+
+	if opt.single_node {
+		let layout_version = garage.system.cluster_layout().inner().current().version;
+
+		if layout_version > 1 {
+			return Err(Error::Message("Refusing to run in single-node mode: layout version is already superior to 1. Remove the --single-node flag to run the server in full mode.".into()));
+		}
+
+		if layout_version == 0 {
+			// Setup initial layout
+			let mut layout = garage.system.cluster_layout().inner().clone();
+			let our_id = garage.system.id;
+
+			// Check no other nodes are present in the system
+			let nodes = garage.system.get_known_nodes();
+			if nodes.iter().any(|x| x.id != our_id) {
+				return Err(Error::Message("Refusing to run in single-node mode: more nodes are already present in the cluster.".into()));
+			}
+
+			// Automatically determine this node's capacity
+			let capacity = garage
+				.system
+				.local_status()
+				.data_disk_avail
+				.map(|(_avail, total)| total)
+				.unwrap_or(1024 * 1024 * 1024); // Default to 1GB
+
+			assert!(layout.current().roles.is_empty());
+
+			layout.staging.get_mut().roles.clear();
+			layout.staging.get_mut().roles.update_in_place(
+				our_id,
+				NodeRoleV(Some(NodeRole {
+					zone: "dc1".to_string(),
+					capacity: Some(capacity),
+					tags: vec!["default".to_string()],
+				})),
+			);
+
+			let (layout, msg) = layout.apply_staged_changes(1)?;
+			info!(
+				"Created initial layout for single-node configuration:\n{}",
+				msg.join("\n")
+			);
+
+			garage
+				.system
+				.layout_manager
+				.update_cluster_layout(&layout)
+				.await?;
+		}
+	}
 
 	Ok(())
 }
