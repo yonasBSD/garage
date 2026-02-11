@@ -32,7 +32,7 @@ pub async fn run_server(
 	secrets: Secrets,
 	opt: ServerOpt,
 ) -> Result<(), Error> {
-	info!("Loading configuration...");
+	info!("Loading configuration from {}...", config_file.display());
 	let config = fill_secrets(read_config(config_file)?, secrets)?;
 
 	// ---- Initialize Garage internals ----
