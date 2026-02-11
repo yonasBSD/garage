@@ -85,9 +85,18 @@ pub enum Command {
 
 #[derive(StructOpt, Debug)]
 pub struct ServerOpt {
-	/// Automatically configure a single-node layout in the cluster
+	/// Automatically configure a single-node layout in the cluster.
+	/// Garage will refuse to run if the cluster already has other nodes.
 	#[structopt(long = "single-node")]
 	pub(crate) single_node: bool,
+	/// Configure a default S3 API key using environment variables `GARAGE_DEFAULT_ACCESS_KEY` and
+	/// `GARAGE_DEFAULT_SECRET_KEY`. Requires `--single-node`.
+	#[structopt(long = "default-access-key")]
+	pub(crate) default_access_key: bool,
+	/// Configure a default bucket using environment variable `GARAGE_DEFAULT_BUCKET`.
+	/// Implies `--default-access-key`. Requires `--single-node`.
+	#[structopt(long = "default-bucket")]
+	pub(crate) default_bucket: bool,
 }
 
 // -------------------------
