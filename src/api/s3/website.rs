@@ -3,7 +3,7 @@ use quick_xml::de::from_reader;
 use hyper::{header::HeaderName, Request, Response, StatusCode};
 use serde::{Deserialize, Serialize};
 
-use garage_model::bucket_table::{self, *};
+use garage_model::bucket_table::{self, Bucket, WebsiteConfig};
 
 use garage_api_common::helpers::*;
 
