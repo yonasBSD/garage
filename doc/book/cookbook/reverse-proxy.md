@@ -142,7 +142,74 @@ server {
 
 ## Apache httpd
 
-@TODO
+The [Apache HTTP Server](https://httpd.apache.org/)
+is a general purpose web server that includes
+[reverse proxy](https://httpd.apache.org/docs/2.4/mod/mod_proxy.html)
+capabilities.
+
+### Exposing the S3 endpoints
+
+Create a new [virtual host](https://httpd.apache.org/docs/2.4/vhosts/),
+obtain a certificate using
+[certbot](https://eff-certbot.readthedocs.io/en/stable/using.html#apache),
+and add the
+[`ProxyPass`](https://httpd.apache.org/docs/2.4/mod/mod_proxy.html#proxypass)
+and
+[`ProxyPreserveHost`](https://httpd.apache.org/docs/2.4/mod/mod_proxy.html#proxypreservehost)
+options:
+
+```apache
+<VirtualHost *:443>
+  ServerName garage.example.com
+
+  SSLCertificateFile /etc/letsencrypt/live/garage.example.com/fullchain.pem
+  SSLCertificateKeyFile /etc/letsencrypt/live/garage.example.com/privkey.pem
+  Include /etc/letsencrypt/options-ssl-apache.conf
+
+  Header always set Strict-Transport-Security "max-age=31536000"
+  Header always add Content-Security-Policy upgrade-insecure-requests
+
+  ProxyPass "/" "http://localhost:3900/" nocanon
+  ProxyPreserveHost on
+</VirtualHost>
+```
+
+The `nocanon` keyword is important for
+[presigned URLs](https://docs.aws.amazon.com/AmazonS3/latest/userguide/using-presigned-url.html);
+otherwise,
+
+> `mod_proxy` will canonicalise ProxyPassed URLs.
+> But this may be incompatible with some backends,
+> particularly those that make use of `PATH_INFO`.
+> The optional `nocanon` keyword suppresses this
+> and passes the URL path "raw" to the backend.
+
+### Exposing the web endpoint
+
+Adding static websites backed by Garage works very similarly,
+with the only difference being the port selected in the `ProxyPass` directive.
+
+```apache
+  ProxyPass "/" "http://localhost:3902/" nocanon
+```
+
+### Using Unix sockets
+
+Apache can also proxy via Unix sockets instead of TCP ports,
+if Garage is so configured.
+
+`garage.toml`:
+
+```toml
+[s3_api]
+api_bind_addr = "/run/garage/s3_api.socket"
+```
+
+Apache config:
+
+```apache
+  ProxyPass "/" "unix:/run/garage/s3_api.socket|http://localhost/" nocanon
+```
 
 ## Traefik v2
 
