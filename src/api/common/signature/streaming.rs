@@ -201,6 +201,7 @@ mod payload {
 	use nom::character::streaming::hex_digit1;
 	use nom::combinator::{map_res, opt};
 	use nom::number::streaming::hex_u32;
+	use nom::Parser as _;
 
 	macro_rules! try_parse {
 		($expr:expr) => {
@@ -234,7 +235,7 @@ mod payload {
 			let (input, _) = try_parse!(tag(";")(input));
 
 			let (input, _) = try_parse!(tag("chunk-signature=")(input));
-			let (input, data) = try_parse!(map_res(hex_digit1, hex::decode)(input));
+			let (input, data) = try_parse!(map_res(hex_digit1, hex::decode).parse(input));
 			let signature = Hash::try_from(&data).ok_or(nom::Err::Failure(Error::BadSignature))?;
 
 			let (input, _) = try_parse!(tag("\r\n")(input));
@@ -272,18 +273,20 @@ mod payload {
 			let (input, header_name) = try_parse!(map_res(
 				take_while(|c: u8| c.is_ascii_alphanumeric() || c == b'-'),
 				HeaderName::from_bytes
-			)(input));
-			let (input, _) = try_parse!(tag(b":")(input));
+			)
+			.parse(input));
+			let (input, _) = try_parse!(tag(&b":"[..])(input));
 			let (input, header_value) = try_parse!(map_res(
 				take_while(|c: u8| c.is_ascii_alphanumeric() || b"+/=".contains(&c)),
 				HeaderValue::from_bytes
-			)(input));
+			)
+			.parse(input));
 
 			// Possible '\n' after the header value, depends on clients
 			// https://docs.aws.amazon.com/AmazonS3/latest/userguide/checking-object-integrity.html
-			let (input, _) = try_parse!(opt(tag(b"\n"))(input));
+			let (input, _) = try_parse!(opt(tag(&b"\n"[..])).parse(input));
 
-			let (input, _) = try_parse!(tag(b"\r\n")(input));
+			let (input, _) = try_parse!(tag(&b"\r\n"[..]).parse(input));
 
 			Ok((
 				input,
@@ -297,10 +300,10 @@ mod payload {
 		pub fn parse_signed(input: &[u8]) -> nom::IResult<&[u8], Self, Error<&[u8]>> {
 			let (input, trailer) = Self::parse_content(input)?;
 
-			let (input, _) = try_parse!(tag(b"x-amz-trailer-signature:")(input));
-			let (input, data) = try_parse!(map_res(hex_digit1, hex::decode)(input));
+			let (input, _) = try_parse!(tag(&b"x-amz-trailer-signature:"[..]).parse(input));
+			let (input, data) = try_parse!(map_res(hex_digit1, hex::decode).parse(input));
 			let signature = Hash::try_from(&data).ok_or(nom::Err::Failure(Error::BadSignature))?;
-			let (input, _) = try_parse!(tag(b"\r\n")(input));
+			let (input, _) = try_parse!(tag(&b"\r\n"[..]).parse(input));
 
 			Ok((
 				input,
@@ -312,7 +315,7 @@ mod payload {
 		}
 		pub fn parse_unsigned(input: &[u8]) -> nom::IResult<&[u8], Self, Error<&[u8]>> {
 			let (input, trailer) = Self::parse_content(input)?;
-			let (input, _) = try_parse!(tag(b"\r\n")(input));
+			let (input, _) = try_parse!(tag(&b"\r\n"[..]).parse(input));
 
 			Ok((input, trailer))
 		}
