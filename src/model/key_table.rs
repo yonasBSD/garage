@@ -155,12 +155,23 @@ impl Key {
 
 	/// Import a key from it's parts
 	pub fn import(key_id: &str, secret_key: &str, name: &str) -> Result<Self, &'static str> {
-		if key_id.len() != 26 || &key_id[..2] != "GK" || hex::decode(&key_id[2..]).is_err() {
-			return Err("The specified key ID is not a valid Garage key ID (starts with `GK`, followed by 12 hex-encoded bytes)");
+		if key_id.len() < 8 {
+			return Err("Key identifiers should be at least 8 characters long");
 		}
 
-		if secret_key.len() != 64 || hex::decode(secret_key).is_err() {
-			return Err("The specified secret key is not a valid Garage secret key (composed of 32 hex-encoded bytes)");
+		if !key_id
+			.chars()
+			.all(|c| c.is_ascii_alphanumeric() || "-_.".contains(c))
+		{
+			return Err("Key identifiers should be composed only of ASCII alphanumeric characters and characters '-', '_' and '.'");
+		}
+
+		if secret_key.len() < 16 {
+			return Err("Secret keys should be at least 16 characters long");
+		}
+
+		if !secret_key.chars().all(|c| c.is_ascii_graphic()) {
+			return Err("Secret keys should be composed only of graphic ASCII characters (U+0021 to U+007E)");
 		}
 
 		Ok(Self {

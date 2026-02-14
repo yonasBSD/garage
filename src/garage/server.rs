@@ -1,4 +1,5 @@
 use std::path::PathBuf;
+use std::sync::Arc;
 
 use tokio::sync::watch;
 
@@ -16,6 +17,7 @@ use garage_api_k2v::api_server::K2VApiServer;
 
 use crate::secrets::{fill_secrets, Secrets};
 use crate::tracing_setup::init_tracing;
+use crate::ServerOpt;
 
 async fn wait_from(mut chan: watch::Receiver<bool>) {
 	while !*chan.borrow() {
@@ -25,8 +27,12 @@ async fn wait_from(mut chan: watch::Receiver<bool>) {
 	}
 }
 
-pub async fn run_server(config_file: PathBuf, secrets: Secrets) -> Result<(), Error> {
-	info!("Loading configuration...");
+pub async fn run_server(
+	config_file: PathBuf,
+	secrets: Secrets,
+	opt: ServerOpt,
+) -> Result<(), Error> {
+	info!("Loading configuration from {}...", config_file.display());
 	let config = fill_secrets(read_config(config_file)?, secrets)?;
 
 	// ---- Initialize Garage internals ----
@@ -43,6 +49,9 @@ pub async fn run_server(config_file: PathBuf, secrets: Secrets) -> Result<(), Er
 
 	info!("Initializing Garage main data store...");
 	let garage = Garage::new(config.clone())?;
+
+	// Handle --single-node, --default-bucket and --default-access-key
+	initial_config(&garage, opt).await?;
 
 	info!("Initializing background runner...");
 	let watch_cancel = watch_shutdown_signal();
@@ -160,6 +169,176 @@ pub async fn run_server(config_file: PathBuf, secrets: Secrets) -> Result<(), Er
 	await_background_done.await?;
 
 	info!("Cleaning up...");
+
+	Ok(())
+}
+
+async fn initial_config(garage: &Arc<Garage>, opt: ServerOpt) -> Result<(), Error> {
+	use garage_model::bucket_alias_table::is_valid_bucket_name;
+	use garage_model::bucket_table::Bucket;
+	use garage_model::key_table::*;
+	use garage_model::permission::BucketKeyPerm;
+	use garage_rpc::layout::*;
+	use garage_rpc::replication_mode::ReplicationFactor;
+	use garage_table::*;
+	use garage_util::time::now_msec;
+
+	if opt.single_node {
+		if garage.replication_factor != ReplicationFactor::new(1).unwrap() {
+			return Err(Error::Message(
+				"Single-node mode requires replication_factor = 1 in the configuration file."
+					.into(),
+			));
+		}
+
+		let layout_version = garage.system.cluster_layout().inner().current().version;
+
+		if layout_version > 1 {
+			return Err(Error::Message("Refusing to run in single-node mode: layout version is already superior to 1. Remove the --single-node flag to run the server in full mode.".into()));
+		}
+
+		if layout_version == 0 {
+			// Setup initial layout
+			let mut layout = garage.system.cluster_layout().inner().clone();
+			let our_id = garage.system.id;
+
+			// Check no other nodes are present in the system
+			let nodes = garage.system.get_known_nodes();
+			if nodes.iter().any(|x| x.id != our_id) {
+				return Err(Error::Message("Refusing to run in single-node mode: more nodes are already present in the cluster.".into()));
+			}
+
+			// Automatically determine this node's capacity
+			let capacity = garage
+				.system
+				.local_status()
+				.data_disk_avail
+				.map(|(_avail, total)| total)
+				.unwrap_or(1024 * 1024 * 1024); // Default to 1GB
+
+			assert!(layout.current().roles.is_empty());
+
+			layout.staging.get_mut().roles.clear();
+			layout.staging.get_mut().roles.update_in_place(
+				our_id,
+				NodeRoleV(Some(NodeRole {
+					zone: "dc1".to_string(),
+					capacity: Some(capacity),
+					tags: vec!["default".to_string()],
+				})),
+			);
+
+			let (layout, msg) = layout.apply_staged_changes(1)?;
+			info!(
+				"Created initial layout for single-node configuration:\n{}",
+				msg.join("\n")
+			);
+
+			garage
+				.system
+				.layout_manager
+				.update_cluster_layout(&layout)
+				.await?;
+		}
+	}
+
+	if (opt.default_bucket || opt.default_access_key) && !opt.single_node {
+		return Err(Error::Message(
+			"Flags --default-access-key and --default-bucket can only be used in single-node mode."
+				.into(),
+		));
+	}
+
+	if opt.default_access_key || opt.default_bucket {
+		let rdenv = |name: &str| {
+			std::env::var(name)
+				.map_err(|_| Error::Message(format!("Environment variable `{}` is not set", name)))
+		};
+
+		// Create default access key if it does not exist
+		let key_id = rdenv("GARAGE_DEFAULT_ACCESS_KEY")?;
+		let secret_key = rdenv("GARAGE_DEFAULT_SECRET_KEY")?;
+
+		let existing_key = garage.key_table.get(&EmptyKey, &key_id).await?;
+
+		let key = match existing_key {
+			Some(key) => {
+				match key.state.as_option() {
+                    None => return Err(Error::Message(format!("Access key {} was deleted in the cluster, cannot add it back", key_id))),
+                    Some(st) if st.secret_key != secret_key => return Err(Error::Message(format!("Access key {} is associated with a secret key different than the one given in GARAGE_DEFAULT_SECRET_KEY", key_id))),
+                    _ => (),
+                }
+
+				key
+			}
+			None => {
+				info!("Creating default access key `{}`", key_id);
+
+				let mut key = Key::import(&key_id, &secret_key, "default access key")
+					.map_err(|e| Error::Message(format!("Invalid default access key: {}", e)))?;
+				key.state
+					.as_option_mut()
+					.unwrap()
+					.allow_create_bucket
+					.update(true);
+				garage.key_table.insert(&key).await?;
+
+				key
+			}
+		};
+
+		if opt.default_bucket {
+			// Create default bucket if it does not exist
+			let bucket_name = rdenv("GARAGE_DEFAULT_BUCKET")?;
+
+			if !is_valid_bucket_name(&bucket_name, garage.config.allow_punycode) {
+				return Err(Error::Message(
+					"Invalid default bucket name, see S3 specification for allowed bucket names."
+						.into(),
+				));
+			}
+
+			let helper = garage.locked_helper().await;
+
+			let bucket = match helper.bucket().resolve_global_bucket_fast(&bucket_name)? {
+				Some(bucket) => bucket,
+				None => {
+					info!("Creating default bucket `{}`", bucket_name);
+
+					let bucket = Bucket::new();
+					garage.bucket_table.insert(&bucket).await?;
+
+					helper
+						.set_global_bucket_alias(bucket.id, &bucket_name)
+						.await
+						.map_err(|e| {
+							Error::Message(format!("Cannot create default bucket: {}", e))
+						})?;
+
+					bucket
+				}
+			};
+
+			helper
+				.set_bucket_key_permissions(
+					bucket.id,
+					&key.key_id,
+					BucketKeyPerm {
+						timestamp: now_msec(),
+						allow_read: true,
+						allow_write: true,
+						allow_owner: true,
+					},
+				)
+				.await
+				.map_err(|e| {
+					Error::Message(format!(
+						"Cannot configure permissions on default bucket: {}",
+						e
+					))
+				})?;
+		}
+	}
 
 	Ok(())
 }

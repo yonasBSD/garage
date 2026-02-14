@@ -103,7 +103,7 @@ to check [the most recent versions on the Docker Hub](https://hub.docker.com/r/d
 For example:
 
 ```
-sudo docker pull dxflrs/garage:v2.2.0
+docker pull dxflrs/garage:v2.2.0
 ```
 
 ## Deploying and configuring Garage

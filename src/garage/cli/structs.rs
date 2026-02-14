@@ -8,7 +8,7 @@ use crate::cli::local::convert_db;
 pub enum Command {
 	/// Run Garage server
 	#[structopt(name = "server", version = garage_version())]
-	Server,
+	Server(ServerOpt),
 
 	/// Get network status
 	#[structopt(name = "status", version = garage_version())]
@@ -77,6 +77,26 @@ pub enum Command {
 		#[structopt(default_value = "null")]
 		payload: String,
 	},
+}
+
+// ---------------------------
+// ---- garage server ... ----
+// ---------------------------
+
+#[derive(StructOpt, Debug)]
+pub struct ServerOpt {
+	/// Automatically configure a single-node layout in the cluster.
+	/// Garage will refuse to run if the cluster already has other nodes.
+	#[structopt(long = "single-node")]
+	pub(crate) single_node: bool,
+	/// Configure a default S3 API key using environment variables `GARAGE_DEFAULT_ACCESS_KEY` and
+	/// `GARAGE_DEFAULT_SECRET_KEY`. Requires `--single-node`.
+	#[structopt(long = "default-access-key")]
+	pub(crate) default_access_key: bool,
+	/// Configure a default bucket using environment variable `GARAGE_DEFAULT_BUCKET`.
+	/// Implies `--default-access-key`. Requires `--single-node`.
+	#[structopt(long = "default-bucket")]
+	pub(crate) default_bucket: bool,
 }
 
 // -------------------------
