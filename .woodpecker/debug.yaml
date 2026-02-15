@@ -2,13 +2,14 @@ labels:
   nix: "enabled"
 
 when:
-  event:
-  - push
-  - tag
-  - pull_request
-  - deployment
-  - cron
-  - manual
+  - event:
+    - tag
+    - pull_request
+    - deployment
+    - cron
+    - manual
+  - event: push
+    branch: main-*
 
 steps:
   - name: check formatting
