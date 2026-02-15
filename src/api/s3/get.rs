@@ -120,16 +120,42 @@ fn getobject_override_headers(
 fn handle_http_precondition(
 	version: &ObjectVersion,
 	version_meta: &ObjectVersionMeta,
+	meta_inner: &ObjectVersionMetaInner,
+	encryption: EncryptionParams,
 	req: &Request<()>,
 ) -> Result<Option<Response<ResBody>>, Error> {
 	let precondition_headers = PreconditionHeaders::parse(req)?;
 
 	if let Some(status_code) = precondition_headers.check(version, &version_meta.etag)? {
+		let mut response = object_headers(
+			version,
+			version_meta,
+			meta_inner,
+			encryption,
+			ChecksumMode { enabled: false },
+		);
+		if let Some(header_map) = response.headers_mut() {
+			use http::header;
+			let headers_to_keep: Vec<_> = header_map
+				.drain()
+				.filter(|(k, _v)| {
+					k.as_ref().is_some_and(|k| {
+						[
+							header::CONTENT_LOCATION,
+							header::DATE,
+							header::ETAG,
+							header::VARY,
+							header::CACHE_CONTROL,
+							header::EXPIRES,
+						]
+						.contains(k)
+					})
+				})
+				.collect();
+			header_map.extend(headers_to_keep);
+		}
 		Ok(Some(
-			Response::builder()
-				.status(status_code)
-				.body(empty_body())
-				.unwrap(),
+			response.status(status_code).body(empty_body()).unwrap(),
 		))
 	} else {
 		Ok(None)
@@ -178,16 +204,18 @@ pub async fn handle_head_without_ctx(
 		_ => unreachable!(),
 	};
 
-	if let Some(res) = handle_http_precondition(object_version, version_meta, req)? {
-		return Ok(res);
-	}
-
 	let (encryption, headers) = EncryptionParams::check_decrypt(
 		&garage,
 		req.headers(),
 		&version_meta.encryption,
 		OekDerivationInfo::for_object(&object, object_version),
 	)?;
+
+	if let Some(res) =
+		handle_http_precondition(object_version, version_meta, &headers, encryption, req)?
+	{
+		return Ok(res);
+	}
 
 	let checksum_mode = checksum_mode(req);
 
@@ -305,16 +333,16 @@ pub async fn handle_get_without_ctx(
 		ObjectVersionData::FirstBlock(meta, _) => meta,
 	};
 
-	if let Some(res) = handle_http_precondition(last_v, last_v_meta, req)? {
-		return Ok(res);
-	}
-
 	let (enc, headers) = EncryptionParams::check_decrypt(
 		&garage,
 		req.headers(),
 		&last_v_meta.encryption,
 		OekDerivationInfo::for_object(&object, last_v),
 	)?;
+
+	if let Some(res) = handle_http_precondition(last_v, last_v_meta, &headers, enc, req)? {
+		return Ok(res);
+	}
 
 	let checksum_mode = checksum_mode(req);
 
