@@ -6,6 +6,7 @@ use std::time::{Duration, Instant};
 
 use arc_swap::ArcSwap;
 use log::{debug, info, trace, warn};
+use rand::seq::SliceRandom;
 use serde::{Deserialize, Serialize};
 
 use tokio::select;
@@ -27,6 +28,15 @@ const LOOP_DELAY: Duration = Duration::from_secs(1);
 const FAILED_PING_THRESHOLD: usize = 4;
 
 const DEFAULT_PING_TIMEOUT_MILLIS: u64 = 10_000;
+const ADDR_MAX_CONSECUTIVE_FAILURES: usize = 3;
+
+/// A known address for a peer, with connection status tracking.
+#[derive(Debug, Clone)]
+struct KnownAddr {
+	addr: SocketAddr,
+	last_success: Option<Instant>,
+	consecutive_failures: usize,
+}
 
 // -- Protocol messages --
 
@@ -53,8 +63,8 @@ impl Message for PeerListMessage {
 
 #[derive(Debug)]
 struct PeerInfoInternal {
-	// known_addrs contains all of the addresses everyone gave us
-	known_addrs: Vec<SocketAddr>,
+	/// Per-address connection tracking: success history and failure counts
+	known_addrs: Vec<KnownAddr>,
 
 	state: PeerConnState,
 	last_send_ping: Option<Instant>,
@@ -66,7 +76,15 @@ struct PeerInfoInternal {
 impl PeerInfoInternal {
 	fn new(state: PeerConnState, known_addr: Option<SocketAddr>) -> Self {
 		Self {
-			known_addrs: known_addr.map(|x| vec![x]).unwrap_or_default(),
+			known_addrs: known_addr
+				.map(|addr| {
+					vec![KnownAddr {
+						addr,
+						last_success: None,
+						consecutive_failures: 0,
+					}]
+				})
+				.unwrap_or_default(),
 			state,
 			last_send_ping: None,
 			last_seen: None,
@@ -75,8 +93,17 @@ impl PeerInfoInternal {
 		}
 	}
 	fn add_addr(&mut self, addr: SocketAddr) -> bool {
-		if !self.known_addrs.contains(&addr) {
-			self.known_addrs.push(addr);
+		if let Some(ka) = self.known_addrs.iter_mut().find(|ka| ka.addr == addr) {
+			// Reset failure count when an address is re-advertised (via gossip
+			// or incoming connection), since it may have become reachable again.
+			ka.consecutive_failures = 0;
+			false
+		} else {
+			self.known_addrs.push(KnownAddr {
+				addr,
+				last_success: None,
+				consecutive_failures: 0,
+			});
 			// If we are learning a new address for this node,
 			// we want to retry connecting
 			self.state = match self.state {
@@ -87,8 +114,6 @@ impl PeerInfoInternal {
 				x @ (PeerConnState::Ourself | PeerConnState::Connected { .. }) => x,
 			};
 			true
-		} else {
-			false
 		}
 	}
 }
@@ -323,7 +348,7 @@ impl PeeringManager {
 								hex::encode(&id[..8]),
 								h.known_addrs
 									.iter()
-									.map(|x| format!("{}", x))
+									.map(|ka| ka.addr.to_string())
 									.collect::<Vec<_>>()
 									.join(", "),
 								i + 1
@@ -489,23 +514,43 @@ impl PeeringManager {
 		}
 	}
 
-	async fn try_connect(self: Arc<Self>, id: NodeID, addresses: Vec<SocketAddr>) {
+	async fn try_connect(self: Arc<Self>, id: NodeID, mut addresses: Vec<KnownAddr>) {
+		// Sort addresses: most recently successful first, then shuffle ties
+		// so that never-succeeded addresses get a fair chance.
+		addresses.sort_by(|a, b| match (a.last_success, b.last_success) {
+			(Some(ta), Some(tb)) => tb.cmp(&ta),
+			(Some(_), None) => std::cmp::Ordering::Less,
+			(None, Some(_)) => std::cmp::Ordering::Greater,
+			(None, None) => std::cmp::Ordering::Equal,
+		});
+		let first_none = addresses
+			.iter()
+			.position(|ka| ka.last_success.is_none())
+			.unwrap_or(addresses.len());
+		addresses[first_none..].shuffle(&mut rand::rng());
+
+		let mut failed_addrs = Vec::new();
 		let conn_addr = {
 			let mut ret = None;
-			for addr in addresses.iter() {
-				debug!("Trying address {} for peer {}", addr, hex::encode(&id[..8]));
-				match self.netapp.clone().try_connect(*addr, id).await {
+			for ka in addresses.iter() {
+				debug!(
+					"Trying address {} for peer {}",
+					ka.addr,
+					hex::encode(&id[..8])
+				);
+				match self.netapp.clone().try_connect(ka.addr, id).await {
 					Ok(()) => {
-						ret = Some(*addr);
+						ret = Some(ka.addr);
 						break;
 					}
 					Err(e) => {
 						debug!(
 							"Error connecting to {} at {}: {}",
 							hex::encode(&id[..8]),
-							addr,
+							ka.addr,
 							e
 						);
+						failed_addrs.push(ka.addr);
 					}
 				}
 			}
@@ -520,20 +565,63 @@ impl PeeringManager {
 				hex::encode(&id[..8]),
 				addresses.len()
 			);
-			let mut known_hosts = self.known_hosts.write().unwrap();
-			if let Some(host) = known_hosts.list.get_mut(&id) {
+		}
+
+		// Update failure/success tracking and prune stale addresses
+		let mut known_hosts = self.known_hosts.write().unwrap();
+		if let Some(host) = known_hosts.list.get_mut(&id) {
+			if conn_addr.is_none() {
 				host.state = match host.state {
+					PeerConnState::Trying(i) if i >= CONN_MAX_RETRIES => PeerConnState::Abandoned,
 					PeerConnState::Trying(i) => {
-						if i >= CONN_MAX_RETRIES {
-							PeerConnState::Abandoned
-						} else {
-							PeerConnState::Waiting(i + 1, Instant::now() + CONN_RETRY_INTERVAL)
-						}
+						PeerConnState::Waiting(i + 1, Instant::now() + CONN_RETRY_INTERVAL)
 					}
 					_ => PeerConnState::Waiting(0, Instant::now() + CONN_RETRY_INTERVAL),
 				};
-				self.update_public_peer_list(&known_hosts);
 			}
+
+			let now = Instant::now();
+			if let Some(ok_addr) = conn_addr {
+				if let Some(ka) = host.known_addrs.iter_mut().find(|ka| ka.addr == ok_addr) {
+					ka.last_success = Some(now);
+					ka.consecutive_failures = 0;
+				}
+			}
+			for addr in &failed_addrs {
+				if let Some(ka) = host.known_addrs.iter_mut().find(|ka| ka.addr == *addr) {
+					ka.consecutive_failures += 1;
+				}
+			}
+
+			// Never prune below 1 address, so that a long partition doesn't
+			// leave us unable to reconnect.  Protect the most recently
+			// successful address; if none ever succeeded, skip pruning
+			// entirely (we have nothing better to keep).
+			let best_addr = host
+				.known_addrs
+				.iter()
+				.filter_map(|ka| ka.last_success.map(|t| (ka.addr, t)))
+				.max_by_key(|(_, t)| *t)
+				.map(|(addr, _)| addr);
+
+			let before = host.known_addrs.len();
+			if best_addr.is_some() {
+				host.known_addrs.retain(|ka| {
+					ka.consecutive_failures < ADDR_MAX_CONSECUTIVE_FAILURES
+						|| Some(ka.addr) == best_addr
+				});
+			}
+			let pruned = before - host.known_addrs.len();
+			if pruned > 0 {
+				info!(
+					"Pruned {} stale address(es) for peer {} ({} remaining)",
+					pruned,
+					hex::encode(&id[..8]),
+					host.known_addrs.len()
+				);
+			}
+
+			self.update_public_peer_list(&known_hosts);
 		}
 	}
 
