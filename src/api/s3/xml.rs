@@ -1,4 +1,4 @@
-use quick_xml::se::{self, QuoteLevel};
+use quick_xml::se::{self, EmptyElementHandling, QuoteLevel};
 use serde::{Deserialize, Serialize, Serializer};
 
 use crate::error::Error as ApiError;
@@ -7,7 +7,8 @@ pub fn to_xml_with_header<T: Serialize>(x: &T) -> Result<String, ApiError> {
 	let mut xml = r#"<?xml version="1.0" encoding="UTF-8"?>"#.to_string();
 
 	let mut ser = se::Serializer::new(&mut xml);
-	ser.set_quote_level(QuoteLevel::Full);
+	ser.set_quote_level(QuoteLevel::Full)
+		.empty_element_handling(EmptyElementHandling::Expanded);
 	let _serialized = x.serialize(ser)?;
 	Ok(xml)
 }
