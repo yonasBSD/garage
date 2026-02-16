@@ -468,7 +468,7 @@ mod tests {
 		assert_eq!(
 			to_xml_with_header(&get_bucket_versioning)?,
 			"<?xml version=\"1.0\" encoding=\"UTF-8\"?>\
-<VersioningConfiguration xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\"/>"
+<VersioningConfiguration xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\"></VersioningConfiguration>"
 		);
 		let get_bucket_versioning2 = VersioningConfiguration {
 			xmlns: (),
