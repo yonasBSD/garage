@@ -3,15 +3,6 @@ title = "Miscellaneous notes"
 weight = 20
 +++
 
-## Quirks about cargo2nix/rust in Nix
-
-If you use submodules in your crate (like `crdt` and `replication` in `garage_table`), you must list them in `default.nix`
-
-The Windows target does not work. it might be solvable through [overrides](https://github.com/cargo2nix/cargo2nix/blob/master/overlay/overrides.nix). Indeed, we pass `x86_64-pc-windows-gnu` but mingw need `x86_64-w64-mingw32`
-
-We have a simple [PR on cargo2nix](https://github.com/cargo2nix/cargo2nix/pull/201) that fixes critical bugs but the project does not seem very active currently. We must use [my patched version of cargo2nix](https://github.com/superboum/cargo2nix) to enable i686 and armv6l compilation. We might need to contribute to cargo2nix in the future.
-
-
 ## Nix
 
 Nix has no armv7 + musl toolchains but armv7l is backward compatible with armv6l.

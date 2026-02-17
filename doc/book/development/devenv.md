@@ -82,12 +82,6 @@ nix-build \
 
 *The result is located in `result/bin`. You can pass arguments to cross compile: check `.woodpecker/release.yml` for examples.*
 
-If you modify a `Cargo.toml` or regenerate any `Cargo.lock`, you must run `cargo2nix`:
-
-```
-cargo2nix -f
-```
-
 Many tools like rclone, `mc` (minio-client), or `aws` (awscliv2) will be available in your environment and will be useful to test Garage.
 
 **This is the recommended method.**
@@ -123,23 +117,6 @@ cargo test   # run the tests
 cargo fmt    # format the project, run it before any commit!
 cargo clippy # run the linter, run it before any commit!
 ```
-
-This is specific to our project, but you will need one last tool, `cargo2nix`.
-To install it, run:
-
-```bash
-cargo install --git https://github.com/superboum/cargo2nix --branch main cargo2nix
-```
-
-You must use it every time you modify a `Cargo.toml` or regenerate a `Cargo.lock` file as follow:
-
-```bash
-cargo build  # Rebuild Cargo.lock if needed
-cargo2nix -f
-```
-
-It will output a `Cargo.nix` file which is a specific `Cargo.lock` file dedicated to Nix that is required by our CI
-which means you must include it in your commits.
 
 Later, to use our scripts and integration tests, you might need additional tools.
 These tools are listed at the end of the `shell.nix` package in the `nativeBuildInputs` part.
