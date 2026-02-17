@@ -27,7 +27,7 @@ pub struct WorkerInfo {
 	pub last_error: Option<(String, u64)>,
 }
 
-/// WorkerStatus is a struct returned by the worker with a bunch of canonical
+/// `WorkerStatus` is a struct returned by the worker with a bunch of canonical
 /// fields to indicate their status to CLI users. All fields are optional.
 #[derive(Clone, Debug, Default)]
 pub struct WorkerStatus {
@@ -39,7 +39,7 @@ pub struct WorkerStatus {
 }
 
 impl BackgroundRunner {
-	/// Create a new BackgroundRunner
+	/// Create a new `BackgroundRunner`
 	pub fn new(stop_signal: watch::Receiver<bool>) -> (Arc<Self>, tokio::task::JoinHandle<()>) {
 		let (send_worker, worker_out) = mpsc::unbounded_channel::<Box<dyn Worker>>();
 

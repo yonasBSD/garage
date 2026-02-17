@@ -31,3 +31,6 @@ hyper.workspace = true
 tokio.workspace = true
 
 opentelemetry.workspace = true
+
+[lints]
+workspace = true

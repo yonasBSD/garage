@@ -66,7 +66,7 @@ impl Clone for RequestStrategy<()> {
 }
 
 impl RequestStrategy<()> {
-	/// Create a RequestStrategy with default timeout and not interrupting when quorum reached
+	/// Create a `RequestStrategy` with default timeout and not interrupting when quorum reached
 	pub fn with_priority(prio: RequestPriority) -> Self {
 		RequestStrategy {
 			rs_quorum: None,
@@ -109,7 +109,7 @@ impl<T> RequestStrategy<T> {
 		self.rs_timeout = Timeout::Custom(timeout);
 		self
 	}
-	/// Extract drop_on_complete item
+	/// Extract `drop_on_complete` item
 	fn extract_drop_on_complete(self) -> (RequestStrategy<()>, T) {
 		(
 			RequestStrategy {
@@ -272,7 +272,7 @@ impl RpcHelper {
 	/// Make a RPC call to multiple servers, returning either a Vec of responses,
 	/// or an error if quorum could not be reached due to too many errors
 	///
-	/// If RequestStrategy has send_all_at_once set, then all requests will be
+	/// If `RequestStrategy` has `send_all_at_once` set, then all requests will be
 	/// sent at once, and `try_call_many` will return as soon as a quorum of
 	/// responses is achieved, dropping and cancelling the remaining requests.
 	///
@@ -374,7 +374,7 @@ impl RpcHelper {
 			// reach quorum, start some new requests.
 			while send_all_at_once || successes.len() + resp_stream.len() < quorum {
 				if let Some(fut) = requests.next() {
-					resp_stream.push(fut)
+					resp_stream.push(fut);
 				} else {
 					break;
 				}
@@ -413,7 +413,7 @@ impl RpcHelper {
 	/// Make a RPC call to multiple servers, returning either a Vec of responses,
 	/// or an error if quorum could not be reached due to too many errors
 	///
-	/// Contrary to try_call_many, this function is especially made for broadcast
+	/// Contrary to `try_call_many`, this function is especially made for broadcast
 	/// write operations. In particular:
 	///
 	/// - The request are sent to all specified nodes as soon as `try_write_many_sets`
@@ -582,7 +582,7 @@ impl RpcHelper {
 		let mut vernodes = vec![];
 		for ver in layout.versions()?.iter() {
 			let nodes = ver.nodes_of(position);
-			vernodes.push(rpc_helper.request_order(current_layout, nodes))
+			vernodes.push(rpc_helper.request_order(current_layout, nodes));
 		}
 
 		let mut ret = if vernodes.len() == 1 {

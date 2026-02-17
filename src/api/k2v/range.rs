@@ -1,6 +1,6 @@
 //! Utility module for retrieving ranges of items in Garage tables
 //! Implements parameters (prefix, start, end, limit) as specified
-//! for endpoints ReadIndex, ReadBatch and DeleteBatch
+//! for endpoints `ReadIndex`, `ReadBatch` and `DeleteBatch`
 
 use std::sync::Arc;
 

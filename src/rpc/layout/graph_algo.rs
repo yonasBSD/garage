@@ -42,7 +42,7 @@ impl Edge for WeightedEdge {}
 
 /// Struct for the graph structure. We do encapsulation here to be able to both
 /// provide user friendly Vertex enum to address vertices, and to use internally usize
-/// indices and Vec instead of HashMap in the graph algorithm to optimize execution speed.
+/// indices and Vec instead of `HashMap` in the graph algorithm to optimize execution speed.
 pub struct Graph<E: Edge> {
 	vertex_to_id: HashMap<Vertex, usize>,
 	id_to_vertex: Vec<Vertex>,
@@ -253,7 +253,7 @@ impl Graph<FlowEdge> {
 
 	/// This function takes a flow, and a cost function on the edges, and tries to find an
 	/// equivalent flow with a better cost, by finding improving overflow cycles. It uses
-	/// as subroutine the Bellman Ford algorithm run up to path_length.
+	/// as subroutine the Bellman Ford algorithm run up to `path_length`.
 	/// We assume that the cost of edge (u,v) is the opposite of the cost of (v,u), and
 	/// only one needs to be present in the cost function.
 	pub fn optimize_flow_with_cost(
@@ -290,7 +290,7 @@ impl Graph<FlowEdge> {
 		Ok(())
 	}
 
-	/// Construct the weighted graph G_f from the flow and the cost function
+	/// Construct the weighted graph `G_f` from the flow and the cost function
 	fn build_cost_graph(&self, cost: &CostFunction) -> Result<Graph<WeightedEdge>, String> {
 		let mut g = Graph::<WeightedEdge>::new(&self.id_to_vertex);
 		let nb_vertices = self.id_to_vertex.len();
@@ -323,11 +323,11 @@ impl Graph<WeightedEdge> {
 		Ok(())
 	}
 
-	/// This function lists the negative cycles it manages to find after path_length
+	/// This function lists the negative cycles it manages to find after `path_length`
 	/// iterations of the main loop of the Bellman-Ford algorithm. For the classical
-	/// algorithm, path_length needs to be equal to the number of vertices. However,
+	/// algorithm, `path_length` needs to be equal to the number of vertices. However,
 	/// for particular graph structures like in our case, the algorithm is still correct
-	/// when path_length is the length of the longest possible simple path.
+	/// when `path_length` is the length of the longest possible simple path.
 	/// See the formal description of the algorithm for more details.
 	fn list_negative_cycles(&self, path_length: usize) -> Vec<Vec<Vertex>> {
 		let nb_vertices = self.graph.len();

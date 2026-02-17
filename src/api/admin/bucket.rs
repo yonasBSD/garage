@@ -557,7 +557,7 @@ impl RequestHandler for AddBucketAliasRequest {
 			BucketAliasEnum::Global { global_alias } => {
 				helper
 					.set_global_bucket_alias(bucket_id, &global_alias)
-					.await?
+					.await?;
 			}
 			BucketAliasEnum::Local {
 				local_alias,
@@ -565,7 +565,7 @@ impl RequestHandler for AddBucketAliasRequest {
 			} => {
 				helper
 					.set_local_bucket_alias(bucket_id, &access_key_id, &local_alias)
-					.await?
+					.await?;
 			}
 		}
 
@@ -591,7 +591,7 @@ impl RequestHandler for RemoveBucketAliasRequest {
 			BucketAliasEnum::Global { global_alias } => {
 				helper
 					.unset_global_bucket_alias(bucket_id, &global_alias)
-					.await?
+					.await?;
 			}
 			BucketAliasEnum::Local {
 				local_alias,
@@ -599,7 +599,7 @@ impl RequestHandler for RemoveBucketAliasRequest {
 			} => {
 				helper
 					.unset_local_bucket_alias(bucket_id, &access_key_id, &local_alias)
-					.await?
+					.await?;
 			}
 		}
 

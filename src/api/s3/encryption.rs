@@ -660,11 +660,11 @@ mod tests {
 
 	#[tokio::test]
 	async fn test_encrypt_block() {
-		test_block_enc(None).await
+		test_block_enc(None).await;
 	}
 
 	#[tokio::test]
 	async fn test_encrypt_block_compressed() {
-		test_block_enc(Some(1)).await
+		test_block_enc(Some(1)).await;
 	}
 }

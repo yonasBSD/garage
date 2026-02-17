@@ -2,7 +2,7 @@ use opentelemetry::{global, metrics::*, KeyValue};
 
 use garage_db as db;
 
-/// TableMetrics reference all counter used for metrics
+/// `TableMetrics` reference all counter used for metrics
 pub struct TableMetrics {
 	pub(crate) _table_size: ValueObserver<u64>,
 	pub(crate) _merkle_tree_size: ValueObserver<u64>,

@@ -73,7 +73,7 @@ impl Crdt for AdminApiTokenScope {
 
 impl AdminApiToken {
 	/// Create a new admin API token.
-	/// Returns the AdminApiToken object, which contains the hashed bearer token,
+	/// Returns the `AdminApiToken` object, which contains the hashed bearer token,
 	/// as well as the plaintext bearer token.
 	pub fn new(name: &str) -> (Self, String) {
 		use argon2::{

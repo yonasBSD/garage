@@ -45,3 +45,6 @@ serde.workspace = true
 serde_json.workspace = true
 
 opentelemetry.workspace = true
+
+[lints]
+workspace = true

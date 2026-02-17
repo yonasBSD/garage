@@ -123,7 +123,7 @@ async fn test_listobjectsv2() {
 				(Some(k), None) if k.len() == 1 => cnt_key += 1,
 				(None, Some(pfx)) if pfx.len() == 1 => cnt_pfx += 1,
 				_ => unreachable!("logic error"),
-			};
+			}
 			if next.is_none() {
 				break;
 			}
@@ -331,7 +331,7 @@ async fn test_listobjectsv1() {
 				(Some(k), None) if k.len() == 1 => cnt_key += 1,
 				(None, Some(pfx)) if pfx.len() == 1 => cnt_pfx += 1,
 				_ => unreachable!("logic error"),
-			};
+			}
 			if next.is_none() {
 				break;
 			}

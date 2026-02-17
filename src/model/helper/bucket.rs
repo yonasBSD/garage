@@ -79,7 +79,7 @@ impl<'a> BucketHelper<'a> {
 	/// aliases directly using the data provided in the `api_key` parameter.
 	/// As a consequence, it does not provide read-after-write guarantees.
 	///
-	/// In case no such bucket is found, this function returns a NoSuchBucket error.
+	/// In case no such bucket is found, this function returns a `NoSuchBucket` error.
 	#[allow(clippy::ptr_arg)]
 	pub fn resolve_bucket_fast(
 		&self,
@@ -147,7 +147,7 @@ impl<'a> BucketHelper<'a> {
 	///
 	/// - this function does quorum reads to ensure consistency.
 	/// - this function fetches the Key entry from the key table to ensure up-to-date data
-	/// - this function returns None if the bucket is not found, instead of HelperError::NoSuchBucket
+	/// - this function returns None if the bucket is not found, instead of `HelperError::NoSuchBucket`
 	#[allow(clippy::ptr_arg)]
 	pub async fn resolve_bucket(
 		&self,

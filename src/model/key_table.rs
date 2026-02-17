@@ -27,7 +27,7 @@ mod v08 {
 	/// Configuration for a key
 	#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
 	pub struct KeyParams {
-		/// The secret_key associated (immutable)
+		/// The `secret_key` associated (immutable)
 		pub secret_key: String,
 
 		/// Name for the key
@@ -73,7 +73,7 @@ mod v2 {
 		/// Key's creation date, if known (older versions of Garage didn't keep track
 		/// of this information)
 		pub created: Option<u64>,
-		/// The secret_key associated (immutable)
+		/// The `secret_key` associated (immutable)
 		pub secret_key: String,
 
 		/// Name for the key

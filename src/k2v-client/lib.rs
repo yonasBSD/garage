@@ -95,7 +95,7 @@ impl K2vClient {
 		})
 	}
 
-	/// Perform a ReadItem request, reading the value(s) stored for a single pk+sk.
+	/// Perform a `ReadItem` request, reading the value(s) stored for a single pk+sk.
 	pub async fn read_item(
 		&self,
 		partition_key: &str,
@@ -134,7 +134,7 @@ impl K2vClient {
 		}
 	}
 
-	/// Perform a PollItem request, waiting for the value(s) stored for a single pk+sk to be
+	/// Perform a `PollItem` request, waiting for the value(s) stored for a single pk+sk to be
 	/// updated.
 	pub async fn poll_item(
 		&self,
@@ -190,7 +190,7 @@ impl K2vClient {
 		}
 	}
 
-	/// Perform a PollRange request, waiting for any change in a given range of keys
+	/// Perform a `PollRange` request, waiting for any change in a given range of keys
 	/// to occur
 	pub async fn poll_range(
 		&self,
@@ -239,7 +239,7 @@ impl K2vClient {
 		}))
 	}
 
-	/// Perform an InsertItem request, inserting a value for a single pk+sk.
+	/// Perform an `InsertItem` request, inserting a value for a single pk+sk.
 	pub async fn insert_item(
 		&self,
 		partition_key: &str,
@@ -258,7 +258,7 @@ impl K2vClient {
 		Ok(())
 	}
 
-	/// Perform a DeleteItem request, deleting the value(s) stored for a single pk+sk.
+	/// Perform a `DeleteItem` request, deleting the value(s) stored for a single pk+sk.
 	pub async fn delete_item(
 		&self,
 		partition_key: &str,
@@ -274,7 +274,7 @@ impl K2vClient {
 		Ok(())
 	}
 
-	/// Perform a ReadIndex request, listing partition key which have at least one associated
+	/// Perform a `ReadIndex` request, listing partition key which have at least one associated
 	/// sort key, and which matches the filter.
 	pub async fn read_index(
 		&self,
@@ -300,7 +300,7 @@ impl K2vClient {
 		})
 	}
 
-	/// Perform an InsertBatch request, inserting multiple values at once. Note: this operation is
+	/// Perform an `InsertBatch` request, inserting multiple values at once. Note: this operation is
 	/// *not* atomic: it is possible for some sub-operations to fails and others to success. In
 	/// that case, failure is reported.
 	pub async fn insert_batch(&self, operations: &[BatchInsertOp<'_>]) -> Result<(), Error> {
@@ -312,7 +312,7 @@ impl K2vClient {
 		Ok(())
 	}
 
-	/// Perform a ReadBatch request, reading multiple values or range of values at once.
+	/// Perform a `ReadBatch` request, reading multiple values or range of values at once.
 	pub async fn read_batch(
 		&self,
 		operations: &[BatchReadOp<'_>],
@@ -346,7 +346,7 @@ impl K2vClient {
 			.collect())
 	}
 
-	/// Perform a DeleteBatch request, deleting multiple values or range of values at once, without
+	/// Perform a `DeleteBatch` request, deleting multiple values or range of values at once, without
 	/// providing causality information.
 	pub async fn delete_batch(&self, operations: &[BatchDeleteOp<'_>]) -> Result<Vec<u64>, Error> {
 		let url = self.build_url(None, &[("delete", "")]);
@@ -588,7 +588,7 @@ impl Serialize for K2vValue {
 	}
 }
 
-/// A set of K2vValue and associated causality information.
+/// A set of `K2vValue` and associated causality information.
 #[derive(Debug, Clone, Serialize)]
 pub struct CausalValue {
 	pub causality: CausalityToken,
@@ -621,12 +621,12 @@ pub struct PollRangeFilter<'a> {
 	pub prefix: Option<&'a str>,
 }
 
-/// Response to a poll_range query
+/// Response to a `poll_range` query
 #[derive(Debug, Default, Clone, Serialize)]
 pub struct PollRangeResult {
-	/// List of items that have changed since last PollRange call.
+	/// List of items that have changed since last `PollRange` call.
 	pub items: BTreeMap<String, CausalValue>,
-	/// opaque string representing items already seen for future PollRange calls.
+	/// opaque string representing items already seen for future `PollRange` calls.
 	pub seen_marker: String,
 }
 
@@ -696,7 +696,7 @@ pub struct PartitionInfo {
 	pub bytes: u64,
 }
 
-/// Single sub-operation of an InsertBatch.
+/// Single sub-operation of an `InsertBatch`.
 #[derive(Debug, Clone, Serialize)]
 pub struct BatchInsertOp<'a> {
 	#[serde(rename = "pk")]
@@ -709,7 +709,7 @@ pub struct BatchInsertOp<'a> {
 	pub value: K2vValue,
 }
 
-/// Single sub-operation of a ReadBatch.
+/// Single sub-operation of a `ReadBatch`.
 #[derive(Debug, Default, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct BatchReadOp<'a> {
@@ -743,7 +743,7 @@ struct BatchReadItem {
 	v: Vec<K2vValue>,
 }
 
-/// Single sub-operation of a DeleteBatch
+/// Single sub-operation of a `DeleteBatch`
 #[derive(Debug, Clone, Deserialize, Serialize)]
 #[serde(rename_all = "camelCase")]
 pub struct BatchDeleteOp<'a> {

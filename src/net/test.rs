@@ -15,12 +15,12 @@ use crate::NodeID;
 #[tokio::test(flavor = "current_thread")]
 async fn test_with_basic_scheduler() {
 	pretty_env_logger::init();
-	run_test(19980).await
+	run_test(19980).await;
 }
 
 #[tokio::test(flavor = "multi_thread", worker_threads = 4)]
 async fn test_with_threaded_scheduler() {
-	run_test(19990).await
+	run_test(19990).await;
 }
 
 async fn run_test(port_base: u16) {

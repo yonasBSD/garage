@@ -1,3 +1,5 @@
+use std::borrow::Cow;
+
 use format_table::format_table;
 
 use chrono::Local;
@@ -33,11 +35,11 @@ impl Cli {
 		let mut table = vec!["ID\tCreated\tName\tExpiration".to_string()];
 		for key in keys.0.iter() {
 			let exp = if key.expired {
-				"expired".to_string()
+				Cow::from("expired")
 			} else {
 				key.expiration
-					.map(|x| x.with_timezone(&Local).to_string())
-					.unwrap_or("never".into())
+					.map(|x| x.with_timezone(&Local).to_string().into())
+					.unwrap_or(Cow::Borrowed("never"))
 			};
 			table.push(format!(
 				"{}\t{}\t{}\t{}",
@@ -288,8 +290,8 @@ fn print_key_info(key: &GetKeyInfoResponse) {
 		format!(
 			"Expiration:\t{}",
 			key.expiration
-				.map(|x| x.with_timezone(&Local).to_string())
-				.unwrap_or("never".into())
+				.map(|x| x.with_timezone(&Local).to_string().into())
+				.unwrap_or(Cow::Borrowed("never"))
 		),
 		String::new(),
 		format!("Can create buckets:\t{}", key.permissions.create_bucket),

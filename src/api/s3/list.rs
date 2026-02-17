@@ -296,7 +296,7 @@ pub async fn handle_list_parts(
 		},
 	);
 
-	let (info, next) = fetch_part_info(query, &mpu)?;
+	let (info, next) = fetch_part_info(query, &mpu);
 
 	let result = s3_xml::ListPartsResult {
 		xmlns: (),
@@ -484,7 +484,7 @@ where
 				iter.next();
 			}
 			_ => (),
-		};
+		}
 
 		while let Some(object) = iter.peek() {
 			if !object.key.starts_with(&query.prefix) {
@@ -508,7 +508,7 @@ where
 				ExtractionResult::NoMore => {
 					return Ok(None);
 				}
-			};
+			}
 		}
 
 		if !server_more {
@@ -526,7 +526,7 @@ where
 fn fetch_part_info<'a>(
 	query: &ListPartsQuery,
 	mpu: &'a MultipartUpload,
-) -> Result<(Vec<PartInfo<'a>>, Option<u64>), Error> {
+) -> (Vec<PartInfo<'a>>, Option<u64>) {
 	assert!((1..=1000).contains(&query.max_parts)); // see s3/api_server.rs
 
 	// Parse multipart upload part list, removing parts not yet finished
@@ -565,10 +565,10 @@ fn fetch_part_info<'a>(
 	if parts.len() > query.max_parts as usize {
 		parts.truncate(query.max_parts as usize);
 		let pagination = Some(parts.last().unwrap().part_number);
-		return Ok((parts, pagination));
+		return (parts, pagination);
 	}
 
-	Ok((parts, None))
+	(parts, None)
 }
 
 /*
@@ -756,7 +756,7 @@ impl<K: std::cmp::Ord, V> Accumulator<K, V> {
 						None => Some(ExtractionResult::NoMore),
 					}
 				}
-			};
+			}
 		}
 	}
 
@@ -939,7 +939,7 @@ fn common_prefix<'a>(object: &'a Object, query: &ListQueryCommon) -> Option<&'a 
 	}
 }
 
-/// URIencode a value if needed
+/// `URIencode` a value if needed
 fn uriencode_maybe(s: &str, yes: bool) -> s3_xml::Value {
 	if yes {
 		s3_xml::Value(uri_encode(s, true))
@@ -1069,7 +1069,7 @@ mod tests {
 				assert_eq!(upload, Uuid::from([0x8f; 32]));
 			}
 			_ => panic!("wrong result"),
-		};
+		}
 
 		assert_eq!(acc.keys.len(), 2);
 		assert_eq!(
@@ -1098,7 +1098,7 @@ mod tests {
 		match acc.extract(&(query().common), &start, &mut iter) {
 			ExtractionResult::Extracted { key } if key.as_str() == "b" => (),
 			_ => panic!("wrong result"),
-		};
+		}
 	}
 
 	#[tokio::test]
@@ -1255,7 +1255,7 @@ mod tests {
 	}
 
 	#[test]
-	fn test_fetch_part_info() -> Result<(), Error> {
+	fn test_fetch_part_info() {
 		let mut query = ListPartsQuery {
 			bucket_name: "a".to_string(),
 			key: "a".to_string(),
@@ -1267,7 +1267,7 @@ mod tests {
 		let mpu = mpu();
 
 		// Start from the beginning but with limited size to trigger pagination
-		let (info, pagination) = fetch_part_info(&query, &mpu)?;
+		let (info, pagination) = fetch_part_info(&query, &mpu);
 		assert_eq!(pagination.unwrap(), 3);
 		assert_eq!(
 			info,
@@ -1291,7 +1291,7 @@ mod tests {
 
 		// Use previous pagination to make a new request
 		query.part_number_marker = Some(pagination.unwrap());
-		let (info, pagination) = fetch_part_info(&query, &mpu)?;
+		let (info, pagination) = fetch_part_info(&query, &mpu);
 		assert!(pagination.is_none());
 		assert_eq!(
 			info,
@@ -1315,14 +1315,14 @@ mod tests {
 
 		// Trying to access a part that is way larger than registered ones
 		query.part_number_marker = Some(9999);
-		let (info, pagination) = fetch_part_info(&query, &mpu)?;
+		let (info, pagination) = fetch_part_info(&query, &mpu);
 		assert!(pagination.is_none());
 		assert_eq!(info, vec![]);
 
 		// Try without any limitation
 		query.max_parts = 1000;
 		query.part_number_marker = None;
-		let (info, pagination) = fetch_part_info(&query, &mpu)?;
+		let (info, pagination) = fetch_part_info(&query, &mpu);
 		assert!(pagination.is_none());
 		assert_eq!(
 			info,
@@ -1357,7 +1357,5 @@ mod tests {
 				},
 			]
 		);
-
-		Ok(())
 	}
 }

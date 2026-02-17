@@ -142,10 +142,10 @@ impl TryFrom<HelperError> for CommonError {
 	}
 }
 
-/// This function converts HelperErrors into CommonErrors,
-/// for variants that exist in CommonError.
-/// This is used for helper functions that might return InvalidBucketName
-/// or NoSuchBucket for instance, and we want to pass that error
+/// This function converts `HelperErrors` into `CommonErrors`,
+/// for variants that exist in `CommonError`.
+/// This is used for helper functions that might return `InvalidBucketName`
+/// or `NoSuchBucket` for instance, and we want to pass that error
 /// up to our caller.
 pub fn pass_helper_error(err: HelperError) -> CommonError {
 	match CommonError::try_from(err) {

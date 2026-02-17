@@ -42,8 +42,8 @@ impl Drop for Sender {
 	}
 }
 
-/// The RecvLoop trait, which is implemented both by the client and the server
-/// connection objects (ServerConn and ClientConn) adds a method `.recv_loop()`
+/// The `RecvLoop` trait, which is implemented both by the client and the server
+/// connection objects (`ServerConn` and `ClientConn`) adds a method `.recv_loop()`
 /// and a prototype of a handler for received messages `.recv_handler()` that
 /// must be filled by implementors. `.recv_loop()` receives messages in a loop
 /// according to the protocol defined above: chunks of message in progress of being
@@ -70,7 +70,7 @@ pub(crate) trait RecvLoop: Sync + 'static {
 				Ok(_) => (),
 				Err(e) if e.kind() == std::io::ErrorKind::UnexpectedEof => break,
 				Err(e) => return Err(e.into()),
-			};
+			}
 			let id = RequestID::from_be_bytes(header_id);
 
 			let mut header_size = [0u8; ChunkLength::BITS as usize / 8];

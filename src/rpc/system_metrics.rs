@@ -5,7 +5,7 @@ use opentelemetry::{global, metrics::*, KeyValue};
 
 use crate::system::{ClusterHealthStatus, System};
 
-/// TableMetrics reference all counter used for metrics
+/// `TableMetrics` reference all counter used for metrics
 pub struct SystemMetrics {
 	// Static values
 	pub(crate) _garage_build_info: ValueObserver<u64>,
@@ -60,7 +60,7 @@ impl SystemMetrics {
 							KeyValue::new("rustversion", garage_util::version::rust_version()),
 							KeyValue::new("version", garage_util::version::garage_version()),
 						],
-					)
+					);
 				})
 				.with_description("Garage build info")
 				.init(),
@@ -68,7 +68,7 @@ impl SystemMetrics {
 				let replication_factor = system.replication_factor;
 				meter
 					.u64_value_observer("garage_replication_factor", move |observer| {
-						observer.observe(usize::from(replication_factor) as u64, &[])
+						observer.observe(usize::from(replication_factor) as u64, &[]);
 					})
 					.with_description("Garage replication factor setting")
 					.init()

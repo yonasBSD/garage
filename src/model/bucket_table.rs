@@ -35,7 +35,7 @@ mod v08 {
 		/// Map of aliases that are or have been given to this bucket
 		/// in the global namespace
 		/// (not authoritative: this is just used as an indication to
-		/// map back to aliases when doing ListBuckets)
+		/// map back to aliases when doing `ListBuckets`)
 		pub aliases: crdt::LwwMap<String, bool>,
 		/// Map of aliases that are or have been given to this bucket
 		/// in namespaces local to keys
@@ -148,7 +148,7 @@ mod v2 {
 		/// Map of aliases that are or have been given to this bucket
 		/// in the global namespace
 		/// (not authoritative: this is just used as an indication to
-		/// map back to aliases when doing ListBuckets)
+		/// map back to aliases when doing `ListBuckets`)
 		pub aliases: crdt::LwwMap<String, bool>,
 		/// Map of aliases that are or have been given to this bucket
 		/// in namespaces local to keys
@@ -241,7 +241,7 @@ impl AutoCrdt for BucketQuotas {
 }
 
 impl BucketParams {
-	/// Create an empty BucketParams with no authorized keys and no website access
+	/// Create an empty `BucketParams` with no authorized keys and no website access
 	fn new() -> Self {
 		BucketParams {
 			creation_date: now_msec(),

@@ -277,7 +277,7 @@ impl Stream for CancelOnDropStream {
 		let res = this.stream.poll_next(cx);
 		if matches!(res, Poll::Ready(None)) {
 			if let Some(c) = this.cancel.take() {
-				std::mem::forget(c)
+				std::mem::forget(c);
 			}
 		}
 		res

@@ -50,11 +50,11 @@ pub enum Error {
 	#[error("Parts given to CompleteMultipartUpload do not match uploaded parts")]
 	InvalidPart,
 
-	/// Parts given to CompleteMultipartUpload were not in ascending order
+	/// Parts given to `CompleteMultipartUpload` were not in ascending order
 	#[error("Parts given to CompleteMultipartUpload were not in ascending order")]
 	InvalidPartOrder,
 
-	/// In CompleteMultipartUpload: not enough data
+	/// In `CompleteMultipartUpload`: not enough data
 	/// (here we are more lenient than AWS S3)
 	#[error("Proposed upload is smaller than the minimum allowed object size")]
 	EntityTooSmall,

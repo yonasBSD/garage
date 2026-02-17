@@ -37,7 +37,7 @@ impl BlockRc {
 		match old_rc.increment().serialize() {
 			Some(x) => tx.insert(&self.rc_table, hash, x)?,
 			None => unreachable!(),
-		};
+		}
 		Ok(old_rc.is_zero())
 	}
 
@@ -52,7 +52,7 @@ impl BlockRc {
 		match new_rc.serialize() {
 			Some(x) => tx.insert(&self.rc_table, hash, x)?,
 			None => tx.remove(&self.rc_table, hash)?,
-		};
+		}
 		Ok(matches!(new_rc, RcEntry::Deletable { .. }))
 	}
 
@@ -72,7 +72,7 @@ impl BlockRc {
 					tx.remove(&self.rc_table, hash)?;
 				}
 				_ => (),
-			};
+			}
 			Ok(())
 		})?;
 		Ok(())
@@ -136,14 +136,14 @@ impl BlockRc {
 pub(crate) enum RcEntry {
 	/// Present: the block has `count` references, with `count` > 0.
 	///
-	/// This is stored as u64::to_be_bytes(count)
+	/// This is stored as `u64::to_be_bytes(count)`
 	Present { count: u64 },
 
 	/// Deletable: the block has zero references, and can be deleted
-	/// once time (returned by now_msec) is larger than at_time
+	/// once time (returned by `now_msec`) is larger than `at_time`
 	/// (in millis since Unix epoch)
 	///
-	/// This is stored as [0u8; 8] followed by u64::to_be_bytes(at_time),
+	/// This is stored as [0u8; 8] followed by `u64::to_be_bytes(at_time)`,
 	/// (this allows for the data format to be backwards compatible with
 	/// previous Garage versions that didn't have this intermediate state)
 	Deletable { at_time: u64 },

@@ -129,7 +129,7 @@ where
 	}
 }
 
-/// Trait to map any error type to Error::Message
+/// Trait to map any error type to `Error::Message`
 pub trait OkOrMessage {
 	type S;
 	fn ok_or_message<M: Into<String>>(self, message: M) -> Result<Self::S, Error>;

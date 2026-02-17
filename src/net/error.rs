@@ -72,7 +72,7 @@ where
 	fn log_err(self, msg: &'static str) {
 		if let Err(e) = self {
 			error!("Error: {}: {}", msg, Into::<Error>::into(e));
-		};
+		}
 	}
 }
 

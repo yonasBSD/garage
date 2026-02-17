@@ -47,7 +47,7 @@ pub struct Config {
 
 	/// Maximum number of parallel block writes per PUT request
 	/// Higher values improve throughput but increase memory usage
-	/// Default: 3, Recommended: 10-30 for NVMe, 3-10 for HDD
+	/// Default: 3, Recommended: 10-30 for `NVMe`, 3-10 for HDD
 	#[serde(default = "default_block_max_concurrent_writes_per_request")]
 	pub block_max_concurrent_writes_per_request: usize,
 	/// Number of replicas. Can be any positive integer, but uneven numbers are more favorable.
@@ -95,7 +95,7 @@ pub struct Config {
 	pub rpc_secret_file: Option<PathBuf>,
 	/// Address to bind for RPC
 	pub rpc_bind_addr: SocketAddr,
-	/// Bind outgoing sockets to rpc_bind_addr's IP address as well
+	/// Bind outgoing sockets to `rpc_bind_addr`'s IP address as well
 	#[serde(default)]
 	pub rpc_bind_outgoing: bool,
 	/// Public IP address of this node
@@ -154,7 +154,7 @@ pub struct Config {
 	pub allow_punycode: bool,
 }
 
-/// Value for data_dir: either a single directory or a list of dirs with attributes
+/// Value for `data_dir`: either a single directory or a list of dirs with attributes
 #[derive(Deserialize, Debug, Clone)]
 #[serde(untagged)]
 pub enum DataDirEnum {
@@ -166,7 +166,7 @@ pub enum DataDirEnum {
 pub struct DataDir {
 	/// Path to the data directory
 	pub path: PathBuf,
-	/// Capacity of the drive (required if read_only is false)
+	/// Capacity of the drive (required if `read_only` is false)
 	#[serde(default)]
 	pub capacity: Option<String>,
 	/// Whether this is a legacy read-only path (capacity should be None)
@@ -305,6 +305,7 @@ fn default_consistency_mode() -> String {
 	"consistent".into()
 }
 
+#[expect(clippy::unnecessary_wraps)]
 fn default_compression() -> Option<i32> {
 	Some(1)
 }

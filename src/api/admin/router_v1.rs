@@ -79,7 +79,7 @@ pub enum Endpoint {
 impl Endpoint {
 	/// Determine which S3 endpoint a request is for using the request, and a bucket which was
 	/// possibly extracted from the Host header.
-	/// Returns Self plus bucket name, if endpoint is not Endpoint::ListBuckets
+	/// Returns Self plus bucket name, if endpoint is not `Endpoint::ListBuckets`
 	pub fn from_request<T>(req: &Request<T>) -> Result<Self, Error> {
 		let uri = req.uri();
 		let path = uri.path();
@@ -126,7 +126,7 @@ impl Endpoint {
 		]);
 
 		if let Some(message) = query.nonempty_message() {
-			debug!("Unused query parameter: {}", message)
+			debug!("Unused query parameter: {}", message);
 		}
 
 		Ok(res)

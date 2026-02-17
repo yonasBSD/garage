@@ -126,7 +126,7 @@ fn handle_http_precondition(
 ) -> Result<Option<Response<ResBody>>, Error> {
 	let precondition_headers = PreconditionHeaders::parse(req)?;
 
-	if let Some(status_code) = precondition_headers.check(version, &version_meta.etag)? {
+	if let Some(status_code) = precondition_headers.check(version, &version_meta.etag) {
 		let mut response = object_headers(
 			version,
 			version_meta,
@@ -877,7 +877,7 @@ impl PreconditionHeaders {
 		})
 	}
 
-	fn check(&self, v: &ObjectVersion, etag: &str) -> Result<Option<StatusCode>, Error> {
+	fn check(&self, v: &ObjectVersion, etag: &str) -> Option<StatusCode> {
 		// we store date with ms precision, but headers are precise to the second: truncate
 		// the timestamp to handle the same-second edge case
 		let v_date = UNIX_EPOCH + Duration::from_secs(v.timestamp / 1000);
@@ -887,32 +887,32 @@ impl PreconditionHeaders {
 		if let Some(im) = &self.if_match {
 			// Step 1: if-match is present
 			if !im.iter().any(|x| x == etag || x == "*") {
-				return Ok(Some(StatusCode::PRECONDITION_FAILED));
+				return Some(StatusCode::PRECONDITION_FAILED);
 			}
 		} else if let Some(ius) = &self.if_unmodified_since {
 			// Step 2: if-unmodified-since is present, and if-match is absent
 			if v_date > *ius {
-				return Ok(Some(StatusCode::PRECONDITION_FAILED));
+				return Some(StatusCode::PRECONDITION_FAILED);
 			}
 		}
 
 		if let Some(inm) = &self.if_none_match {
 			// Step 3: if-none-match is present
 			if inm.iter().any(|x| x == etag || x == "*") {
-				return Ok(Some(StatusCode::NOT_MODIFIED));
+				return Some(StatusCode::NOT_MODIFIED);
 			}
 		} else if let Some(ims) = &self.if_modified_since {
 			// Step 4: if-modified-since is present, and if-none-match is absent
 			if v_date <= *ims {
-				return Ok(Some(StatusCode::NOT_MODIFIED));
+				return Some(StatusCode::NOT_MODIFIED);
 			}
 		}
 
-		Ok(None)
+		None
 	}
 
 	pub(crate) fn check_copy_source(&self, v: &ObjectVersion, etag: &str) -> Result<(), Error> {
-		match self.check(v, etag)? {
+		match self.check(v, etag) {
 			Some(_) => Err(Error::PreconditionFailed),
 			None => Ok(()),
 		}

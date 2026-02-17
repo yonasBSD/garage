@@ -370,7 +370,7 @@ pub async fn handle_complete_multipart_upload(
 						req_part.part_number, req_part.checksum, part.checksum
 					)));
 				}
-				parts.push(*part)
+				parts.push(*part);
 			}
 			_ => return Err(Error::InvalidPart),
 		}
@@ -494,7 +494,7 @@ pub async fn handle_complete_multipart_upload(
 			.root_domain
 			.as_ref()
 			.map(|rd| s3_xml::Value(format!("https://{}.{}/{}", bucket_name, rd, key)))
-			.or(Some(s3_xml::Value(format!("/{}/{}", bucket_name, key)))),
+			.or_else(|| Some(s3_xml::Value(format!("/{}/{}", bucket_name, key)))),
 		bucket: s3_xml::Value(bucket_name.to_string()),
 		key: s3_xml::Value(key),
 		etag: s3_xml::Value(format!("\"{}\"", etag)),

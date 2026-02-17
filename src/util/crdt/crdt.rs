@@ -29,10 +29,10 @@ pub trait Crdt {
 /// `Option<T>` implements Crdt for any type T, even if T doesn't implement CRDT itself: when
 /// different values are detected, they are always merged to None.  This can be used for value
 /// types which shoulnd't be merged, instead of trying to merge things when we know we don't want
-/// to merge them (which is what the AutoCrdt trait is used for most of the time). This cases
-/// arises very often, for example with a Lww or a LwwMap: the value type has to be a CRDT so that
+/// to merge them (which is what the `AutoCrdt` trait is used for most of the time). This cases
+/// arises very often, for example with a Lww or a `LwwMap`: the value type has to be a CRDT so that
 /// we have a rule for what to do when timestamps aren't enough to disambiguate (in a distributed
-/// system, anything can happen!), and with AutoCrdt the rule is to make an arbitrary (but
+/// system, anything can happen!), and with `AutoCrdt` the rule is to make an arbitrary (but
 /// deterministic) choice between the two.  When using an `Option<T>` instead with this impl, ambiguity
 /// cases are explicitly stored as None, which allows us to detect the ambiguity and handle it in
 /// the way we want. (this can only work if we are happy with losing the value when an ambiguity
@@ -52,7 +52,7 @@ where
 /// defined by the merge rule: `a ⊔ b = max(a, b)`. Implement this trait for your type
 /// to enable this behavior.
 pub trait AutoCrdt: Ord + Clone + std::fmt::Debug {
-	/// WARN_IF_DIFFERENT: emit a warning when values differ. Set this to true if
+	/// `WARN_IF_DIFFERENT`: emit a warning when values differ. Set this to true if
 	/// different values in your application should never happen. Set this to false
 	/// if you are actually relying on the semantics of `a ⊔ b = max(a, b)`.
 	const WARN_IF_DIFFERENT: bool;

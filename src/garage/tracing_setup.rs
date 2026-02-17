@@ -5,6 +5,7 @@ mod telemetry {
 	use garage_util::data::Uuid;
 	use garage_util::error::Error;
 
+	#[expect(clippy::unnecessary_wraps)]
 	pub fn init_tracing(_: &str, _: Uuid) -> Result<(), Error> {
 		error!("Garage was built without OTLP exporter, admin.trace_sink is ignored.");
 		Ok(())

@@ -7,7 +7,7 @@ use tokio::sync::watch;
 
 use crate::netapp::*;
 
-/// Utility function: encodes any serializable value in MessagePack binary format
+/// Utility function: encodes any serializable value in `MessagePack` binary format
 /// using the RMP library.
 ///
 /// Field names and variant names are included in the serialization.
@@ -80,7 +80,7 @@ pub fn parse_and_resolve_peer_addr(peer: &str) -> Option<(NodeID, Vec<SocketAddr
 	Some((pubkey, hosts))
 }
 
-/// async version of parse_and_resolve_peer_addr
+/// async version of `parse_and_resolve_peer_addr`
 pub async fn parse_and_resolve_peer_addr_async(peer: &str) -> Option<(NodeID, Vec<SocketAddr>)> {
 	let delim = peer.find('@')?;
 	let (key, host) = peer.split_at(delim);

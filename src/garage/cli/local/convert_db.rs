@@ -7,7 +7,7 @@ use garage_db::*;
 /// K2V command line interface
 #[derive(StructOpt, Debug)]
 pub struct ConvertDbOpt {
-	/// Input database path (not the same as metadata_dir, see
+	/// Input database path (not the same as `metadata_dir`, see
 	/// <https://garagehq.deuxfleurs.fr/documentation/reference-manual/configuration/#db_engine>
 	#[structopt(short = "i")]
 	input_path: PathBuf,

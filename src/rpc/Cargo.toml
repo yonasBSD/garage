@@ -51,3 +51,6 @@ opentelemetry.workspace = true
 kubernetes-discovery = ["kube", "k8s-openapi", "schemars"]
 consul-discovery = ["reqwest", "thiserror"]
 system-libs = ["sodiumoxide/use-pkg-config"]
+
+[lints]
+workspace = true

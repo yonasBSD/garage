@@ -85,7 +85,7 @@ impl LayoutVersion {
 				let mut count = 0;
 				for nod in self.ring_assignment_data.iter() {
 					if i as u8 == *nod {
-						count += 1
+						count += 1;
 					}
 				}
 				return Ok(count);
@@ -164,7 +164,7 @@ impl LayoutVersion {
 		total_capacity
 	}
 
-	/// Returns the effective value of the zone_redundancy parameter
+	/// Returns the effective value of the `zone_redundancy` parameter
 	pub(crate) fn effective_zone_redundancy(&self) -> usize {
 		match self.parameters.zone_redundancy {
 			ZoneRedundancy::AtLeast(v) => v,
@@ -271,7 +271,7 @@ impl LayoutVersion {
 		// Check that the partition size stored is the one computed by the asignation
 		// algorithm.
 		let cl2 = self.clone();
-		let (_, zone_to_id) = cl2.generate_nongateway_zone_ids().unwrap();
+		let (_, zone_to_id) = cl2.generate_nongateway_zone_ids();
 		match cl2.compute_optimal_partition_size(&zone_to_id, zone_redundancy) {
 			Ok(s) if s != self.partition_size => {
 				return Err(format!(
@@ -311,7 +311,7 @@ impl LayoutVersion {
 	/// the former assignment (if any) to minimize the amount of
 	/// data to be moved.
 	/// Staged role changes must be merged with nodes roles before calling this function,
-	/// hence it must only be called from apply_staged_changes() and hence is not public.
+	/// hence it must only be called from `apply_staged_changes()` and hence is not public.
 	fn calculate_partition_assignment(&mut self) -> Result<Message, Error> {
 		// We update the node ids, since the node role list might have changed with the
 		// changes in the layout. We retrieve the old_assignment reframed with new ids
@@ -330,7 +330,7 @@ impl LayoutVersion {
 
 		// We generate for once numerical ids for the zones of non gateway nodes,
 		// to use them as indices in the flow graphs.
-		let (id_to_zone, zone_to_id) = self.generate_nongateway_zone_ids()?;
+		let (id_to_zone, zone_to_id) = self.generate_nongateway_zone_ids();
 
 		if self.nongateway_nodes().len() < self.replication_factor {
 			return Err(Error::Message(format!(
@@ -402,11 +402,11 @@ impl LayoutVersion {
 		Ok(msg)
 	}
 
-	/// The LwwMap of node roles might have changed. This function updates the node_id_vec
+	/// The `LwwMap` of node roles might have changed. This function updates the `node_id_vec`
 	/// and returns the assignment given by ring, with the new indices of the nodes, and
 	/// None if the node is not present anymore.
-	/// We work with the assumption that only this function and calculate_new_assignment
-	/// do modify assignment_ring and node_id_vec.
+	/// We work with the assumption that only this function and `calculate_new_assignment`
+	/// do modify `assignment_ring` and `node_id_vec`.
 	fn update_node_id_vec(&mut self) -> Result<Option<Vec<Vec<usize>>>, Error> {
 		// (1) We compute the new node list
 		// Non gateway nodes should be coded on 8bits, hence they must be first in the list
@@ -488,10 +488,8 @@ impl LayoutVersion {
 	}
 
 	/// This function generates ids for the zone of the nodes appearing in
-	/// self.node_id_vec.
-	pub(crate) fn generate_nongateway_zone_ids(
-		&self,
-	) -> Result<(Vec<String>, HashMap<String, usize>), Error> {
+	/// `self.node_id_vec`.
+	pub(crate) fn generate_nongateway_zone_ids(&self) -> (Vec<String>, HashMap<String, usize>) {
 		let mut id_to_zone = Vec::<String>::new();
 		let mut zone_to_id = HashMap::<String, usize>::new();
 
@@ -502,7 +500,7 @@ impl LayoutVersion {
 				id_to_zone.push(r.zone.clone());
 			}
 		}
-		Ok((id_to_zone, zone_to_id))
+		(id_to_zone, zone_to_id)
 	}
 
 	/// This function computes by dichotomy the largest realizable partition size, given
@@ -527,16 +525,16 @@ impl LayoutVersion {
 		let mut s_up = self.get_total_capacity();
 		while s_down + 1 < s_up {
 			g = self.generate_flow_graph(
-				(s_down + s_up) / 2,
+				u64::midpoint(s_down, s_up),
 				zone_to_id,
 				&empty_set,
 				zone_redundancy,
 			)?;
 			g.compute_maximal_flow()?;
 			if g.get_flow_value()? < (NB_PARTITIONS * self.replication_factor) as i64 {
-				s_up = (s_down + s_up) / 2;
+				s_up = u64::midpoint(s_down, s_up);
 			} else {
-				s_down = (s_down + s_up) / 2;
+				s_down = u64::midpoint(s_down, s_up);
 			}
 		}
 
@@ -560,7 +558,7 @@ impl LayoutVersion {
 
 	/// Generates the graph to compute the maximal flow corresponding to the optimal
 	/// partition assignment.
-	/// exclude_assoc is the set of (partition, node) association that we are forbidden
+	/// `exclude_assoc` is the set of (partition, node) association that we are forbidden
 	/// to use (hence we do not add the corresponding edge to the graph). This parameter
 	/// is used to compute a first flow that uses only edges appearing in the previous
 	/// assignment. This produces a solution that heuristically should be close to the

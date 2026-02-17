@@ -127,7 +127,7 @@ impl Worker for RepairWorker {
 					self.manager
 						.resync
 						.put_to_resync(&hash, Duration::from_secs(0))?;
-					self.next_start = Some(hash)
+					self.next_start = Some(hash);
 				}
 
 				Ok(WorkerState::Busy)
@@ -440,7 +440,7 @@ impl Worker for ScrubWorker {
 			Ok(cmd) => self.handle_cmd(cmd).await,
 			Err(mpsc::error::TryRecvError::Disconnected) => return Ok(WorkerState::Done),
 			Err(mpsc::error::TryRecvError::Empty) => (),
-		};
+		}
 
 		match &mut self.work {
 			ScrubWorkerState::Running { iterator, t_cp } => {
@@ -455,7 +455,7 @@ impl Worker for ScrubWorker {
 						}
 						Err(e) => return Err(e),
 						_ => (),
-					};
+					}
 
 					if now - *t_cp > 60 * 1000 {
 						self.persister
@@ -570,7 +570,7 @@ impl Worker for RebalanceWorker {
 			format!("Started: {}", msec_to_rfc3339(self.t_started)),
 		];
 		if let Some(t_fin) = self.t_finished {
-			freeform.push(format!("Finished: {}", msec_to_rfc3339(t_fin)))
+			freeform.push(format!("Finished: {}", msec_to_rfc3339(t_fin)));
 		}
 		WorkerStatus {
 			progress: Some(format!("{:.2}%", self.block_iter.progress() * 100.)),

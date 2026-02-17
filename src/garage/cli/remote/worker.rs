@@ -102,7 +102,7 @@ impl Cli {
 			s => {
 				table.push(format!("Worker state:\t{}", format_worker_state(s)));
 			}
-		};
+		}
 		if let Some(tql) = info.tranquility {
 			table.push(format!("Tranquility:\t{}", tql));
 		}

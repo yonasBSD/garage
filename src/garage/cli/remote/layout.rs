@@ -394,7 +394,7 @@ pub fn print_cluster_layout(layout: &GetClusterLayoutResponse, empty_msg: &str) 
 				role.zone,
 				capacity_string(role.capacity),
 			));
-		};
+		}
 	}
 	if table.len() > 1 {
 		format_table(table);

@@ -46,3 +46,6 @@ k2v = ["garage_util/k2v"]
 lmdb = ["garage_db/lmdb"]
 sqlite = ["garage_db/sqlite"]
 fjall = ["garage_db/fjall"]
+
+[lints]
+workspace = true

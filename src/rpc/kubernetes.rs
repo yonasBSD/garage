@@ -66,7 +66,7 @@ pub async fn get_kubernetes_nodes(
 			.and_then(|k| NodeID::from_slice(&k[..]));
 
 		if let Some(pubkey) = pubkey {
-			ret.push((*pubkey, SocketAddr::new(node.spec.address, node.spec.port)))
+			ret.push((*pubkey, SocketAddr::new(node.spec.address, node.spec.port)));
 		}
 	}
 
@@ -108,7 +108,7 @@ pub async fn publish_kubernetes_node(
 			.await?;
 	} else {
 		nodes.create(&PostParams::default(), &node).await?;
-	};
+	}
 
 	Ok(())
 }

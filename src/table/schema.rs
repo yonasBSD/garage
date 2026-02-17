@@ -22,7 +22,7 @@ impl PartitionKey for String {
 	}
 }
 
-/// Values of type FixedBytes32 are assumed to be random,
+/// Values of type `FixedBytes32` are assumed to be random,
 /// either a hash or a random UUID. This means we can use
 /// them directly as an index into the hash table.
 impl PartitionKey for FixedBytes32 {
