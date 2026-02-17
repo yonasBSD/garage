@@ -31,8 +31,13 @@ pub enum Error {
 
 	// Category: cannot process
 	/// Authorization Header Malformed
-	#[error("Authorization header malformed, unexpected scope: {0}")]
-	AuthorizationHeaderMalformed(String),
+	#[error(
+		"Authorization header malformed, unexpected scope: '{unexpected}', expected: '{expected}'"
+	)]
+	AuthorizationHeaderMalformed {
+		unexpected: String,
+		expected: String,
+	},
 
 	/// The object requested don't exists
 	#[error("Key not found")]
@@ -121,9 +126,13 @@ impl From<SignatureError> for Error {
 	fn from(err: SignatureError) -> Self {
 		match err {
 			SignatureError::Common(c) => Self::Common(c),
-			SignatureError::AuthorizationHeaderMalformed(c) => {
-				Self::AuthorizationHeaderMalformed(c)
-			}
+			SignatureError::AuthorizationHeaderMalformed {
+				unexpected,
+				expected,
+			} => Self::AuthorizationHeaderMalformed {
+				unexpected,
+				expected,
+			},
 			SignatureError::InvalidUtf8Str(i) => Self::InvalidUtf8Str(i),
 			SignatureError::InvalidDigest(d) => Self::InvalidDigest(d),
 		}
@@ -146,7 +155,7 @@ impl Error {
 			Error::InvalidPart => "InvalidPart",
 			Error::InvalidPartOrder => "InvalidPartOrder",
 			Error::EntityTooSmall => "EntityTooSmall",
-			Error::AuthorizationHeaderMalformed(_) => "AuthorizationHeaderMalformed",
+			Error::AuthorizationHeaderMalformed { .. } => "AuthorizationHeaderMalformed",
 			Error::InvalidXml(_) => "MalformedXML",
 			Error::InvalidXmlDe(_) => "MalformedXML",
 			Error::InvalidXmlSe(_) => "InternalError",
@@ -172,7 +181,7 @@ impl ApiError for Error {
 			Error::PreconditionFailed => StatusCode::PRECONDITION_FAILED,
 			Error::InvalidRange(_) => StatusCode::RANGE_NOT_SATISFIABLE,
 			Error::InvalidXmlSe(_) => StatusCode::INTERNAL_SERVER_ERROR,
-			Error::AuthorizationHeaderMalformed(_)
+			Error::AuthorizationHeaderMalformed { .. }
 			| Error::InvalidPart
 			| Error::InvalidPartOrder
 			| Error::EntityTooSmall

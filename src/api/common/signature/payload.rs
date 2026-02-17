@@ -400,7 +400,10 @@ pub fn verify_v4(
 ) -> Result<Key, Error> {
 	let scope_expected = compute_scope(&auth.date, &garage.config.s3_api.s3_region, service);
 	if auth.scope != scope_expected {
-		return Err(Error::AuthorizationHeaderMalformed(auth.scope.to_string()));
+		return Err(Error::AuthorizationHeaderMalformed {
+			unexpected: auth.scope.to_string(),
+			expected: scope_expected,
+		});
 	}
 
 	let key = garage

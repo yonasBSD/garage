@@ -11,8 +11,13 @@ pub enum Error {
 	Common(CommonError),
 
 	/// Authorization Header Malformed
-	#[error("Authorization header malformed, unexpected scope: {0}")]
-	AuthorizationHeaderMalformed(String),
+	#[error(
+		"Authorization header malformed, unexpected scope: '{unexpected}', expected: '{expected}'"
+	)]
+	AuthorizationHeaderMalformed {
+		unexpected: String,
+		expected: String,
+	},
 
 	// Category: bad request
 	/// The request contained an invalid UTF-8 sequence in its path or in other parameters
