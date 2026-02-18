@@ -55,6 +55,10 @@ pub enum CommonError {
 	/// Bucket name is not valid according to AWS S3 specs
 	#[error("Invalid bucket name: {0}")]
 	InvalidBucketName(String),
+
+	/// Tried to create bucket that is already owned by you
+	#[error("Bucket already owned by you")]
+	BucketAlreadyOwnedByYou,
 }
 
 #[macro_export]
@@ -98,7 +102,9 @@ impl CommonError {
 			CommonError::BadRequest(_) => StatusCode::BAD_REQUEST,
 			CommonError::Forbidden(_) => StatusCode::FORBIDDEN,
 			CommonError::NoSuchBucket(_) => StatusCode::NOT_FOUND,
-			CommonError::BucketNotEmpty | CommonError::BucketAlreadyExists => StatusCode::CONFLICT,
+			CommonError::BucketNotEmpty
+			| CommonError::BucketAlreadyExists
+			| CommonError::BucketAlreadyOwnedByYou => StatusCode::CONFLICT,
 			CommonError::InvalidBucketName(_) | CommonError::InvalidHeader(_) => {
 				StatusCode::BAD_REQUEST
 			}
@@ -120,6 +126,7 @@ impl CommonError {
 			CommonError::BucketNotEmpty => "BucketNotEmpty",
 			CommonError::InvalidBucketName(_) => "InvalidBucketName",
 			CommonError::InvalidHeader(_) => "InvalidHeaderValue",
+			CommonError::BucketAlreadyOwnedByYou => "BucketAlreadyOwnedByYou",
 		}
 	}
 

@@ -198,12 +198,14 @@ pub async fn handle_create_bucket(
 		.await?;
 
 	if let Some(bucket) = existing_bucket {
-		// Check we have write or owner permission on the bucket,
-		// in that case it's fine, return 200 OK, bucket exists;
-		// otherwise return a forbidden error.
+		// According to https://docs.aws.amazon.com/AmazonS3/latest/API/API_CreateBucket.html
+		// in such case we have to return 409 BucketAlreadyOwnedByYou if request was sent
+		// by bucket owner and 409  BucketAlreadyExists otherwise.
 		let kp = api_key.bucket_permissions(&bucket.id);
 		if !(kp.allow_write || kp.allow_owner) {
 			return Err(CommonError::BucketAlreadyExists.into());
+		} else {
+			return Err(CommonError::BucketAlreadyOwnedByYou.into());
 		}
 	} else {
 		// Check user is allowed to create bucket
