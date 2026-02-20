@@ -1,6 +1,7 @@
 use std::collections::HashMap;
 use std::net::{IpAddr, SocketAddr};
 use std::sync::{Arc, RwLock};
+use std::time::Duration;
 
 use log::{debug, error, info, trace, warn};
 
@@ -38,6 +39,19 @@ pub(crate) type VersionTag = [u8; 16];
 /// We are no longer using prefix `netapp` as `garage_net` is forked from the netapp crate.
 /// Since Garage v1.0, we have replaced the prefix by `grgnet` (shorthand for `garage_net`).
 pub(crate) const NETAPP_VERSION_TAG: u64 = 0x6772676e65740010; // grgnet 0x0010 (1.0)
+
+/// Time a connection must be idle before the first keepalive probe is sent.
+const TCP_KEEPALIVE_TIME: Duration = Duration::from_secs(30);
+/// Interval between keepalive probes after the first.
+const TCP_KEEPALIVE_INTERVAL: Duration = Duration::from_secs(10);
+
+fn set_keepalive(stream: &TcpStream) -> Result<(), std::io::Error> {
+	let sock_ref = socket2::SockRef::from(stream);
+	let keepalive = socket2::TcpKeepalive::new()
+		.with_time(TCP_KEEPALIVE_TIME)
+		.with_interval(TCP_KEEPALIVE_INTERVAL);
+	sock_ref.set_tcp_keepalive(&keepalive)
+}
 
 /// `HelloMessage` is sent by the client on a Netapp connection to indicate
 /// that they are also a server and ready to receive incoming connections
@@ -252,6 +266,13 @@ impl NetApp {
 				_ = must_exit.changed() => continue,
 			};
 
+			if let Err(e) = set_keepalive(&socket) {
+				warn!(
+					"Failed to set keepalive on connection from {}: {}",
+					peer_addr, e
+				);
+			}
+
 			info!(
 				"Incoming connection from {}, negotiating handshake...",
 				peer_addr
@@ -314,6 +335,9 @@ impl NetApp {
 			}
 			None => TcpStream::connect(ip).await?,
 		};
+		if let Err(e) = set_keepalive(&stream) {
+			warn!("Failed to set keepalive on connection to {}: {}", ip, e);
+		}
 		info!("Connected to {}, negotiating handshake...", ip);
 		ClientConn::init(self, stream, id).await?;
 		Ok(())
