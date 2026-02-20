@@ -56,10 +56,11 @@ tls_skip_verify = false
 service_name = "garage-daemon"
 
 ca_cert = "/etc/consul/consul-ca.crt"
+# for `agent` API mode, unset client_cert and client_key:
 client_cert = "/etc/consul/consul-client.crt"
 client_key = "/etc/consul/consul-key.crt"
 
-# for `agent` API mode, unset client_cert and client_key, and optionally enable `token`
+# optionally enable `token` for authentication:
 # token = "abcdef-01234-56789"
 
 tags = [ "dns-enabled" ]
