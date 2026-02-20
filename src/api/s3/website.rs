@@ -110,7 +110,7 @@ pub async fn handle_put_website(
 
 #[derive(Debug, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
 pub struct WebsiteConfiguration {
-	#[serde(serialize_with = "xmlns_tag", skip_deserializing)]
+	#[serde(rename = "@xmlns", serialize_with = "xmlns_tag", skip_deserializing)]
 	pub xmlns: (),
 	#[serde(rename = "ErrorDocument")]
 	pub error_document: Option<Key>,
@@ -168,23 +168,29 @@ pub struct Target {
 
 #[derive(Debug, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Condition {
-	#[serde(rename = "HttpErrorCodeReturnedEquals")]
+	#[serde(
+		rename = "HttpErrorCodeReturnedEquals",
+		skip_serializing_if = "Option::is_none"
+	)]
 	pub http_error_code: Option<IntValue>,
-	#[serde(rename = "KeyPrefixEquals")]
+	#[serde(rename = "KeyPrefixEquals", skip_serializing_if = "Option::is_none")]
 	pub prefix: Option<Value>,
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Redirect {
-	#[serde(rename = "HostName")]
+	#[serde(rename = "HostName", skip_serializing_if = "Option::is_none")]
 	pub hostname: Option<Value>,
-	#[serde(rename = "Protocol")]
+	#[serde(rename = "Protocol", skip_serializing_if = "Option::is_none")]
 	pub protocol: Option<Value>,
-	#[serde(rename = "HttpRedirectCode")]
+	#[serde(rename = "HttpRedirectCode", skip_serializing_if = "Option::is_none")]
 	pub http_redirect_code: Option<IntValue>,
-	#[serde(rename = "ReplaceKeyPrefixWith")]
+	#[serde(
+		rename = "ReplaceKeyPrefixWith",
+		skip_serializing_if = "Option::is_none"
+	)]
 	pub replace_prefix: Option<Value>,
-	#[serde(rename = "ReplaceKeyWith")]
+	#[serde(rename = "ReplaceKeyWith", skip_serializing_if = "Option::is_none")]
 	pub replace_full: Option<Value>,
 }
 
@@ -373,6 +379,8 @@ impl Redirect {
 
 #[cfg(test)]
 mod tests {
+	use crate::unprettify_xml;
+
 	use super::*;
 
 	use quick_xml::de::from_str;
@@ -416,7 +424,8 @@ mod tests {
       </RoutingRule>
    </RoutingRules>
 </WebsiteConfiguration>"#;
-		let conf: WebsiteConfiguration = from_str(message).unwrap();
+		let conf: WebsiteConfiguration =
+			from_str(message).expect("failed to deserialize xml in `WebsiteConfiguration`");
 		let ref_value = WebsiteConfiguration {
 			xmlns: (),
 			error_document: Some(Key {
@@ -467,8 +476,7 @@ mod tests {
 
 		let message2 = to_xml_with_header(&ref_value)?;
 
-		let cleanup = |c: &str| c.replace(char::is_whitespace, "");
-		assert_eq!(cleanup(message), cleanup(&message2));
+		assert_eq!(unprettify_xml(message), unprettify_xml(&message2));
 
 		Ok(())
 	}

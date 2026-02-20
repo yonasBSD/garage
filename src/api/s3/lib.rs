@@ -19,3 +19,11 @@ pub mod website;
 mod encryption;
 mod router;
 pub mod xml;
+
+#[cfg(test)]
+pub(crate) fn unprettify_xml(xml_in: &str) -> String {
+	xml_in.trim().lines().fold(String::new(), |mut val, line| {
+		val.push_str(line.trim());
+		val
+	})
+}

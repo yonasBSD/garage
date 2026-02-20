@@ -330,8 +330,8 @@ fn parse_create_bucket_xml(xml_bytes: &[u8]) -> Option<Option<String>> {
 	// Returns Some(None) if no location constraint is given
 	// Returns Some(Some("xxxx")) where xxxx is the given location constraint
 
-	let xml_str = std::str::from_utf8(xml_bytes).ok()?;
-	if xml_str.trim_matches(char::is_whitespace).is_empty() {
+	let xml_str = std::str::from_utf8(xml_bytes).ok()?.trim();
+	if xml_str.is_empty() {
 		return Some(None);
 	}
 
@@ -373,6 +373,7 @@ mod tests {
 	#[test]
 	fn create_bucket() {
 		assert_eq!(parse_create_bucket_xml(br#""#), Some(None));
+		assert_eq!(parse_create_bucket_xml(br#"		"#), Some(None));
 		assert_eq!(
 			parse_create_bucket_xml(
 				br#"

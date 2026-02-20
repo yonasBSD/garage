@@ -83,7 +83,7 @@ pub async fn handle_put_lifecycle(
 
 #[derive(Debug, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
 pub struct LifecycleConfiguration {
-	#[serde(serialize_with = "xmlns_tag", skip_deserializing)]
+	#[serde(rename = "@xmlns", serialize_with = "xmlns_tag", skip_deserializing)]
 	pub xmlns: (),
 	#[serde(rename = "Rule")]
 	pub lifecycle_rules: Vec<LifecycleRule>,
@@ -91,35 +91,46 @@ pub struct LifecycleConfiguration {
 
 #[derive(Debug, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
 pub struct LifecycleRule {
-	#[serde(rename = "ID")]
+	#[serde(rename = "ID", skip_serializing_if = "Option::is_none")]
 	pub id: Option<Value>,
 	#[serde(rename = "Status")]
 	pub status: Value,
-	#[serde(rename = "Filter", default)]
+	#[serde(rename = "Filter", default, skip_serializing_if = "Option::is_none")]
 	pub filter: Option<Filter>,
-	#[serde(rename = "Expiration", default)]
+	#[serde(
+		rename = "Expiration",
+		default,
+		skip_serializing_if = "Option::is_none"
+	)]
 	pub expiration: Option<Expiration>,
-	#[serde(rename = "AbortIncompleteMultipartUpload", default)]
+	#[serde(
+		rename = "AbortIncompleteMultipartUpload",
+		default,
+		skip_serializing_if = "Option::is_none"
+	)]
 	pub abort_incomplete_mpu: Option<AbortIncompleteMpu>,
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Default)]
 pub struct Filter {
-	#[serde(rename = "And")]
+	#[serde(rename = "And", skip_serializing_if = "Option::is_none")]
 	pub and: Option<Box<Filter>>,
-	#[serde(rename = "Prefix")]
+	#[serde(rename = "Prefix", skip_serializing_if = "Option::is_none")]
 	pub prefix: Option<Value>,
-	#[serde(rename = "ObjectSizeGreaterThan")]
+	#[serde(
+		rename = "ObjectSizeGreaterThan",
+		skip_serializing_if = "Option::is_none"
+	)]
 	pub size_gt: Option<IntValue>,
-	#[serde(rename = "ObjectSizeLessThan")]
+	#[serde(rename = "ObjectSizeLessThan", skip_serializing_if = "Option::is_none")]
 	pub size_lt: Option<IntValue>,
 }
 
 #[derive(Debug, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
 pub struct Expiration {
-	#[serde(rename = "Days")]
+	#[serde(rename = "Days", skip_serializing_if = "Option::is_none")]
 	pub days: Option<IntValue>,
-	#[serde(rename = "Date")]
+	#[serde(rename = "Date", skip_serializing_if = "Option::is_none")]
 	pub at_date: Option<Value>,
 }
 
@@ -285,6 +296,8 @@ impl Expiration {
 
 #[cfg(test)]
 mod tests {
+	use crate::unprettify_xml;
+
 	use super::*;
 
 	use quick_xml::de::from_str;
@@ -357,8 +370,7 @@ mod tests {
 
 		let message2 = to_xml_with_header(&ref_value)?;
 
-		let cleanup = |c: &str| c.replace(char::is_whitespace, "");
-		assert_eq!(cleanup(message), cleanup(&message2));
+		assert_eq!(unprettify_xml(message), unprettify_xml(&message2));
 
 		// Check validation
 		let validated = ref_value
@@ -393,7 +405,7 @@ mod tests {
 		let message3 = to_xml_with_header(&LifecycleConfiguration::from_garage_lifecycle_config(
 			&validated,
 		))?;
-		assert_eq!(cleanup(message), cleanup(&message3));
+		assert_eq!(unprettify_xml(message), unprettify_xml(&message3));
 
 		Ok(())
 	}

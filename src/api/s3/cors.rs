@@ -86,7 +86,7 @@ pub async fn handle_put_cors(
 #[derive(Debug, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
 #[serde(rename = "CORSConfiguration")]
 pub struct CorsConfiguration {
-	#[serde(serialize_with = "xmlns_tag", skip_deserializing)]
+	#[serde(rename = "@xmlns", serialize_with = "xmlns_tag", skip_deserializing)]
 	pub xmlns: (),
 	#[serde(rename = "CORSRule")]
 	pub cors_rules: Vec<CorsRule>,
@@ -94,9 +94,9 @@ pub struct CorsConfiguration {
 
 #[derive(Debug, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
 pub struct CorsRule {
-	#[serde(rename = "ID")]
+	#[serde(rename = "ID", skip_serializing_if = "Option::is_none")]
 	pub id: Option<Value>,
-	#[serde(rename = "MaxAgeSeconds")]
+	#[serde(rename = "MaxAgeSeconds", skip_serializing_if = "Option::is_none")]
 	pub max_age_seconds: Option<IntValue>,
 	#[serde(rename = "AllowedOrigin")]
 	pub allowed_origins: Vec<Value>,
@@ -196,6 +196,8 @@ impl CorsRule {
 
 #[cfg(test)]
 mod tests {
+	use crate::unprettify_xml;
+
 	use super::*;
 
 	use quick_xml::de::from_str;
@@ -228,7 +230,8 @@ mod tests {
    <ExposeHeader>*</ExposeHeader>
  </CORSRule>
 </CORSConfiguration>"#;
-		let conf: CorsConfiguration = from_str(message).unwrap();
+		let conf: CorsConfiguration =
+			from_str(message).expect("failed to deserialize xml into `CorsConfiguration` struct");
 		let ref_value = CorsConfiguration {
 			xmlns: (),
 			cors_rules: vec![
@@ -265,8 +268,7 @@ mod tests {
 
 		let message2 = to_xml_with_header(&ref_value)?;
 
-		let cleanup = |c: &str| c.replace(char::is_whitespace, "");
-		assert_eq!(cleanup(message), cleanup(&message2));
+		assert_eq!(unprettify_xml(message), unprettify_xml(&message2));
 
 		Ok(())
 	}

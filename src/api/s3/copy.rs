@@ -853,7 +853,7 @@ pub struct CopyObjectResult {
 
 #[derive(Debug, Serialize, PartialEq, Eq)]
 pub struct CopyPartResult {
-	#[serde(serialize_with = "xmlns_tag")]
+	#[serde(rename = "@xmlns", serialize_with = "xmlns_tag")]
 	pub xmlns: (),
 	#[serde(rename = "LastModified")]
 	pub last_modified: s3_xml::Value,

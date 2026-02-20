@@ -1,11 +1,15 @@
-use quick_xml::se::to_string;
+use quick_xml::se::{self, EmptyElementHandling, QuoteLevel};
 use serde::{Deserialize, Serialize, Serializer};
 
 use crate::error::Error as ApiError;
 
 pub fn to_xml_with_header<T: Serialize>(x: &T) -> Result<String, ApiError> {
 	let mut xml = r#"<?xml version="1.0" encoding="UTF-8"?>"#.to_string();
-	xml.push_str(&to_string(x)?);
+
+	let mut ser = se::Serializer::new(&mut xml);
+	ser.set_quote_level(QuoteLevel::Full)
+		.empty_element_handling(EmptyElementHandling::Expanded);
+	let _serialized = x.serialize(ser)?;
 	Ok(xml)
 }
 
@@ -61,7 +65,7 @@ pub struct ListAllMyBucketsResult {
 
 #[derive(Debug, Serialize, PartialEq, Eq)]
 pub struct LocationConstraint {
-	#[serde(serialize_with = "xmlns_tag")]
+	#[serde(rename = "@xmlns", serialize_with = "xmlns_tag")]
 	pub xmlns: (),
 	#[serde(rename = "$value")]
 	pub region: String,
@@ -97,13 +101,13 @@ pub struct DeleteError {
 	pub key: Option<Value>,
 	#[serde(rename = "Message")]
 	pub message: Value,
-	#[serde(rename = "VersionId")]
+	#[serde(rename = "VersionId", skip_serializing_if = "Option::is_none")]
 	pub version_id: Option<Value>,
 }
 
 #[derive(Debug, Serialize, PartialEq, Eq)]
 pub struct DeleteResult {
-	#[serde(serialize_with = "xmlns_tag")]
+	#[serde(rename = "@xmlns", serialize_with = "xmlns_tag")]
 	pub xmlns: (),
 	#[serde(rename = "Deleted")]
 	pub deleted: Vec<Deleted>,
@@ -113,7 +117,7 @@ pub struct DeleteResult {
 
 #[derive(Debug, Serialize, PartialEq, Eq)]
 pub struct InitiateMultipartUploadResult {
-	#[serde(serialize_with = "xmlns_tag")]
+	#[serde(rename = "@xmlns", serialize_with = "xmlns_tag")]
 	pub xmlns: (),
 	#[serde(rename = "Bucket")]
 	pub bucket: Value,
@@ -125,7 +129,7 @@ pub struct InitiateMultipartUploadResult {
 
 #[derive(Debug, Serialize, PartialEq, Eq)]
 pub struct CompleteMultipartUploadResult {
-	#[serde(serialize_with = "xmlns_tag")]
+	#[serde(rename = "@xmlns", serialize_with = "xmlns_tag")]
 	pub xmlns: (),
 	#[serde(rename = "Location")]
 	pub location: Option<Value>,
@@ -135,17 +139,17 @@ pub struct CompleteMultipartUploadResult {
 	pub key: Value,
 	#[serde(rename = "ETag")]
 	pub etag: Value,
-	#[serde(rename = "ChecksumCRC32")]
+	#[serde(rename = "ChecksumCRC32", skip_serializing_if = "Option::is_none")]
 	pub checksum_crc32: Option<Value>,
-	#[serde(rename = "ChecksumCRC32C")]
+	#[serde(rename = "ChecksumCRC32C", skip_serializing_if = "Option::is_none")]
 	pub checksum_crc32c: Option<Value>,
-	#[serde(rename = "ChecksumCR64NVME")]
+	#[serde(rename = "ChecksumCR64NVME", skip_serializing_if = "Option::is_none")]
 	pub checksum_crc64nvme: Option<Value>,
-	#[serde(rename = "ChecksumSHA1")]
+	#[serde(rename = "ChecksumSHA1", skip_serializing_if = "Option::is_none")]
 	pub checksum_sha1: Option<Value>,
-	#[serde(rename = "ChecksumSHA256")]
+	#[serde(rename = "ChecksumSHA256", skip_serializing_if = "Option::is_none")]
 	pub checksum_sha256: Option<Value>,
-	#[serde(rename = "ChecksumType")]
+	#[serde(rename = "ChecksumType", skip_serializing_if = "Option::is_none")]
 	pub checksum_type: Option<Value>,
 }
 
@@ -175,21 +179,21 @@ pub struct ListMultipartItem {
 
 #[derive(Debug, Serialize, PartialEq, Eq)]
 pub struct ListMultipartUploadsResult {
-	#[serde(serialize_with = "xmlns_tag")]
+	#[serde(rename = "@xmlns", serialize_with = "xmlns_tag")]
 	pub xmlns: (),
 	#[serde(rename = "Bucket")]
 	pub bucket: Value,
-	#[serde(rename = "KeyMarker")]
+	#[serde(rename = "KeyMarker", skip_serializing_if = "Option::is_none")]
 	pub key_marker: Option<Value>,
-	#[serde(rename = "UploadIdMarker")]
+	#[serde(rename = "UploadIdMarker", skip_serializing_if = "Option::is_none")]
 	pub upload_id_marker: Option<Value>,
-	#[serde(rename = "NextKeyMarker")]
+	#[serde(rename = "NextKeyMarker", skip_serializing_if = "Option::is_none")]
 	pub next_key_marker: Option<Value>,
-	#[serde(rename = "NextUploadIdMarker")]
+	#[serde(rename = "NextUploadIdMarker", skip_serializing_if = "Option::is_none")]
 	pub next_upload_id_marker: Option<Value>,
 	#[serde(rename = "Prefix")]
 	pub prefix: Value,
-	#[serde(rename = "Delimiter")]
+	#[serde(rename = "Delimiter", skip_serializing_if = "Option::is_none")]
 	pub delimiter: Option<Value>,
 	#[serde(rename = "MaxUploads")]
 	pub max_uploads: IntValue,
@@ -199,7 +203,7 @@ pub struct ListMultipartUploadsResult {
 	pub upload: Vec<ListMultipartItem>,
 	#[serde(rename = "CommonPrefixes")]
 	pub common_prefixes: Vec<CommonPrefix>,
-	#[serde(rename = "EncodingType")]
+	#[serde(rename = "EncodingType", skip_serializing_if = "Option::is_none")]
 	pub encoding_type: Option<Value>,
 }
 
@@ -213,21 +217,21 @@ pub struct PartItem {
 	pub part_number: IntValue,
 	#[serde(rename = "Size")]
 	pub size: IntValue,
-	#[serde(rename = "ChecksumCRC32")]
+	#[serde(rename = "ChecksumCRC32", skip_serializing_if = "Option::is_none")]
 	pub checksum_crc32: Option<Value>,
-	#[serde(rename = "ChecksumCRC32C")]
+	#[serde(rename = "ChecksumCRC32C", skip_serializing_if = "Option::is_none")]
 	pub checksum_crc32c: Option<Value>,
-	#[serde(rename = "ChecksumCRC64NVME")]
+	#[serde(rename = "ChecksumCRC64NVME", skip_serializing_if = "Option::is_none")]
 	pub checksum_crc64nvme: Option<Value>,
-	#[serde(rename = "ChecksumSHA1")]
+	#[serde(rename = "ChecksumSHA1", skip_serializing_if = "Option::is_none")]
 	pub checksum_sha1: Option<Value>,
-	#[serde(rename = "ChecksumSHA256")]
+	#[serde(rename = "ChecksumSHA256", skip_serializing_if = "Option::is_none")]
 	pub checksum_sha256: Option<Value>,
 }
 
 #[derive(Debug, Serialize, PartialEq, Eq)]
 pub struct ListPartsResult {
-	#[serde(serialize_with = "xmlns_tag")]
+	#[serde(rename = "@xmlns", serialize_with = "xmlns_tag")]
 	pub xmlns: (),
 	#[serde(rename = "Bucket")]
 	pub bucket: Value,
@@ -235,9 +239,12 @@ pub struct ListPartsResult {
 	pub key: Value,
 	#[serde(rename = "UploadId")]
 	pub upload_id: Value,
-	#[serde(rename = "PartNumberMarker")]
+	#[serde(rename = "PartNumberMarker", skip_serializing_if = "Option::is_none")]
 	pub part_number_marker: Option<IntValue>,
-	#[serde(rename = "NextPartNumberMarker")]
+	#[serde(
+		rename = "NextPartNumberMarker",
+		skip_serializing_if = "Option::is_none"
+	)]
 	pub next_part_number_marker: Option<IntValue>,
 	#[serde(rename = "MaxParts")]
 	pub max_parts: IntValue,
@@ -275,29 +282,32 @@ pub struct CommonPrefix {
 
 #[derive(Debug, Serialize, PartialEq, Eq)]
 pub struct ListBucketResult {
-	#[serde(serialize_with = "xmlns_tag")]
+	#[serde(rename = "@xmlns", serialize_with = "xmlns_tag")]
 	pub xmlns: (),
 	#[serde(rename = "Name")]
 	pub name: Value,
 	#[serde(rename = "Prefix")]
 	pub prefix: Value,
-	#[serde(rename = "Marker")]
+	#[serde(rename = "Marker", skip_serializing_if = "Option::is_none")]
 	pub marker: Option<Value>,
-	#[serde(rename = "NextMarker")]
+	#[serde(rename = "NextMarker", skip_serializing_if = "Option::is_none")]
 	pub next_marker: Option<Value>,
-	#[serde(rename = "StartAfter")]
+	#[serde(rename = "StartAfter", skip_serializing_if = "Option::is_none")]
 	pub start_after: Option<Value>,
-	#[serde(rename = "ContinuationToken")]
+	#[serde(rename = "ContinuationToken", skip_serializing_if = "Option::is_none")]
 	pub continuation_token: Option<Value>,
-	#[serde(rename = "NextContinuationToken")]
+	#[serde(
+		rename = "NextContinuationToken",
+		skip_serializing_if = "Option::is_none"
+	)]
 	pub next_continuation_token: Option<Value>,
-	#[serde(rename = "KeyCount")]
+	#[serde(rename = "KeyCount", skip_serializing_if = "Option::is_none")]
 	pub key_count: Option<IntValue>,
 	#[serde(rename = "MaxKeys")]
 	pub max_keys: IntValue,
-	#[serde(rename = "Delimiter")]
+	#[serde(rename = "Delimiter", skip_serializing_if = "Option::is_none")]
 	pub delimiter: Option<Value>,
-	#[serde(rename = "EncodingType")]
+	#[serde(rename = "EncodingType", skip_serializing_if = "Option::is_none")]
 	pub encoding_type: Option<Value>,
 	#[serde(rename = "IsTruncated")]
 	pub is_truncated: Value,
@@ -309,15 +319,15 @@ pub struct ListBucketResult {
 
 #[derive(Debug, Serialize, PartialEq, Eq)]
 pub struct VersioningConfiguration {
-	#[serde(serialize_with = "xmlns_tag")]
+	#[serde(rename = "@xmlns", serialize_with = "xmlns_tag")]
 	pub xmlns: (),
-	#[serde(rename = "Status")]
+	#[serde(rename = "Status", skip_serializing_if = "Option::is_none")]
 	pub status: Option<Value>,
 }
 
 #[derive(Debug, Serialize, PartialEq, Eq)]
 pub struct PostObject {
-	#[serde(serialize_with = "xmlns_tag")]
+	#[serde(rename = "@xmlns", serialize_with = "xmlns_tag")]
 	pub xmlns: (),
 	#[serde(rename = "Location")]
 	pub location: Value,
@@ -331,11 +341,11 @@ pub struct PostObject {
 
 #[derive(Debug, Serialize, PartialEq, Eq)]
 pub struct Grantee {
-	#[serde(rename = "xmlns:xsi", serialize_with = "xmlns_xsi_tag")]
+	#[serde(rename = "@xmlns:xsi", serialize_with = "xmlns_xsi_tag")]
 	pub xmlns_xsi: (),
-	#[serde(rename = "xsi:type")]
+	#[serde(rename = "@xsi:type")]
 	pub typ: String,
-	#[serde(rename = "DisplayName")]
+	#[serde(rename = "DisplayName", skip_serializing_if = "Option::is_none")]
 	pub display_name: Option<Value>,
 	#[serde(rename = "ID")]
 	pub id: Option<Value>,
@@ -357,9 +367,9 @@ pub struct AccessControlList {
 
 #[derive(Debug, Serialize, PartialEq, Eq)]
 pub struct AccessControlPolicy {
-	#[serde(serialize_with = "xmlns_tag")]
+	#[serde(rename = "@xmlns", serialize_with = "xmlns_tag")]
 	pub xmlns: (),
-	#[serde(rename = "Owner")]
+	#[serde(rename = "Owner", skip_serializing_if = "Option::is_none")]
 	pub owner: Option<Owner>,
 	#[serde(rename = "AccessControlList")]
 	pub acl: AccessControlList,
@@ -458,7 +468,7 @@ mod tests {
 		assert_eq!(
 			to_xml_with_header(&get_bucket_versioning)?,
 			"<?xml version=\"1.0\" encoding=\"UTF-8\"?>\
-<VersioningConfiguration xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\"/>"
+<VersioningConfiguration xmlns=\"http://s3.amazonaws.com/doc/2006-03-01/\"></VersioningConfiguration>"
 		);
 		let get_bucket_versioning2 = VersioningConfiguration {
 			xmlns: (),
