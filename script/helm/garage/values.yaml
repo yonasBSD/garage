@@ -238,6 +238,10 @@ tolerations: []
 
 affinity: {}
 
+# -- Optional priority class name to assign to the pods.
+# See https://kubernetes.io/docs/concepts/scheduling-eviction/pod-priority-preemption/
+priorityClassName: ""
+
 environment: {}
 
 extraVolumes: {}
