@@ -81,7 +81,7 @@ fn parse_x_amz_content_sha256(header: Option<&str>) -> Result<ContentSha256Heade
 			_ => {
 				return Err(Error::bad_request(
 					"invalid or unsupported x-amz-content-sha256",
-				))
+				));
 			}
 		};
 		Ok(ContentSha256Header::StreamingPayload { trailer, signed })
@@ -357,11 +357,18 @@ pub fn canonical_request(
 	let canonical_header_string = signed_headers
 		.iter()
 		.map(|name| {
-			let value = headers
-				.get(name)
+			let all_values = headers.get_all(name);
+			let mut iter_values = all_values.iter();
+			let base_value = iter_values
+				.next()
 				.ok_or_bad_request(format!("signed header `{}` is not present", name))?;
-			let value = std::str::from_utf8(value.as_bytes())?;
-			Ok(format!("{}:{}", name.as_str(), value.trim()))
+			let mut built_string = std::str::from_utf8(base_value.as_bytes())?.to_string();
+			for extend_value in iter_values {
+				let extend_string = std::str::from_utf8(extend_value.as_bytes())?;
+				built_string.push(',');
+				built_string.push_str(extend_string);
+			}
+			Ok(format!("{}:{}", name.as_str(), built_string.trim()))
 		})
 		.collect::<Result<Vec<String>, Error>>()?
 		.join("\n");

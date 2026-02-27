@@ -1,3 +1,4 @@
+use std::iter::FromIterator;
 use std::pin::Pin;
 use std::sync::Mutex;
 
@@ -5,7 +6,7 @@ use chrono::{DateTime, NaiveDateTime, TimeZone, Utc};
 use futures::prelude::*;
 use futures::task;
 use hmac::Mac;
-use http::header::{HeaderMap, HeaderValue, CONTENT_ENCODING};
+use http::header::{Entry, HeaderMap, HeaderValue, CONTENT_ENCODING};
 use hyper::body::{Bytes, Frame, Incoming as IncomingBody};
 use hyper::Request;
 
@@ -42,15 +43,52 @@ pub fn parse_streaming_body(
 			// Remove the aws-chunked component in the content-encoding: header
 			// Note: this header is not properly sent by minio client, so don't fail
 			// if it is absent from the request.
-			if let Some(content_encoding) = req.headers_mut().remove(CONTENT_ENCODING) {
-				if let Some(rest) = content_encoding.as_bytes().strip_prefix(b"aws-chunked,") {
-					req.headers_mut()
-						.insert(CONTENT_ENCODING, HeaderValue::from_bytes(rest).unwrap());
-				} else if content_encoding != "aws-chunked" {
-					return Err(Error::bad_request(
-						"content-encoding does not contain aws-chunked for STREAMING-*-PAYLOAD",
-					));
+			let mut original_content_encoding = vec![];
+			if let Entry::Occupied(content_encoding) = req.headers_mut().entry(CONTENT_ENCODING) {
+				// 1. collect headers
+				let (_, vals) = content_encoding.remove_entry_mult();
+				original_content_encoding = Vec::from_iter(vals);
+			}
+			let mut header_initialized = false;
+			let mut chunked_found = false;
+			for enc_val in original_content_encoding.iter() {
+				// 2. clean each header value and reinject it.
+				let mut rebuilt_val = vec![];
+				for part in enc_val.as_bytes().split(|c| *c == b',') {
+					let trimmed_part = part.trim_ascii();
+					if trimmed_part == b"aws-chunked" {
+						chunked_found = true;
+						continue;
+					}
+					if !rebuilt_val.is_empty() {
+						rebuilt_val.push(b',');
+					}
+					rebuilt_val.extend_from_slice(trimmed_part);
 				}
+
+				if rebuilt_val.is_empty() {
+					// skip empty headers
+					continue;
+				}
+
+				if !header_initialized {
+					req.headers_mut().insert(
+						CONTENT_ENCODING,
+						HeaderValue::from_bytes(&rebuilt_val).unwrap(),
+					);
+					header_initialized = true;
+				} else {
+					req.headers_mut().append(
+						CONTENT_ENCODING,
+						HeaderValue::from_bytes(&rebuilt_val).unwrap(),
+					);
+				}
+			}
+
+			if !original_content_encoding.is_empty() && !chunked_found {
+				return Err(Error::bad_request(
+					"content-encoding does not contain aws-chunked for STREAMING-*-PAYLOAD",
+				));
 			}
 
 			// If trailer header is announced, add the calculation of the requested checksum
@@ -480,7 +518,7 @@ where
 								continue;
 							}
 							Some(Err(e)) => {
-								return Poll::Ready(Some(Err(StreamingPayloadError::Stream(e))))
+								return Poll::Ready(Some(Err(StreamingPayloadError::Stream(e))));
 							}
 							None => {
 								return Poll::Ready(Some(Err(StreamingPayloadError::message(
@@ -490,7 +528,7 @@ where
 						}
 					}
 					Err(nom::Err::Error(e)) | Err(nom::Err::Failure(e)) => {
-						return Poll::Ready(Some(Err(e)))
+						return Poll::Ready(Some(Err(e)));
 					}
 				};
 
