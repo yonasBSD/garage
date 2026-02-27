@@ -76,7 +76,9 @@ impl RequestHandler for GetKeyInfoRequest {
 					.await?
 					.into_iter()
 					.collect::<Vec<_>>();
-				if candidates.len() != 1 {
+				if candidates.is_empty() {
+					return Err(Error::NoSuchAccessKey(search.clone()));
+				} else if candidates.len() != 1 {
 					return Err(Error::bad_request(format!(
 						"{} matching keys",
 						candidates.len()
