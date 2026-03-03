@@ -273,7 +273,7 @@ impl NetApp {
 				);
 			}
 
-			info!(
+			debug!(
 				"Incoming connection from {}, negotiating handshake...",
 				peer_addr
 			);

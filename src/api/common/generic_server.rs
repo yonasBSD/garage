@@ -162,7 +162,13 @@ impl<A: ApiHandler> ApiServer<A> {
 			.key_id_from_request(&req)
 			.map(|k| format!("(key {k}) "))
 			.unwrap_or_default();
-		info!("{source} {key}{} {uri}", req.method());
+
+		if A::API_NAME == "admin" && (uri.path() == "/health" || uri.path() == "/metrics") {
+			debug!("{source} {key}{} {uri}", req.method());
+		} else {
+			info!("{source} {key}{} {uri}", req.method());
+		}
+
 		debug!("{:?}", req);
 
 		let tracer = opentelemetry::global::tracer("garage");
