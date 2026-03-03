@@ -340,7 +340,11 @@ pub fn canonical_request(
 	let canonical_uri: std::borrow::Cow<str> = if service != "s3" {
 		uri_encode(canonical_uri, false).into()
 	} else {
-		canonical_uri.into()
+		//TODO: decode is already do for construct Api::EndPoint, should be better to be able to keep it instead of compute it again.
+		let key = percent_encoding::percent_decode_str(canonical_uri)
+			.decode_utf8()
+			.unwrap();
+		uri_encode(&key, false).into()
 	};
 
 	// Canonical query string from passed HeaderMap

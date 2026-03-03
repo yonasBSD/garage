@@ -1548,6 +1548,7 @@ dependencies = [
  "md-5",
  "nom",
  "opentelemetry",
+ "percent-encoding",
  "pin-project",
  "quick-xml",
  "serde",
