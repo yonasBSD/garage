@@ -18,21 +18,23 @@ use garage_util::error::*;
 
 use garage_rpc::*;
 
+use crate::cli::structs::*;
 use garage_api_admin::api::*;
 use garage_api_admin::api_server::{AdminRpc as ProxyRpc, AdminRpcResponse as ProxyRpcResponse};
 use garage_api_admin::RequestHandler;
-
-use crate::cli::structs::*;
+use garage_util::config::Config;
 
 pub struct Cli {
 	pub proxy_rpc_endpoint: Arc<Endpoint<ProxyRpc, ()>>,
 	pub rpc_host: NodeID,
+	pub config: Option<Config>,
 }
 
 impl Cli {
 	pub async fn handle(&self, cmd: Command) -> Result<(), Error> {
 		match cmd {
 			Command::Status => self.cmd_status().await,
+			Command::HealthCheck(opt) => self.cmd_health_check(opt.quiet).await,
 			Command::Node(NodeOperation::Connect(connect_opt)) => {
 				self.cmd_connect(connect_opt).await
 			}

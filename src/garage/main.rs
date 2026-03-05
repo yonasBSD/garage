@@ -351,6 +351,7 @@ async fn cli_command(opt: Opt) -> Result<(), Error> {
 	let cli = cli::remote::Cli {
 		proxy_rpc_endpoint,
 		rpc_host: id,
+		config: config,
 	};
 
 	cli.handle(opt.cmd).await

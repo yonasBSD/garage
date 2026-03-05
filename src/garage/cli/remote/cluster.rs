@@ -9,6 +9,39 @@ use crate::cli::remote::*;
 use crate::cli::structs::*;
 
 impl Cli {
+	pub async fn cmd_health_check(&self, quiet: bool) -> Result<(), Error> {
+		let status = self.api_request(GetClusterStatusRequest).await?;
+
+		let mut result = Err(Error::Message(
+			"Failed to find node id in configuration".into(),
+		));
+
+		if let Some(config) = &self.config {
+			let local_node_id = hex::encode(
+					garage_rpc::system::read_node_id(&config.metadata_dir)
+						.err_context(crate::cli::local::init::READ_KEY_ERROR)?
+				).to_string();
+			result = Err(Error::Message("Cluster is not healthy".into()));
+
+			for node in status.nodes.iter() {
+				if node.id == local_node_id {
+					result = Ok(())
+				}
+			}
+			if !quiet {
+				match result {
+					Ok(_) => {
+						println!("Healthy");
+					}
+					Err(_) => {
+						println!("Not healthy");
+					}
+				}
+			}
+		}
+		result
+	}
+
 	pub async fn cmd_status(&self) -> Result<(), Error> {
 		let status = self.api_request(GetClusterStatusRequest).await?;
 		let layout = self.api_request(GetClusterLayoutRequest).await?;

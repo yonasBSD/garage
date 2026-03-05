@@ -14,6 +14,10 @@ pub enum Command {
 	#[structopt(name = "status", version = garage_version())]
 	Status,
 
+	/// Check the local node health and set the exit code to 1 if it is unhealthy.
+	#[structopt(name = "health-check", version = garage_version())]
+	HealthCheck(HealthCheckOpt),
+
 	/// Operations on individual Garage nodes
 	#[structopt(name = "node", version = garage_version())]
 	Node(NodeOperation),
@@ -101,6 +105,17 @@ pub struct ServerOpt {
 	/// Implies `--default-access-key`. Requires `--single-node`.
 	#[structopt(long = "default-bucket")]
 	pub(crate) default_bucket: bool,
+}
+
+// -------------------------
+// ---- garage health-check ... ----
+// -------------------------
+
+#[derive(StructOpt, Debug)]
+pub struct HealthCheckOpt {
+	/// Do not print healthyness to stdout
+	#[structopt(short = "q", long = "quiet")]
+	pub(crate) quiet: bool,
 }
 
 // -------------------------
