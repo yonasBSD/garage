@@ -282,8 +282,22 @@ pub struct GetClusterHealthResponse {
 pub struct GetClusterStatisticsRequest;
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
 pub struct GetClusterStatisticsResponse {
+	/// cluster statistics as a free-form string, kept for compatibility with nodes
+	/// running older v2.x versions of garage
 	pub freeform: String,
+	/// available storage space for object data in the entire cluster, in bytes
+	#[serde(default)]
+	pub data_avail: u64,
+	/// available storage space for object metadata in the entire cluster, in bytes
+	#[serde(default)]
+	pub metadata_avail: u64,
+	/// true if the available storage space statistics are imprecise due to missing
+	/// information of disconnected nodes. When this is the case, the actual
+	/// space available in the cluster might be lower than the reported values.
+	#[serde(default)]
+	pub incomplete_info: bool,
 }
 
 // ---- ConnectClusterNodes ----

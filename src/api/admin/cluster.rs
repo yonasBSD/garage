@@ -231,33 +231,41 @@ impl RequestHandler for GetClusterStatisticsRequest {
 					.map(|c| c.0 / *parts)
 			})
 			.collect::<Vec<_>>();
-		if !meta_part_avail.is_empty() && !data_part_avail.is_empty() {
-			let meta_avail =
-				bytesize::ByteSize(meta_part_avail.iter().min().unwrap() * (1 << PARTITION_BITS));
-			let data_avail =
-				bytesize::ByteSize(data_part_avail.iter().min().unwrap() * (1 << PARTITION_BITS));
-			writeln!(
-				&mut ret,
-				"\nEstimated available storage space cluster-wide (might be lower in practice):"
-			)
-			.unwrap();
-			if meta_part_avail.len() < node_partition_count.len()
-				|| data_part_avail.len() < node_partition_count.len()
-			{
-				ret += &format_table_to_string(vec![
-					format!("  data: < {}", data_avail),
-					format!("  metadata: < {}", meta_avail),
-				]);
-				writeln!(&mut ret, "A precise estimate could not be given as information is missing for some storage nodes.").unwrap();
-			} else {
-				ret += &format_table_to_string(vec![
-					format!("  data: {}", data_avail),
-					format!("  metadata: {}", meta_avail),
-				]);
-			}
+
+		let metadata_avail: u64 =
+			meta_part_avail.iter().min().unwrap_or(&0) * (1 << PARTITION_BITS);
+		let data_avail: u64 = data_part_avail.iter().min().unwrap_or(&0) * (1 << PARTITION_BITS);
+
+		let metadata_avail_str = bytesize::ByteSize(metadata_avail);
+		let data_avail_str = bytesize::ByteSize(data_avail);
+
+		let incomplete_info = meta_part_avail.len() < node_partition_count.len()
+			|| data_part_avail.len() < node_partition_count.len();
+
+		writeln!(
+			&mut ret,
+			"\nEstimated available storage space cluster-wide (might be lower in practice):"
+		)
+		.unwrap();
+		if incomplete_info {
+			ret += &format_table_to_string(vec![
+				format!("  data: < {}", data_avail_str),
+				format!("  metadata: < {}", metadata_avail_str),
+			]);
+			writeln!(&mut ret, "A precise estimate could not be given as information is missing for some storage nodes.").unwrap();
+		} else {
+			ret += &format_table_to_string(vec![
+				format!("  data: {}", data_avail_str),
+				format!("  metadata: {}", metadata_avail_str),
+			]);
 		}
 
-		Ok(GetClusterStatisticsResponse { freeform: ret })
+		Ok(GetClusterStatisticsResponse {
+			freeform: ret,
+			metadata_avail,
+			data_avail,
+			incomplete_info,
+		})
 	}
 }
 

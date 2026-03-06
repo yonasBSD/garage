@@ -2581,8 +2581,25 @@
           "freeform"
         ],
         "properties": {
+          "dataAvail": {
+            "type": "integer",
+            "format": "int64",
+            "description": "available storage space for object data in the entire cluster, in bytes",
+            "minimum": 0
+          },
           "freeform": {
-            "type": "string"
+            "type": "string",
+            "description": "cluster statistics as a free-form string, kept for compatibility with nodes\nrunning older v2.x versions of garage"
+          },
+          "incompleteInfo": {
+            "type": "boolean",
+            "description": "true if the available storage space statistics are imprecise due to missing\ninformation of disconnected nodes. When this is the case, the actual\nspace available in the cluster might be lower than the reported values."
+          },
+          "metadataAvail": {
+            "type": "integer",
+            "format": "int64",
+            "description": "available storage space for object metadata in the entire cluster, in bytes",
+            "minimum": 0
           }
         }
       },
@@ -4117,7 +4134,7 @@
             "items": {
               "type": "string"
             },
-            "description": "Scope of the admin API token, a list of admin endpoint names (such as\n`GetClusterStatus`, etc), or the special value `*` to allow all\nadmin endpoints. **WARNING:** Granting a scope of `CreateAdminToken` or\n`UpdateAdminToken` trivially allows for privilege escalation, and is thus\nfunctionnally equivalent to granting a scope of `*`."
+            "description": "Scope of the admin API token, a list of admin endpoint names (such as\n`GetClusterStatus`, etc), or the special value `*` to allow all\nadmin endpoints. **WARNING:** Granting a scope of `CreateAdminToken` or\n`UpdateAdminToken` trivially allows for privilege escalation, and is thus\nfunctionally equivalent to granting a scope of `*`."
           }
         }
       },
