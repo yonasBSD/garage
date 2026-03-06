@@ -41,6 +41,7 @@ hyper = { workspace = true, default-features = false, features = ["server", "htt
 hyper-util.workspace = true
 url.workspace = true
 
+quick-xml.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 

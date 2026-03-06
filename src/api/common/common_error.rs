@@ -36,6 +36,10 @@ pub enum CommonError {
 	#[error("Invalid header value: {0}")]
 	InvalidHeader(#[from] hyper::header::ToStrError),
 
+	/// The client sent a request for an action not supported by garage
+	#[error("Unimplemented action: {0}")]
+	NotImplemented(String),
+
 	// ---- SPECIFIC ERROR CONDITIONS ----
 	// These have to be error codes referenced in the S3 spec here:
 	// https://docs.aws.amazon.com/AmazonS3/latest/API/ErrorResponses.html#ErrorCodeList
@@ -101,6 +105,7 @@ impl CommonError {
 			}
 			CommonError::BadRequest(_) => StatusCode::BAD_REQUEST,
 			CommonError::Forbidden(_) => StatusCode::FORBIDDEN,
+			CommonError::NotImplemented(_) => StatusCode::NOT_IMPLEMENTED,
 			CommonError::NoSuchBucket(_) => StatusCode::NOT_FOUND,
 			CommonError::BucketNotEmpty
 			| CommonError::BucketAlreadyExists
@@ -127,6 +132,7 @@ impl CommonError {
 			CommonError::InvalidBucketName(_) => "InvalidBucketName",
 			CommonError::InvalidHeader(_) => "InvalidHeaderValue",
 			CommonError::BucketAlreadyOwnedByYou => "BucketAlreadyOwnedByYou",
+			CommonError::NotImplemented(_) => "NotImplemented",
 		}
 	}
 

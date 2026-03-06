@@ -1549,6 +1549,7 @@ dependencies = [
  "nom",
  "opentelemetry",
  "pin-project",
+ "quick-xml",
  "serde",
  "serde_json",
  "sha1",
