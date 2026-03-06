@@ -38,7 +38,7 @@ impl RequestHandler for ListBucketsRequest {
 				&EmptyKey,
 				None,
 				Some(DeletedFilter::NotDeleted),
-				10000,
+				1_000_000,
 				EnumerationOrder::Forward,
 			)
 			.await?;

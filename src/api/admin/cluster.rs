@@ -8,8 +8,10 @@ use garage_util::data::*;
 
 use garage_rpc::layout;
 use garage_rpc::layout::PARTITION_BITS;
+use garage_table::*;
 
 use garage_model::garage::Garage;
+use garage_model::s3::object_table;
 
 use crate::api::*;
 use crate::error::*;
@@ -152,7 +154,6 @@ impl RequestHandler for GetClusterHealthRequest {
 impl RequestHandler for GetClusterStatisticsRequest {
 	type Response = GetClusterStatisticsResponse;
 
-	// FIXME: return this as a JSON struct instead of text
 	async fn handle(
 		self,
 		garage: &Arc<Garage>,
@@ -160,8 +161,45 @@ impl RequestHandler for GetClusterStatisticsRequest {
 	) -> Result<GetClusterStatisticsResponse, Error> {
 		let mut ret = String::new();
 
-		// Gather storage node and free space statistics for current nodes
+		// Gather info on number of buckets, objects and object size
+		let buckets = garage
+			.bucket_table
+			.get_range(
+				&EmptyKey,
+				None,
+				Some(DeletedFilter::NotDeleted),
+				1_000_000,
+				EnumerationOrder::Forward,
+			)
+			.await?;
+
+		let bucket_stats = futures::future::try_join_all(
+			buckets
+				.iter()
+				.map(|b| garage.object_counter_table.table.get(&b.id, &EmptyKey)),
+		)
+		.await?;
+
 		let layout = &garage.system.cluster_layout();
+
+		let bucket_stats = bucket_stats
+			.into_iter()
+			.filter_map(|cnt| cnt.map(|x| x.filtered_values(layout)))
+			.collect::<Vec<_>>();
+
+		let bucket_count = buckets.len() as u64;
+		let total_object_count = bucket_stats
+			.iter()
+			.clone()
+			.map(|cnt| *cnt.get(object_table::OBJECTS).unwrap_or(&0) as u64)
+			.sum();
+		let total_object_bytes = bucket_stats
+			.iter()
+			.clone()
+			.map(|cnt| *cnt.get(object_table::BYTES).unwrap_or(&0) as u64)
+			.sum();
+
+		// Gather storage node and free space statistics for current nodes
 		let mut node_partition_count = HashMap::<Uuid, u64>::new();
 		if let Ok(current_layout) = layout.current() {
 			for short_id in current_layout.ring_assignment_data.iter() {
@@ -242,9 +280,20 @@ impl RequestHandler for GetClusterStatisticsRequest {
 		let incomplete_info = meta_part_avail.len() < node_partition_count.len()
 			|| data_part_avail.len() < node_partition_count.len();
 
+		// Display bucket statistics
+		let bucket_stats = vec![
+			format!("Number of buckets:\t{}", bucket_count),
+			format!("Total number of objects:\t{}", total_object_count),
+			format!(
+				"Total size of objects:\t{}",
+				bytesize::ByteSize(total_object_bytes)
+			),
+		];
+		writeln!(&mut ret, "\n{}", format_table_to_string(bucket_stats)).unwrap();
+
 		writeln!(
 			&mut ret,
-			"\nEstimated available storage space cluster-wide (might be lower in practice):"
+			"Estimated available storage space cluster-wide (might be lower in practice):"
 		)
 		.unwrap();
 		if incomplete_info {
@@ -264,7 +313,10 @@ impl RequestHandler for GetClusterStatisticsRequest {
 			freeform: ret,
 			metadata_avail,
 			data_avail,
-			incomplete_info,
+			incomplete_avail_info: incomplete_info,
+			bucket_count,
+			total_object_count,
+			total_object_bytes,
 		})
 	}
 }

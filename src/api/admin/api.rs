@@ -299,7 +299,17 @@ pub struct GetClusterStatisticsResponse {
 	/// information of disconnected nodes. When this is the case, the actual
 	/// space available in the cluster might be lower than the reported values.
 	#[serde(default)]
-	pub incomplete_info: bool,
+	pub incomplete_avail_info: bool,
+	/// number of buckets in the cluster
+	#[serde(default)]
+	pub bucket_count: u64,
+	/// total number of objects stored in all buckets
+	#[serde(default)]
+	pub total_object_count: u64,
+	/// total size of objects stored in all buckets, before compression, deduplication and
+	/// replication (this is NOT equivalent to actual disk usage in the cluster)
+	#[serde(default)]
+	pub total_object_bytes: u64,
 }
 
 // ---- ConnectClusterNodes ----
