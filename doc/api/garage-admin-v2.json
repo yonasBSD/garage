@@ -3072,7 +3072,8 @@
         ],
         "properties": {
           "dbEngine": {
-            "type": "string"
+            "type": "string",
+            "description": "database engine used for metadata"
           },
           "garageFeatures": {
             "type": [
@@ -3081,16 +3082,23 @@
             ],
             "items": {
               "type": "string"
-            }
+            },
+            "description": "build-time features enabled for this garage release"
           },
           "garageVersion": {
-            "type": "string"
+            "type": "string",
+            "description": "garage version running on this node"
+          },
+          "hostname": {
+            "type": "string",
+            "description": "hostname of this node"
           },
           "nodeId": {
             "type": "string"
           },
           "rustVersion": {
-            "type": "string"
+            "type": "string",
+            "description": "rustc version with which this garage release was compiled"
           }
         }
       },
@@ -3100,8 +3108,20 @@
           "freeform"
         ],
         "properties": {
+          "blockManagerStats": {
+            "$ref": "#/components/schemas/NodeBlockManagerStats",
+            "description": "block manager statistics"
+          },
           "freeform": {
-            "type": "string"
+            "type": "string",
+            "description": "node statistics as a free-form string, kept for compatibility with nodes\nrunning older v2.x versions of garage"
+          },
+          "tableStats": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/NodeTableStats"
+            },
+            "description": "metadata table statistics"
           }
         }
       },
@@ -3402,7 +3422,8 @@
               ],
               "properties": {
                 "dbEngine": {
-                  "type": "string"
+                  "type": "string",
+                  "description": "database engine used for metadata"
                 },
                 "garageFeatures": {
                   "type": [
@@ -3411,16 +3432,23 @@
                   ],
                   "items": {
                     "type": "string"
-                  }
+                  },
+                  "description": "build-time features enabled for this garage release"
                 },
                 "garageVersion": {
-                  "type": "string"
+                  "type": "string",
+                  "description": "garage version running on this node"
+                },
+                "hostname": {
+                  "type": "string",
+                  "description": "hostname of this node"
                 },
                 "nodeId": {
                   "type": "string"
                 },
                 "rustVersion": {
-                  "type": "string"
+                  "type": "string",
+                  "description": "rustc version with which this garage release was compiled"
                 }
               }
             },
@@ -3456,8 +3484,20 @@
                 "freeform"
               ],
               "properties": {
+                "blockManagerStats": {
+                  "$ref": "#/components/schemas/NodeBlockManagerStats",
+                  "description": "block manager statistics"
+                },
                 "freeform": {
-                  "type": "string"
+                  "type": "string",
+                  "description": "node statistics as a free-form string, kept for compatibility with nodes\nrunning older v2.x versions of garage"
+                },
+                "tableStats": {
+                  "type": "array",
+                  "items": {
+                    "$ref": "#/components/schemas/NodeTableStats"
+                  },
+                  "description": "metadata table statistics"
                 }
               }
             },
@@ -3796,6 +3836,34 @@
           }
         }
       },
+      "NodeBlockManagerStats": {
+        "type": "object",
+        "required": [
+          "rcEntries",
+          "resyncQueueLen",
+          "resyncErrors"
+        ],
+        "properties": {
+          "rcEntries": {
+            "type": "integer",
+            "format": "int64",
+            "description": "number of reference counter entries",
+            "minimum": 0
+          },
+          "resyncErrors": {
+            "type": "integer",
+            "format": "int64",
+            "description": "number of blocks with resync errors",
+            "minimum": 0
+          },
+          "resyncQueueLen": {
+            "type": "integer",
+            "format": "int64",
+            "description": "number of blocks in the resync queue",
+            "minimum": 0
+          }
+        }
+      },
       "NodeResp": {
         "type": "object",
         "required": [
@@ -3958,6 +4026,53 @@
             ]
           }
         ]
+      },
+      "NodeTableStats": {
+        "type": "object",
+        "required": [
+          "tableName",
+          "items",
+          "merkleItems",
+          "merkleQueueLen",
+          "insertQueueLen",
+          "gcQueueLen"
+        ],
+        "properties": {
+          "gcQueueLen": {
+            "type": "integer",
+            "format": "int64",
+            "description": "number of items in the garbage collection queue",
+            "minimum": 0
+          },
+          "insertQueueLen": {
+            "type": "integer",
+            "format": "int64",
+            "description": "number of items in the remote insert queue",
+            "minimum": 0
+          },
+          "items": {
+            "type": "integer",
+            "format": "int64",
+            "description": "number of items stored in metadata table",
+            "minimum": 0
+          },
+          "merkleItems": {
+            "type": "integer",
+            "format": "int64",
+            "description": "size of the merkle tree representing all items in the table",
+            "minimum": 0
+          },
+          "merkleQueueLen": {
+            "type": "integer",
+            "format": "int64",
+            "description": "number of items in the merkle tree update queue",
+            "minimum": 0
+          },
+          "tableName": {
+            "type": "string",
+            "description": "name of metadata table"
+          }
+        }
       },
       "NodeUpdateTrackers": {
         "type": "object",

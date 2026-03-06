@@ -1123,9 +1123,16 @@ pub struct LocalGetNodeInfoRequest;
 #[serde(rename_all = "camelCase")]
 pub struct LocalGetNodeInfoResponse {
 	pub node_id: String,
+	/// hostname of this node
+	#[serde(default)]
+	pub hostname: String,
+	/// garage version running on this node
 	pub garage_version: String,
+	/// build-time features enabled for this garage release
 	pub garage_features: Option<Vec<String>>,
+	/// rustc version with which this garage release was compiled
 	pub rust_version: String,
+	/// database engine used for metadata
 	pub db_engine: String,
 }
 
@@ -1135,8 +1142,45 @@ pub struct LocalGetNodeInfoResponse {
 pub struct LocalGetNodeStatisticsRequest;
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
 pub struct LocalGetNodeStatisticsResponse {
+	/// node statistics as a free-form string, kept for compatibility with nodes
+	/// running older v2.x versions of garage
 	pub freeform: String,
+	/// metadata table statistics
+	#[serde(default)]
+	pub table_stats: Vec<NodeTableStats>,
+	/// block manager statistics
+	#[serde(default)]
+	pub block_manager_stats: NodeBlockManagerStats,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct NodeTableStats {
+	/// name of metadata table
+	pub table_name: String,
+	/// number of items stored in metadata table
+	pub items: u64,
+	/// size of the merkle tree representing all items in the table
+	pub merkle_items: u64,
+	/// number of items in the merkle tree update queue
+	pub merkle_queue_len: u64,
+	/// number of items in the remote insert queue
+	pub insert_queue_len: u64,
+	/// number of items in the garbage collection queue
+	pub gc_queue_len: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct NodeBlockManagerStats {
+	/// number of reference counter entries
+	pub rc_entries: u64,
+	/// number of blocks in the resync queue
+	pub resync_queue_len: u64,
+	/// number of blocks with resync errors
+	pub resync_errors: u64,
 }
 
 // ---- CreateMetadataSnapshot ----
