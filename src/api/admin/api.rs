@@ -284,9 +284,11 @@ pub struct GetClusterStatisticsRequest;
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct GetClusterStatisticsResponse {
+	// FIXME for v3: remove freeform field and move display logic to garage crate
 	/// cluster statistics as a free-form string, kept for compatibility with nodes
 	/// running older v2.x versions of garage
 	pub freeform: String,
+	// FIXME for v3: remove serde(default) for all three fields below
 	/// available storage space for object data in the entire cluster, in bytes
 	#[serde(default)]
 	pub data_avail: u64,
@@ -889,6 +891,7 @@ pub struct GetBucketInfoResponse {
 pub struct GetBucketInfoWebsiteResponse {
 	pub index_document: String,
 	pub error_document: Option<String>,
+	// FIXME for v3: remove serde(default) for field below
 	#[serde(default)]
 	pub routing_rules: Vec<xml::website::RoutingRule>,
 }
@@ -949,6 +952,7 @@ pub struct UpdateBucketResponse(pub GetBucketInfoResponse);
 pub struct UpdateBucketRequestBody {
 	pub website_access: Option<UpdateBucketWebsiteAccess>,
 	pub quotas: Option<ApiBucketQuotas>,
+	// FIXME for v3: remove serde(default) for the two fields below
 	#[serde(default)]
 	pub cors_rules: Option<Vec<xml::cors::CorsRule>>,
 	#[serde(default)]
@@ -961,6 +965,7 @@ pub struct UpdateBucketWebsiteAccess {
 	pub enabled: bool,
 	pub index_document: Option<String>,
 	pub error_document: Option<String>,
+	// FIXME for v3: remove serde(default) for field below
 	#[serde(default)]
 	pub routing_rules: Option<Vec<xml::website::RoutingRule>>,
 }
@@ -1137,6 +1142,7 @@ pub struct LocalGetNodeInfoRequest;
 #[serde(rename_all = "camelCase")]
 pub struct LocalGetNodeInfoResponse {
 	pub node_id: String,
+	// FIXME for v3: remove serde(default) for field below
 	/// hostname of this node
 	#[serde(default)]
 	pub hostname: String,
@@ -1158,9 +1164,11 @@ pub struct LocalGetNodeStatisticsRequest;
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
 #[serde(rename_all = "camelCase")]
 pub struct LocalGetNodeStatisticsResponse {
+	// FIXME for v3: remove freeform field and move display logic to garage crate
 	/// node statistics as a free-form string, kept for compatibility with nodes
 	/// running older v2.x versions of garage
 	pub freeform: String,
+	// FIXME for v3: remove serde(default) for fields below
 	/// metadata table statistics
 	#[serde(default)]
 	pub table_stats: Vec<NodeTableStats>,
