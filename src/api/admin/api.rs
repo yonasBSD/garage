@@ -288,28 +288,28 @@ pub struct GetClusterStatisticsResponse {
 	/// cluster statistics as a free-form string, kept for compatibility with nodes
 	/// running older v2.x versions of garage
 	pub freeform: String,
-	// FIXME for v3: remove serde(default) for all three fields below
+	// FIXME for v3: remove Option<> and serde(default) for all fields below
 	/// available storage space for object data in the entire cluster, in bytes
-	#[serde(default)]
-	pub data_avail: u64,
+	#[serde(default, skip_serializing_if = "Option::is_none")]
+	pub data_avail: Option<u64>,
 	/// available storage space for object metadata in the entire cluster, in bytes
-	#[serde(default)]
-	pub metadata_avail: u64,
+	#[serde(default, skip_serializing_if = "Option::is_none")]
+	pub metadata_avail: Option<u64>,
 	/// true if the available storage space statistics are imprecise due to missing
 	/// information of disconnected nodes. When this is the case, the actual
 	/// space available in the cluster might be lower than the reported values.
-	#[serde(default)]
-	pub incomplete_avail_info: bool,
+	#[serde(default, skip_serializing_if = "Option::is_none")]
+	pub incomplete_avail_info: Option<bool>,
 	/// number of buckets in the cluster
-	#[serde(default)]
-	pub bucket_count: u64,
+	#[serde(default, skip_serializing_if = "Option::is_none")]
+	pub bucket_count: Option<u64>,
 	/// total number of objects stored in all buckets
-	#[serde(default)]
-	pub total_object_count: u64,
+	#[serde(default, skip_serializing_if = "Option::is_none")]
+	pub total_object_count: Option<u64>,
 	/// total size of objects stored in all buckets, before compression, deduplication and
 	/// replication (this is NOT equivalent to actual disk usage in the cluster)
-	#[serde(default)]
-	pub total_object_bytes: u64,
+	#[serde(default, skip_serializing_if = "Option::is_none")]
+	pub total_object_bytes: Option<u64>,
 }
 
 // ---- ConnectClusterNodes ----
@@ -870,13 +870,14 @@ pub struct GetBucketInfoResponse {
 	/// Whether website access is enabled for this bucket
 	pub website_access: bool,
 	/// Website configuration for this bucket
+	#[serde(default, skip_serializing_if = "Option::is_none")]
 	pub website_config: Option<GetBucketInfoWebsiteResponse>,
 	// FIXME for v3: remove serde(default) for the two fields below
 	/// CORS rules for this bucket
-	#[serde(default)]
+	#[serde(default, skip_serializing_if = "Option::is_none")]
 	pub cors_rules: Option<Vec<xml::cors::CorsRule>>,
 	/// Object lifecycle rules for this bucket
-	#[serde(default)]
+	#[serde(default, skip_serializing_if = "Option::is_none")]
 	pub lifecycle_rules: Option<Vec<xml::lifecycle::LifecycleRule>>,
 	/// List of access keys that have permissions granted on this bucket
 	pub keys: Vec<GetBucketInfoKey>,
@@ -902,8 +903,8 @@ pub struct GetBucketInfoWebsiteResponse {
 	pub index_document: String,
 	pub error_document: Option<String>,
 	// FIXME for v3: remove serde(default) for field below
-	#[serde(default)]
-	pub routing_rules: Vec<xml::website::RoutingRule>,
+	#[serde(default, skip_serializing_if = "Option::is_none")]
+	pub routing_rules: Option<Vec<xml::website::RoutingRule>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
@@ -1152,10 +1153,10 @@ pub struct LocalGetNodeInfoRequest;
 #[serde(rename_all = "camelCase")]
 pub struct LocalGetNodeInfoResponse {
 	pub node_id: String,
-	// FIXME for v3: remove serde(default) for field below
+	// FIXME for v3: remove Option<> and serde(default) for field below
 	/// hostname of this node
-	#[serde(default)]
-	pub hostname: String,
+	#[serde(default, skip_serializing_if = "Option::is_none")]
+	pub hostname: Option<String>,
 	/// garage version running on this node
 	pub garage_version: String,
 	/// build-time features enabled for this garage release
@@ -1180,11 +1181,11 @@ pub struct LocalGetNodeStatisticsResponse {
 	pub freeform: String,
 	// FIXME for v3: remove serde(default) for fields below
 	/// metadata table statistics
-	#[serde(default)]
-	pub table_stats: Vec<NodeTableStats>,
+	#[serde(default, skip_serializing_if = "Option::is_none")]
+	pub table_stats: Option<Vec<NodeTableStats>>,
 	/// block manager statistics
-	#[serde(default)]
-	pub block_manager_stats: NodeBlockManagerStats,
+	#[serde(default, skip_serializing_if = "Option::is_none")]
+	pub block_manager_stats: Option<NodeBlockManagerStats>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]

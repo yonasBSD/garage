@@ -311,12 +311,12 @@ impl RequestHandler for GetClusterStatisticsRequest {
 
 		Ok(GetClusterStatisticsResponse {
 			freeform: ret,
-			metadata_avail,
-			data_avail,
-			incomplete_avail_info: incomplete_info,
-			bucket_count,
-			total_object_count,
-			total_object_bytes,
+			metadata_avail: Some(metadata_avail),
+			data_avail: Some(data_avail),
+			incomplete_avail_info: Some(incomplete_info),
+			bucket_count: Some(bucket_count),
+			total_object_count: Some(total_object_count),
+			total_object_bytes: Some(total_object_bytes),
 		})
 	}
 }

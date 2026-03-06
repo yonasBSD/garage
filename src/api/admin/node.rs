@@ -27,7 +27,7 @@ impl RequestHandler for LocalGetNodeInfoRequest {
 
 		Ok(LocalGetNodeInfoResponse {
 			node_id: hex::encode(garage.system.id),
-			hostname,
+			hostname: Some(hostname),
 			garage_version: garage_util::version::garage_version().to_string(),
 			garage_features: garage_util::version::garage_features()
 				.map(|features| features.iter().map(ToString::to_string).collect()),
@@ -146,8 +146,8 @@ impl RequestHandler for LocalGetNodeStatisticsRequest {
 
 		Ok(LocalGetNodeStatisticsResponse {
 			freeform: ret,
-			table_stats,
-			block_manager_stats,
+			table_stats: Some(table_stats),
+			block_manager_stats: Some(block_manager_stats),
 		})
 	}
 }

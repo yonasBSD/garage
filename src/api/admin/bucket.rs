@@ -744,11 +744,12 @@ async fn bucket_info_results(
 			GetBucketInfoWebsiteResponse {
 				index_document: wsc.index_document,
 				error_document: wsc.error_document,
-				routing_rules: wsc
-					.routing_rules
-					.into_iter()
-					.map(xml::website::RoutingRule::from_garage_routing_rule)
-					.collect::<Vec<_>>(),
+				routing_rules: Some(
+					wsc.routing_rules
+						.into_iter()
+						.map(xml::website::RoutingRule::from_garage_routing_rule)
+						.collect::<Vec<_>>(),
+				),
 			}
 		}),
 		cors_rules: state.cors_config.get().as_ref().map(|rules| {
