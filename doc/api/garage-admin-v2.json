@@ -4348,6 +4348,15 @@
               "string",
               "null"
             ]
+          },
+          "routingRules": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/website.RoutingRule"
+            }
           }
         }
       },

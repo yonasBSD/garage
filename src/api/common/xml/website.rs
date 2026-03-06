@@ -149,30 +149,7 @@ impl WebsiteConfiguration {
 					.routing_rules
 					.rules
 					.into_iter()
-					.map(|rule| {
-						bucket_table::RoutingRule {
-							condition: rule.condition.map(|condition| {
-								bucket_table::RedirectCondition {
-									http_error_code: condition.http_error_code.map(|c| c.0 as u16),
-									prefix: condition.prefix.map(|p| p.0),
-								}
-							}),
-							redirect: bucket_table::Redirect {
-								hostname: rule.redirect.hostname.map(|h| h.0),
-								protocol: rule.redirect.protocol.map(|p| p.0),
-								// aws default to 301, which i find punitive in case of
-								// misconfiguration (can be permanently cached on the
-								// user agent)
-								http_redirect_code: rule
-									.redirect
-									.http_redirect_code
-									.map(|c| c.0 as u16)
-									.unwrap_or(302),
-								replace_key_prefix: rule.redirect.replace_prefix.map(|k| k.0),
-								replace_key: rule.redirect.replace_full.map(|k| k.0),
-							},
-						}
-					})
+					.map(RoutingRule::into_garage_routing_rule)
 					.collect(),
 			})
 		}
@@ -234,6 +211,31 @@ impl RoutingRule {
 				protocol: rule.redirect.protocol.map(Value),
 				replace_full: rule.redirect.replace_key.map(Value),
 				replace_prefix: rule.redirect.replace_key_prefix.map(Value),
+			},
+		}
+	}
+
+	pub fn into_garage_routing_rule(self) -> bucket_table::RoutingRule {
+		bucket_table::RoutingRule {
+			condition: self
+				.condition
+				.map(|condition| bucket_table::RedirectCondition {
+					http_error_code: condition.http_error_code.map(|c| c.0 as u16),
+					prefix: condition.prefix.map(|p| p.0),
+				}),
+			redirect: bucket_table::Redirect {
+				hostname: self.redirect.hostname.map(|h| h.0),
+				protocol: self.redirect.protocol.map(|p| p.0),
+				// aws default to 301, which i find punitive in case of
+				// misconfiguration (can be permanently cached on the
+				// user agent)
+				http_redirect_code: self
+					.redirect
+					.http_redirect_code
+					.map(|c| c.0 as u16)
+					.unwrap_or(302),
+				replace_key_prefix: self.redirect.replace_prefix.map(|k| k.0),
+				replace_key: self.redirect.replace_full.map(|k| k.0),
 			},
 		}
 	}

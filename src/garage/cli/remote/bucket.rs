@@ -309,12 +309,14 @@ impl Cli {
 				error_document: opt
 					.error_document
 					.or_else(|| bucket_website_config.and_then(|x| x.error_document.clone())),
+				routing_rules: None,
 			}
 		} else {
 			UpdateBucketWebsiteAccess {
 				enabled: false,
 				index_document: None,
 				error_document: None,
+				routing_rules: None,
 			}
 		};
 

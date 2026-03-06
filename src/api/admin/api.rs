@@ -961,6 +961,8 @@ pub struct UpdateBucketWebsiteAccess {
 	pub enabled: bool,
 	pub index_document: Option<String>,
 	pub error_document: Option<String>,
+	#[serde(default)]
+	pub routing_rules: Option<Vec<xml::website::RoutingRule>>,
 }
 
 // ---- DeleteBucket ----
