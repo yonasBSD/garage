@@ -949,6 +949,10 @@ pub struct UpdateBucketResponse(pub GetBucketInfoResponse);
 pub struct UpdateBucketRequestBody {
 	pub website_access: Option<UpdateBucketWebsiteAccess>,
 	pub quotas: Option<ApiBucketQuotas>,
+	#[serde(default)]
+	pub cors_rules: Option<Vec<xml::cors::CorsRule>>,
+	#[serde(default)]
+	pub lifecycle_rules: Option<Vec<xml::lifecycle::LifecycleRule>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]

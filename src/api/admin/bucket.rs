@@ -323,6 +323,38 @@ impl RequestHandler for UpdateBucketRequest {
 			});
 		}
 
+		if let Some(cr) = self.body.cors_rules {
+			let cors_config = if cr.is_empty() {
+				None
+			} else {
+				let cc = xml::cors::CorsConfiguration {
+					xmlns: (),
+					cors_rules: cr,
+				};
+				cc.validate()?;
+				Some(cc.into_garage_cors_config()?)
+			};
+
+			state.cors_config.update(cors_config);
+		}
+
+		if let Some(lr) = self.body.lifecycle_rules {
+			let lifecycle_config = if lr.is_empty() {
+				None
+			} else {
+				let lc = xml::lifecycle::LifecycleConfiguration {
+					xmlns: (),
+					lifecycle_rules: lr,
+				};
+				Some(
+					lc.validate_into_garage_lifecycle_config()
+						.ok_or_bad_request("Invalid lifecycle configuration")?,
+				)
+			};
+
+			state.lifecycle_config.update(lifecycle_config);
+		}
+
 		garage.bucket_table.insert(&bucket).await?;
 
 		Ok(UpdateBucketResponse(

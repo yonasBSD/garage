@@ -324,6 +324,8 @@ impl Cli {
 				body: UpdateBucketRequestBody {
 					website_access: Some(wa),
 					quotas: None,
+					cors_rules: None,
+					lifecycle_rules: None,
 				},
 			})
 			.await?;
@@ -374,6 +376,8 @@ impl Cli {
 				body: UpdateBucketRequestBody {
 					website_access: None,
 					quotas: Some(new_quotas),
+					cors_rules: None,
+					lifecycle_rules: None,
 				},
 			})
 			.await?;

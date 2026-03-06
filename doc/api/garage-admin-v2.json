@@ -4285,6 +4285,24 @@
       "UpdateBucketRequestBody": {
         "type": "object",
         "properties": {
+          "corsRules": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/cors.Rule"
+            }
+          },
+          "lifecycleRules": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/lifecycle.Rule"
+            }
+          },
           "quotas": {
             "oneOf": [
               {
