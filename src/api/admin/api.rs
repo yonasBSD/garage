@@ -12,7 +12,7 @@ use garage_rpc::*;
 
 use garage_model::garage::Garage;
 
-use garage_api_common::{common_error::CommonError, helpers::is_default};
+use garage_api_common::{common_error::CommonError, helpers::is_default, xml};
 
 use crate::api_server::{find_matching_nodes, AdminRpc, AdminRpcResponse};
 use crate::error::Error;
@@ -857,9 +857,15 @@ pub struct GetBucketInfoResponse {
 	pub global_aliases: Vec<String>,
 	/// Whether website access is enabled for this bucket
 	pub website_access: bool,
-	#[serde(default)]
 	/// Website configuration for this bucket
 	pub website_config: Option<GetBucketInfoWebsiteResponse>,
+	// FIXME for v3: remove serde(default) for the two fields below
+	/// CORS rules for this bucket
+	#[serde(default)]
+	pub cors_rules: Option<Vec<xml::cors::CorsRule>>,
+	/// Object lifecycle rules for this bucket
+	#[serde(default)]
+	pub lifecycle_rules: Option<Vec<xml::lifecycle::LifecycleRule>>,
 	/// List of access keys that have permissions granted on this bucket
 	pub keys: Vec<GetBucketInfoKey>,
 	/// Number of objects in this bucket
@@ -883,6 +889,8 @@ pub struct GetBucketInfoResponse {
 pub struct GetBucketInfoWebsiteResponse {
 	pub index_document: String,
 	pub error_document: Option<String>,
+	#[serde(default)]
+	pub routing_rules: Vec<xml::website::RoutingRule>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]

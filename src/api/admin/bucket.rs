@@ -18,6 +18,7 @@ use garage_model::s3::mpu_table;
 use garage_model::s3::object_table::*;
 
 use garage_api_common::common_error::CommonError;
+use garage_api_common::xml;
 
 use crate::api::*;
 use crate::error::*;
@@ -693,7 +694,23 @@ async fn bucket_info_results(
 			GetBucketInfoWebsiteResponse {
 				index_document: wsc.index_document,
 				error_document: wsc.error_document,
+				routing_rules: wsc
+					.routing_rules
+					.into_iter()
+					.map(xml::website::RoutingRule::from_garage_routing_rule)
+					.collect::<Vec<_>>(),
 			}
+		}),
+		cors_rules: state.cors_config.get().as_ref().map(|rules| {
+			rules
+				.iter()
+				.map(xml::cors::CorsRule::from_garage_cors_rule)
+				.collect::<Vec<_>>()
+		}),
+		lifecycle_rules: state.lifecycle_config.get().as_ref().map(|lc| {
+			lc.iter()
+				.map(xml::lifecycle::LifecycleRule::from_garage_lifecycle_rule)
+				.collect::<Vec<_>>()
 		}),
 		keys: relevant_keys
 			.into_values()

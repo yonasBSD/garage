@@ -9,7 +9,7 @@ use garage_api_common::xml::website::*;
 
 use crate::api_server::{ReqBody, ResBody};
 use crate::error::*;
-use crate::xml::{to_xml_with_header, IntValue, Value};
+use crate::xml::{to_xml_with_header, Value};
 
 pub const X_AMZ_WEBSITE_REDIRECT_LOCATION: HeaderName =
 	HeaderName::from_static("x-amz-website-redirect-location");
@@ -31,21 +31,7 @@ pub async fn handle_get_website(ctx: ReqCtx) -> Result<Response<ResBody>, Error>
 					.routing_rules
 					.clone()
 					.into_iter()
-					.map(|rule| RoutingRule {
-						condition: rule.condition.map(|cond| Condition {
-							http_error_code: cond.http_error_code.map(|c| IntValue(c as i64)),
-							prefix: cond.prefix.map(Value),
-						}),
-						redirect: Redirect {
-							hostname: rule.redirect.hostname.map(Value),
-							http_redirect_code: Some(IntValue(
-								rule.redirect.http_redirect_code as i64,
-							)),
-							protocol: rule.redirect.protocol.map(Value),
-							replace_full: rule.redirect.replace_key.map(Value),
-							replace_prefix: rule.redirect.replace_key_prefix.map(Value),
-						},
-					})
+					.map(RoutingRule::from_garage_routing_rule)
 					.collect(),
 			},
 		};

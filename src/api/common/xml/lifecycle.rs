@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use utoipa::ToSchema;
 
 use garage_model::bucket_table::{
 	parse_lifecycle_date, LifecycleExpiration as GarageLifecycleExpiration,
@@ -15,7 +16,8 @@ pub struct LifecycleConfiguration {
 	pub lifecycle_rules: Vec<LifecycleRule>,
 }
 
-#[derive(Debug, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, ToSchema, Clone, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
+#[schema(as = lifecycle::Rule)]
 pub struct LifecycleRule {
 	#[serde(rename = "ID", skip_serializing_if = "Option::is_none")]
 	pub id: Option<Value>,
@@ -37,9 +39,13 @@ pub struct LifecycleRule {
 	pub abort_incomplete_mpu: Option<AbortIncompleteMpu>,
 }
 
-#[derive(Debug, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Default)]
+#[derive(
+	Debug, ToSchema, Clone, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Default,
+)]
+#[schema(as = lifecycle::Filter)]
 pub struct Filter {
 	#[serde(rename = "And", skip_serializing_if = "Option::is_none")]
+	#[schema(no_recursion)]
 	pub and: Option<Box<Filter>>,
 	#[serde(rename = "Prefix", skip_serializing_if = "Option::is_none")]
 	pub prefix: Option<Value>,
@@ -52,7 +58,8 @@ pub struct Filter {
 	pub size_lt: Option<IntValue>,
 }
 
-#[derive(Debug, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, ToSchema, Clone, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
+#[schema(as = lifecycle::Expiration)]
 pub struct Expiration {
 	#[serde(rename = "Days", skip_serializing_if = "Option::is_none")]
 	pub days: Option<IntValue>,
@@ -60,7 +67,8 @@ pub struct Expiration {
 	pub at_date: Option<Value>,
 }
 
-#[derive(Debug, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, ToSchema, Clone, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
+#[schema(as = lifecycle::AbortIncompleteMpu)]
 pub struct AbortIncompleteMpu {
 	#[serde(rename = "DaysAfterInitiation")]
 	pub days: IntValue,

@@ -1,6 +1,7 @@
 use serde::{Deserialize, Serialize};
+use utoipa::ToSchema;
 
-use garage_model::bucket_table::{self, WebsiteConfig};
+use garage_model::bucket_table::{self, RoutingRule as GarageRoutingRule, WebsiteConfig};
 
 use crate::common_error::CommonError as Error;
 use crate::xml::{xmlns_tag, IntValue, Value};
@@ -35,7 +36,8 @@ impl RoutingRules {
 	}
 }
 
-#[derive(Debug, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, ToSchema, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Clone)]
+#[schema(as = website::RoutingRule)]
 pub struct RoutingRule {
 	#[serde(rename = "Condition")]
 	pub condition: Option<Condition>,
@@ -43,19 +45,22 @@ pub struct RoutingRule {
 	pub redirect: Redirect,
 }
 
-#[derive(Debug, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, ToSchema, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Clone)]
+#[schema(as = website::Key)]
 pub struct Key {
 	#[serde(rename = "Key")]
 	pub key: Value,
 }
 
-#[derive(Debug, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, ToSchema, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Clone)]
+#[schema(as = website::Suffix)]
 pub struct Suffix {
 	#[serde(rename = "Suffix")]
 	pub suffix: Value,
 }
 
-#[derive(Debug, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, ToSchema, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Clone)]
+#[schema(as = website::Target)]
 pub struct Target {
 	#[serde(rename = "HostName")]
 	pub hostname: Value,
@@ -63,7 +68,8 @@ pub struct Target {
 	pub protocol: Option<Value>,
 }
 
-#[derive(Debug, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, ToSchema, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Clone)]
+#[schema(as = website::Condition)]
 pub struct Condition {
 	#[serde(
 		rename = "HttpErrorCodeReturnedEquals",
@@ -74,7 +80,8 @@ pub struct Condition {
 	pub prefix: Option<Value>,
 }
 
-#[derive(Debug, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, ToSchema, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Clone)]
+#[schema(as = website::Redirect)]
 pub struct Redirect {
 	#[serde(rename = "HostName", skip_serializing_if = "Option::is_none")]
 	pub hostname: Option<Value>,
@@ -213,6 +220,22 @@ impl RoutingRule {
 			condition.validate()?;
 		}
 		self.redirect.validate()
+	}
+
+	pub fn from_garage_routing_rule(rule: GarageRoutingRule) -> Self {
+		RoutingRule {
+			condition: rule.condition.map(|cond| Condition {
+				http_error_code: cond.http_error_code.map(|c| IntValue(c as i64)),
+				prefix: cond.prefix.map(Value),
+			}),
+			redirect: Redirect {
+				hostname: rule.redirect.hostname.map(Value),
+				http_redirect_code: Some(IntValue(rule.redirect.http_redirect_code as i64)),
+				protocol: rule.redirect.protocol.map(Value),
+				replace_full: rule.redirect.replace_key.map(Value),
+				replace_prefix: rule.redirect.replace_key_prefix.map(Value),
+			},
+		}
 	}
 }
 

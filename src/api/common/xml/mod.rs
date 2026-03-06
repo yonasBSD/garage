@@ -3,6 +3,7 @@ pub mod lifecycle;
 pub mod website;
 
 use serde::{Deserialize, Serialize, Serializer};
+use utoipa::ToSchema;
 
 pub fn to_xml_with_header<T: Serialize>(x: &T) -> Result<String, quick_xml::se::SeError> {
 	use quick_xml::se::{self, EmptyElementHandling, QuoteLevel};
@@ -32,7 +33,8 @@ pub fn xmlns_xsi_tag<S: Serializer>(_v: &(), s: S) -> Result<S::Ok, S::Error> {
 	s.serialize_str("http://www.w3.org/2001/XMLSchema-instance")
 }
 
-#[derive(Debug, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, ToSchema, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Clone)]
+#[schema(as = xml::Value)]
 pub struct Value(#[serde(rename = "$value")] pub String);
 
 impl From<&str> for Value {
@@ -41,5 +43,6 @@ impl From<&str> for Value {
 	}
 }
 
-#[derive(Debug, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, ToSchema, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Clone)]
+#[schema(as = xml::IntValue)]
 pub struct IntValue(#[serde(rename = "$value")] pub i64);

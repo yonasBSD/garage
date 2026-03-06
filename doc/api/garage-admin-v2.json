@@ -2340,6 +2340,16 @@
             "format": "int64",
             "description": "Total number of bytes used by objects in this bucket"
           },
+          "corsRules": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/cors.Rule"
+            },
+            "description": "CORS rules for this bucket"
+          },
           "created": {
             "type": "string",
             "format": "date-time",
@@ -2362,6 +2372,16 @@
               "$ref": "#/components/schemas/GetBucketInfoKey"
             },
             "description": "List of access keys that have permissions granted on this bucket"
+          },
+          "lifecycleRules": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/lifecycle.Rule"
+            },
+            "description": "Object lifecycle rules for this bucket"
           },
           "objects": {
             "type": "integer",
@@ -2423,6 +2443,12 @@
           },
           "indexDocument": {
             "type": "string"
+          },
+          "routingRules": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/website.RoutingRule"
+            }
           }
         }
       },
@@ -4545,6 +4571,205 @@
             ]
           }
         ]
+      },
+      "cors.Rule": {
+        "type": "object",
+        "required": [
+          "AllowedOrigin",
+          "AllowedMethod"
+        ],
+        "properties": {
+          "AllowedHeader": {
+            "type": "array",
+            "items": {}
+          },
+          "AllowedMethod": {
+            "type": "array",
+            "items": {}
+          },
+          "AllowedOrigin": {
+            "type": "array",
+            "items": {}
+          },
+          "ExposeHeader": {
+            "type": "array",
+            "items": {}
+          },
+          "ID": {},
+          "MaxAgeSeconds": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/xml.IntValue"
+              }
+            ]
+          }
+        }
+      },
+      "lifecycle.AbortIncompleteMpu": {
+        "type": "object",
+        "required": [
+          "DaysAfterInitiation"
+        ],
+        "properties": {
+          "DaysAfterInitiation": {
+            "$ref": "#/components/schemas/xml.IntValue"
+          }
+        }
+      },
+      "lifecycle.Expiration": {
+        "type": "object",
+        "properties": {
+          "Date": {},
+          "Days": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/xml.IntValue"
+              }
+            ]
+          }
+        }
+      },
+      "lifecycle.Filter": {
+        "type": "object",
+        "properties": {
+          "And": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/lifecycle.Filter"
+              }
+            ]
+          },
+          "ObjectSizeGreaterThan": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/xml.IntValue"
+              }
+            ]
+          },
+          "ObjectSizeLessThan": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/xml.IntValue"
+              }
+            ]
+          },
+          "Prefix": {}
+        }
+      },
+      "lifecycle.Rule": {
+        "type": "object",
+        "required": [
+          "Status"
+        ],
+        "properties": {
+          "AbortIncompleteMultipartUpload": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/lifecycle.AbortIncompleteMpu"
+              }
+            ]
+          },
+          "Expiration": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/lifecycle.Expiration"
+              }
+            ]
+          },
+          "Filter": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/lifecycle.Filter"
+              }
+            ]
+          },
+          "ID": {},
+          "Status": {}
+        }
+      },
+      "website.Condition": {
+        "type": "object",
+        "properties": {
+          "HttpErrorCodeReturnedEquals": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/xml.IntValue"
+              }
+            ]
+          },
+          "KeyPrefixEquals": {}
+        }
+      },
+      "website.Redirect": {
+        "type": "object",
+        "properties": {
+          "HostName": {},
+          "HttpRedirectCode": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/xml.IntValue"
+              }
+            ]
+          },
+          "Protocol": {},
+          "ReplaceKeyPrefixWith": {},
+          "ReplaceKeyWith": {}
+        }
+      },
+      "website.RoutingRule": {
+        "type": "object",
+        "required": [
+          "Redirect"
+        ],
+        "properties": {
+          "Condition": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/website.Condition"
+              }
+            ]
+          },
+          "Redirect": {
+            "$ref": "#/components/schemas/website.Redirect"
+          }
+        }
+      },
+      "xml.IntValue": {
+        "type": "integer",
+        "format": "int64"
       }
     },
     "securitySchemes": {

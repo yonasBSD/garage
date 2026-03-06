@@ -1,4 +1,5 @@
 use serde::{Deserialize, Serialize};
+use utoipa::ToSchema;
 
 use hyper::{header::HeaderName, Method};
 
@@ -16,7 +17,8 @@ pub struct CorsConfiguration {
 	pub cors_rules: Vec<CorsRule>,
 }
 
-#[derive(Debug, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, ToSchema, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Clone)]
+#[schema(as = cors::Rule)]
 pub struct CorsRule {
 	#[serde(rename = "ID", skip_serializing_if = "Option::is_none")]
 	pub id: Option<Value>,
@@ -32,19 +34,22 @@ pub struct CorsRule {
 	pub expose_headers: Vec<Value>,
 }
 
-#[derive(Debug, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, ToSchema, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Clone)]
+#[schema(as = cors::AllowedMethod)]
 pub struct AllowedMethod {
 	#[serde(rename = "AllowedMethod")]
 	pub allowed_method: Value,
 }
 
-#[derive(Debug, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, ToSchema, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Clone)]
+#[schema(as = cors::AllowedHeader)]
 pub struct AllowedHeader {
 	#[serde(rename = "AllowedHeader")]
 	pub allowed_header: Value,
 }
 
-#[derive(Debug, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
+#[derive(Debug, ToSchema, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord, Clone)]
+#[schema(as = cors::ExposedHeader)]
 pub struct ExposeHeader {
 	#[serde(rename = "ExposeHeader")]
 	pub expose_header: Value,
