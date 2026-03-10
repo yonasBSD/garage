@@ -48,11 +48,15 @@ garage:
   kubernetesSkipCrd: false
   s3:
     api:
+      bindAddr: "[::]:3900"
       region: "garage"
       rootDomain: ".s3.garage.tld"
     web:
+      bindAddr: "[::]:3902"
       rootDomain: ".web.garage.tld"
       index: "index.html"
+  admin:
+    apiBindAddr: "[::]:3903"
 
   # -- Additional configuration to append to garage.toml. Use a multi-line string for custom config.
   # Example:
@@ -221,14 +225,14 @@ resources: {}
 livenessProbe: {}
   #httpGet:
   #  path: /health
-  #  port: 3903
+  #  port: 3903 # or the port from garage.admin.apiBindAddr
   #initialDelaySeconds: 5
   #periodSeconds: 30
 # -- Specifies a readinessProbe
 readinessProbe: {}
   #httpGet:
   #  path: /health
-  #  port: 3903
+  #  port: 3903 # or the port from garage.admin.apiBindAddr
   #initialDelaySeconds: 5
   #periodSeconds: 30
 
