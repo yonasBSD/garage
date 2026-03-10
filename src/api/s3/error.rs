@@ -42,6 +42,14 @@ pub enum Error {
 	#[error("Upload not found")]
 	NoSuchUpload,
 
+	/// CORS configuration doesn't exist for this bucket
+	#[error("The CORS configuration does not exist")]
+	NoSuchCORSConfiguration,
+
+	/// CORS configuration doesn't exist for this bucket
+	#[error("The lifecycle configuration does not exist")]
+	NoSuchLifecycleConfiguration,
+
 	/// Precondition failed (e.g. x-amz-copy-source-if-match)
 	#[error("At least one of the preconditions you specified did not hold")]
 	PreconditionFailed,
@@ -151,6 +159,8 @@ impl Error {
 			Error::InvalidDigest(_) => "InvalidDigest",
 			Error::InvalidUtf8Str(_) | Error::InvalidUtf8String(_) => "InvalidRequest",
 			Error::InvalidEncryptionAlgorithm(_) => "InvalidEncryptionAlgorithmError",
+			Error::NoSuchCORSConfiguration => "NoSuchCORSConfiguration",
+			Error::NoSuchLifecycleConfiguration => "NoSuchLifecycleConfiguration",
 		}
 	}
 }
@@ -160,7 +170,10 @@ impl ApiError for Error {
 	fn http_status_code(&self) -> StatusCode {
 		match self {
 			Error::Common(c) => c.http_status_code(),
-			Error::NoSuchKey | Error::NoSuchUpload => StatusCode::NOT_FOUND,
+			Error::NoSuchKey
+			| Error::NoSuchUpload
+			| Error::NoSuchCORSConfiguration
+			| Error::NoSuchLifecycleConfiguration => StatusCode::NOT_FOUND,
 			Error::PreconditionFailed => StatusCode::PRECONDITION_FAILED,
 			Error::InvalidRange(_) => StatusCode::RANGE_NOT_SATISFIABLE,
 			Error::NotImplemented(_) => StatusCode::NOT_IMPLEMENTED,

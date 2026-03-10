@@ -4,6 +4,7 @@ use crate::json_body;
 
 use assert_json_diff::assert_json_eq;
 use aws_sdk_s3::{
+	error::ProvideErrorMetadata,
 	primitives::ByteStream,
 	types::{
 		Condition, CorsConfiguration, CorsRule, ErrorDocument, IndexDocument, Protocol, Redirect,
@@ -381,15 +382,17 @@ async fn test_website_s3_api() {
 		.unwrap();
 
 	// Check CORS are deleted from the API
-	// @FIXME check what is the expected behavior when GetBucketCors is called on a bucket without
-	// any CORS.
-	assert!(ctx
-		.client
-		.get_bucket_cors()
-		.bucket(&bucket)
-		.send()
-		.await
-		.is_err());
+	assert_eq!(
+		ctx.client
+			.get_bucket_cors()
+			.bucket(&bucket)
+			.send()
+			.await
+			.unwrap_err()
+			.into_service_error()
+			.code(),
+		Some("NoSuchCORSConfiguration")
+	);
 
 	// Test CORS are not sent anymore on a previously allowed request
 	{

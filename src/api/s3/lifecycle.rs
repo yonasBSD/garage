@@ -26,9 +26,7 @@ pub async fn handle_get_lifecycle(ctx: ReqCtx) -> Result<Response<ResBody>, Erro
 			.header(http::header::CONTENT_TYPE, "application/xml")
 			.body(string_body(xml))?)
 	} else {
-		Ok(Response::builder()
-			.status(StatusCode::NOT_FOUND)
-			.body(empty_body())?)
+		Err(Error::NoSuchLifecycleConfiguration)
 	}
 }
 
