@@ -173,31 +173,47 @@ impl RequestHandler for GetClusterStatisticsRequest {
 			)
 			.await?;
 
-		let bucket_stats = futures::future::try_join_all(
-			buckets
-				.iter()
-				.map(|b| garage.object_counter_table.table.get(&b.id, &EmptyKey)),
-		)
-		.await?;
+		let bucket_stats_opt = if buckets.len() < 1000 {
+			Some(
+				futures::future::try_join_all(
+					buckets
+						.iter()
+						.map(|b| garage.object_counter_table.table.get(&b.id, &EmptyKey)),
+				)
+				.await?,
+			)
+		} else {
+			None
+		};
 
 		let layout = &garage.system.cluster_layout();
 
-		let bucket_stats = bucket_stats
-			.into_iter()
-			.filter_map(|cnt| cnt.map(|x| x.filtered_values(layout)))
-			.collect::<Vec<_>>();
-
 		let bucket_count = buckets.len() as u64;
-		let total_object_count = bucket_stats
-			.iter()
-			.clone()
-			.map(|cnt| *cnt.get(object_table::OBJECTS).unwrap_or(&0) as u64)
-			.sum();
-		let total_object_bytes = bucket_stats
-			.iter()
-			.clone()
-			.map(|cnt| *cnt.get(object_table::BYTES).unwrap_or(&0) as u64)
-			.sum();
+		let (total_object_count, total_object_bytes);
+		if let Some(bucket_stats) = bucket_stats_opt {
+			let bucket_stats = bucket_stats
+				.into_iter()
+				.filter_map(|cnt| cnt.map(|x| x.filtered_values(layout)))
+				.collect::<Vec<_>>();
+
+			total_object_count = Some(
+				bucket_stats
+					.iter()
+					.clone()
+					.map(|cnt| *cnt.get(object_table::OBJECTS).unwrap_or(&0) as u64)
+					.sum(),
+			);
+			total_object_bytes = Some(
+				bucket_stats
+					.iter()
+					.clone()
+					.map(|cnt| *cnt.get(object_table::BYTES).unwrap_or(&0) as u64)
+					.sum(),
+			);
+		} else {
+			total_object_count = None;
+			total_object_bytes = None;
+		}
 
 		// Gather storage node and free space statistics for current nodes
 		let mut node_partition_count = HashMap::<Uuid, u64>::new();
@@ -281,14 +297,16 @@ impl RequestHandler for GetClusterStatisticsRequest {
 			|| data_part_avail.len() < node_partition_count.len();
 
 		// Display bucket statistics
-		let bucket_stats = vec![
-			format!("Number of buckets:\t{}", bucket_count),
-			format!("Total number of objects:\t{}", total_object_count),
-			format!(
+		let mut bucket_stats = vec![format!("Number of buckets:\t{}", bucket_count)];
+		if let Some(toc) = total_object_count {
+			bucket_stats.push(format!("Total number of objects:\t{}", toc));
+		}
+		if let Some(tob) = total_object_bytes {
+			bucket_stats.push(format!(
 				"Total size of objects:\t{}",
-				bytesize::ByteSize(total_object_bytes)
-			),
-		];
+				bytesize::ByteSize(tob)
+			));
+		}
 		writeln!(&mut ret, "\n{}", format_table_to_string(bucket_stats)).unwrap();
 
 		writeln!(
@@ -315,8 +333,8 @@ impl RequestHandler for GetClusterStatisticsRequest {
 			data_avail: Some(data_avail),
 			incomplete_avail_info: Some(incomplete_info),
 			bucket_count: Some(bucket_count),
-			total_object_count: Some(total_object_count),
-			total_object_bytes: Some(total_object_bytes),
+			total_object_count,
+			total_object_bytes,
 		})
 	}
 }
