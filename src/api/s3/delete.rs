@@ -125,19 +125,20 @@ fn parse_delete_objects_xml(xml: &roxmltree::Document) -> Option<DeleteRequest> 
 	};
 
 	let root = xml.root();
-	let delete = root.first_child()?;
+	let delete = root.children().find(|n| n.is_element())?;
 
 	if !delete.has_tag_name("Delete") {
 		return None;
 	}
 
 	for item in delete.children() {
-		// Only parse <Part> nodes
+		// Skip text nodes introduced by formatted XML.
 		if !item.is_element() {
 			// text nodes are allowed only if they contain whitespace characters only
 			if !item.text()?.trim().is_empty() {
 				return None;
 			}
+			continue;
 		}
 
 		if item.has_tag_name("Object") {
@@ -154,4 +155,60 @@ fn parse_delete_objects_xml(xml: &roxmltree::Document) -> Option<DeleteRequest> 
 	}
 
 	Some(ret)
+}
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+
+	#[test]
+	fn parse_delete_objects_xml_with_formatting() {
+		let body = r#"
+			<Delete xmlns="http://s3.amazonaws.com/doc/2006-03-01/">
+			    <Object>
+			        <Key>1_746573745f66696c65</Key>
+			    </Object>
+			    <Quiet>true</Quiet>
+			</Delete>
+		"#;
+		let xml = roxmltree::Document::parse(body).expect("valid delete XML");
+		let req = parse_delete_objects_xml(&xml).expect("request should be parsed");
+
+		assert_eq!(req.objects.len(), 1);
+		assert_eq!(req.objects[0].key, "1_746573745f66696c65");
+		assert!(req.quiet);
+	}
+
+	#[test]
+	fn parse_delete_objects_xml_rejects_non_whitespace_text_node() {
+		let body = r#"<Delete xmlns="http://s3.amazonaws.com/doc/2006-03-01/">oops<Object><Key>1_746573745f66696c65</Key></Object></Delete>"#;
+		let xml = roxmltree::Document::parse(body).expect("valid XML");
+		let req = parse_delete_objects_xml(&xml);
+		assert!(req.is_none());
+	}
+
+	#[test]
+	fn parse_delete_objects_xml_rejects_pretty_print_with_stray_text() {
+		let body = r#"
+			<Delete xmlns="http://s3.amazonaws.com/doc/2006-03-01/">
+			    oops
+			    <Object>
+			        <Key>1_746573745f66696c65</Key>
+			    </Object>
+			</Delete>
+		"#;
+		let xml = roxmltree::Document::parse(body).expect("valid XML");
+		let req = parse_delete_objects_xml(&xml);
+		assert!(req.is_none());
+	}
+
+	#[test]
+	fn parse_delete_objects_xml_accepts_compact_valid_xml() {
+		let body = r#"<Delete xmlns="http://s3.amazonaws.com/doc/2006-03-01/"><Object><Key>1_746573745f66696c65</Key></Object><Quiet>false</Quiet></Delete>"#;
+		let xml = roxmltree::Document::parse(body).expect("valid XML");
+		let req = parse_delete_objects_xml(&xml).expect("request should be parsed");
+		assert_eq!(req.objects.len(), 1);
+		assert_eq!(req.objects[0].key, "1_746573745f66696c65");
+		assert!(!req.quiet);
+	}
 }
