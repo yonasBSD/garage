@@ -94,7 +94,7 @@ spec:
       volumes:
         - name: configmap
           configMap:
-            name: {{ include "garage.fullname" . }}-config
+            name: {{ if .Values.garage.existingConfigMap }}{{ .Values.garage.existingConfigMap }}{{ else }}{{ include "garage.fullname" . }}-config{{ end }}
         - name: etc
           emptyDir: {}
         {{- if .Values.persistence.enabled }}
