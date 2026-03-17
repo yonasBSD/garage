@@ -174,14 +174,13 @@ impl RequestHandler for GetClusterStatisticsRequest {
 			.await?;
 
 		let bucket_stats_opt = if buckets.len() < 1000 {
-			Some(
-				futures::future::try_join_all(
-					buckets
-						.iter()
-						.map(|b| garage.object_counter_table.table.get(&b.id, &EmptyKey)),
-				)
-				.await?,
+			futures::future::try_join_all(
+				buckets
+					.iter()
+					.map(|b| garage.object_counter_table.table.get(&b.id, &EmptyKey)),
 			)
+			.await
+			.ok()
 		} else {
 			None
 		};
