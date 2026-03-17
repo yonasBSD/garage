@@ -706,7 +706,7 @@ pub async fn handle_upload_part_copy(
 
 	let checksums = checksummer.finalize();
 	let etag = dest_encryption.etag_from_md5(&checksums.md5);
-	let checksum = checksums.extract(dest_object_checksum_algorithm.map(|(algo, _)| algo));
+	let checksum = checksums.extract(dest_object_checksum_algorithm.map(|(algo, _)| algo))?;
 
 	// Put the part's ETag in the Versiontable
 	dest_mpu.parts.put(

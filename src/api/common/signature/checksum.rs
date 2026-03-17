@@ -11,6 +11,7 @@ use http::{HeaderMap, HeaderName, HeaderValue};
 use garage_util::data::*;
 
 use super::*;
+use crate::common_error::CommonError;
 
 pub use garage_model::s3::object_table::{ChecksumAlgorithm, ChecksumValue};
 
@@ -201,7 +202,7 @@ impl Checksums {
 		}
 		if let Some(extra) = expected.extra {
 			let algo = extra.algorithm();
-			let calculated = self.extract(Some(algo));
+			let calculated = self.extract(Some(algo))?;
 			if calculated != Some(extra) {
 				return Err(Error::InvalidDigest(format!(
 					"Failed to validate checksum for algorithm {:?}: calculated {:?}, expected {:?}",
@@ -212,17 +213,45 @@ impl Checksums {
 		Ok(())
 	}
 
-	pub fn extract(&self, algo: Option<ChecksumAlgorithm>) -> Option<ChecksumValue> {
-		match algo {
+	pub fn extract(&self, algo: Option<ChecksumAlgorithm>) -> Result<Option<ChecksumValue>, Error> {
+		Ok(match algo {
 			None => None,
-			Some(ChecksumAlgorithm::Crc32) => Some(ChecksumValue::Crc32(self.crc32.unwrap())),
-			Some(ChecksumAlgorithm::Crc32c) => Some(ChecksumValue::Crc32c(self.crc32c.unwrap())),
-			Some(ChecksumAlgorithm::Crc64Nvme) => {
-				Some(ChecksumValue::Crc64Nvme(self.crc64nvme.unwrap()))
+			Some(ChecksumAlgorithm::Crc32) => {
+				Some(ChecksumValue::Crc32(self.crc32.ok_or_else(|| {
+					CommonError::BadRequest(
+						"Requested checksum verification without providing checksum".to_string(),
+					)
+				})?))
 			}
-			Some(ChecksumAlgorithm::Sha1) => Some(ChecksumValue::Sha1(self.sha1.unwrap())),
-			Some(ChecksumAlgorithm::Sha256) => Some(ChecksumValue::Sha256(self.sha256.unwrap())),
-		}
+			Some(ChecksumAlgorithm::Crc32c) => {
+				Some(ChecksumValue::Crc32c(self.crc32c.ok_or_else(|| {
+					CommonError::BadRequest(
+						"Requested checksum verification without providing checksum".to_string(),
+					)
+				})?))
+			}
+			Some(ChecksumAlgorithm::Crc64Nvme) => Some(ChecksumValue::Crc64Nvme(
+				self.crc64nvme.ok_or_else(|| {
+					CommonError::BadRequest(
+						"Requested checksum verification without providing checksum".to_string(),
+					)
+				})?,
+			)),
+			Some(ChecksumAlgorithm::Sha1) => {
+				Some(ChecksumValue::Sha1(self.sha1.ok_or_else(|| {
+					CommonError::BadRequest(
+						"Requested checksum verification without providing checksum".to_string(),
+					)
+				})?))
+			}
+			Some(ChecksumAlgorithm::Sha256) => {
+				Some(ChecksumValue::Sha256(self.sha256.ok_or_else(|| {
+					CommonError::BadRequest(
+						"Requested checksum verification without providing checksum".to_string(),
+					)
+				})?))
+			}
+		})
 	}
 }
 

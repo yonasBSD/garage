@@ -178,7 +178,7 @@ pub(crate) async fn save_stream<S: Stream<Item = Result<Bytes, Error>> + Unpin>(
 				checksums.verify(&expected)?;
 			}
 			ChecksumMode::Calculate(algo) => {
-				meta.checksum = checksums.extract(algo);
+				meta.checksum = checksums.extract(algo)?;
 			}
 			ChecksumMode::VerifyFrom {
 				checksummer,
@@ -189,7 +189,7 @@ pub(crate) async fn save_stream<S: Stream<Item = Result<Bytes, Error>> + Unpin>(
 					.await
 					.ok_or_internal_error("checksum calculation")??;
 				if let Some(algo) = trailer_algo {
-					meta.checksum = checksums.extract(Some(algo));
+					meta.checksum = checksums.extract(Some(algo))?;
 				}
 			}
 		}
@@ -280,7 +280,7 @@ pub(crate) async fn save_stream<S: Stream<Item = Result<Bytes, Error>> + Unpin>(
 			checksums.verify(&expected)?;
 		}
 		ChecksumMode::Calculate(algo) => {
-			meta.checksum = checksums.extract(algo);
+			meta.checksum = checksums.extract(algo)?;
 		}
 		ChecksumMode::VerifyFrom {
 			checksummer,
@@ -290,7 +290,7 @@ pub(crate) async fn save_stream<S: Stream<Item = Result<Bytes, Error>> + Unpin>(
 				.await
 				.ok_or_internal_error("checksum calculation")??;
 			if let Some(algo) = trailer_algo {
-				meta.checksum = checksums.extract(Some(algo));
+				meta.checksum = checksums.extract(Some(algo))?;
 			}
 		}
 	}

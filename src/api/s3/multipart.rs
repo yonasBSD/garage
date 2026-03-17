@@ -225,7 +225,7 @@ pub async fn handle_put_part(
 		MpuPart {
 			version: version_uuid,
 			etag: Some(etag.clone()),
-			checksum: checksums.extract(checksum_algorithm.map(|(algo, _)| algo)),
+			checksum: checksums.extract(checksum_algorithm.map(|(algo, _)| algo))?,
 			size: Some(total_size),
 		},
 	);
