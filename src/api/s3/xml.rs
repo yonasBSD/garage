@@ -1,37 +1,6 @@
-use quick_xml::se::{self, EmptyElementHandling, QuoteLevel};
-use serde::{Deserialize, Serialize, Serializer};
+use serde::Serialize;
 
-use crate::error::Error as ApiError;
-
-pub fn to_xml_with_header<T: Serialize>(x: &T) -> Result<String, ApiError> {
-	let mut xml = r#"<?xml version="1.0" encoding="UTF-8"?>"#.to_string();
-
-	let mut ser = se::Serializer::new(&mut xml);
-	ser.set_quote_level(QuoteLevel::Full)
-		.empty_element_handling(EmptyElementHandling::Expanded);
-	let _serialized = x.serialize(ser)?;
-	Ok(xml)
-}
-
-pub fn xmlns_tag<S: Serializer>(_v: &(), s: S) -> Result<S::Ok, S::Error> {
-	s.serialize_str("http://s3.amazonaws.com/doc/2006-03-01/")
-}
-
-pub fn xmlns_xsi_tag<S: Serializer>(_v: &(), s: S) -> Result<S::Ok, S::Error> {
-	s.serialize_str("http://www.w3.org/2001/XMLSchema-instance")
-}
-
-#[derive(Debug, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
-pub struct Value(#[serde(rename = "$value")] pub String);
-
-impl From<&str> for Value {
-	fn from(s: &str) -> Value {
-		Value(s.to_string())
-	}
-}
-
-#[derive(Debug, Serialize, Deserialize, PartialEq, Eq, PartialOrd, Ord)]
-pub struct IntValue(#[serde(rename = "$value")] pub i64);
+pub use garage_api_common::xml::{to_xml_with_header, xmlns_tag, xmlns_xsi_tag, IntValue, Value};
 
 #[derive(Debug, Serialize, PartialEq, Eq)]
 pub struct Bucket {
@@ -378,6 +347,7 @@ pub struct AccessControlPolicy {
 #[cfg(test)]
 mod tests {
 	use super::*;
+	use crate::error::Error as ApiError;
 
 	use garage_util::time::*;
 

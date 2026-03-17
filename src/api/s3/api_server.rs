@@ -13,6 +13,7 @@ use garage_util::socket_address::UnixOrTCPSocketAddress;
 use garage_model::garage::Garage;
 use garage_model::key_table::Key;
 
+use garage_api_common::common_error::CommonError;
 use garage_api_common::cors::*;
 use garage_api_common::generic_server::*;
 use garage_api_common::helpers::*;
@@ -64,7 +65,7 @@ impl S3ApiServer {
 	) -> Result<Response<ResBody>, Error> {
 		match endpoint {
 			Endpoint::ListBuckets => handle_list_buckets(&self.garage, &api_key).await,
-			endpoint => Err(Error::NotImplemented(endpoint.name().to_owned())),
+			endpoint => Err(CommonError::NotImplemented(endpoint.name().to_owned()).into()),
 		}
 	}
 }
@@ -327,7 +328,7 @@ impl ApiHandler for S3ApiServer {
 			Endpoint::GetBucketLifecycleConfiguration {} => handle_get_lifecycle(ctx).await,
 			Endpoint::PutBucketLifecycleConfiguration {} => handle_put_lifecycle(ctx, req).await,
 			Endpoint::DeleteBucketLifecycle {} => handle_delete_lifecycle(ctx).await,
-			endpoint => Err(Error::NotImplemented(endpoint.name().to_owned())),
+			endpoint => Err(CommonError::NotImplemented(endpoint.name().to_owned()).into()),
 		};
 
 		// If request was a success and we have a CORS rule that applies to it,

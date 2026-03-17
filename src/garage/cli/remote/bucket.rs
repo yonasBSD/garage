@@ -309,12 +309,14 @@ impl Cli {
 				error_document: opt
 					.error_document
 					.or_else(|| bucket_website_config.and_then(|x| x.error_document.clone())),
+				routing_rules: None,
 			}
 		} else {
 			UpdateBucketWebsiteAccess {
 				enabled: false,
 				index_document: None,
 				error_document: None,
+				routing_rules: None,
 			}
 		};
 
@@ -324,6 +326,8 @@ impl Cli {
 				body: UpdateBucketRequestBody {
 					website_access: Some(wa),
 					quotas: None,
+					cors_rules: None,
+					lifecycle_rules: None,
 				},
 			})
 			.await?;
@@ -374,6 +378,8 @@ impl Cli {
 				body: UpdateBucketRequestBody {
 					website_access: None,
 					quotas: Some(new_quotas),
+					cors_rules: None,
+					lifecycle_rules: None,
 				},
 			})
 			.await?;

@@ -8,8 +8,10 @@ use garage_util::data::*;
 
 use garage_rpc::layout;
 use garage_rpc::layout::PARTITION_BITS;
+use garage_table::*;
 
 use garage_model::garage::Garage;
+use garage_model::s3::object_table;
 
 use crate::api::*;
 use crate::error::*;
@@ -152,7 +154,6 @@ impl RequestHandler for GetClusterHealthRequest {
 impl RequestHandler for GetClusterStatisticsRequest {
 	type Response = GetClusterStatisticsResponse;
 
-	// FIXME: return this as a JSON struct instead of text
 	async fn handle(
 		self,
 		garage: &Arc<Garage>,
@@ -160,8 +161,60 @@ impl RequestHandler for GetClusterStatisticsRequest {
 	) -> Result<GetClusterStatisticsResponse, Error> {
 		let mut ret = String::new();
 
-		// Gather storage node and free space statistics for current nodes
+		// Gather info on number of buckets, objects and object size
+		let buckets = garage
+			.bucket_table
+			.get_range(
+				&EmptyKey,
+				None,
+				Some(DeletedFilter::NotDeleted),
+				1_000_000,
+				EnumerationOrder::Forward,
+			)
+			.await?;
+
+		let bucket_stats_opt = if buckets.len() < 1000 {
+			futures::future::try_join_all(
+				buckets
+					.iter()
+					.map(|b| garage.object_counter_table.table.get(&b.id, &EmptyKey)),
+			)
+			.await
+			.ok()
+		} else {
+			None
+		};
+
 		let layout = &garage.system.cluster_layout();
+
+		let bucket_count = buckets.len() as u64;
+		let (total_object_count, total_object_bytes);
+		if let Some(bucket_stats) = bucket_stats_opt {
+			let bucket_stats = bucket_stats
+				.into_iter()
+				.filter_map(|cnt| cnt.map(|x| x.filtered_values(layout)))
+				.collect::<Vec<_>>();
+
+			total_object_count = Some(
+				bucket_stats
+					.iter()
+					.clone()
+					.map(|cnt| *cnt.get(object_table::OBJECTS).unwrap_or(&0) as u64)
+					.sum(),
+			);
+			total_object_bytes = Some(
+				bucket_stats
+					.iter()
+					.clone()
+					.map(|cnt| *cnt.get(object_table::BYTES).unwrap_or(&0) as u64)
+					.sum(),
+			);
+		} else {
+			total_object_count = None;
+			total_object_bytes = None;
+		}
+
+		// Gather storage node and free space statistics for current nodes
 		let mut node_partition_count = HashMap::<Uuid, u64>::new();
 		if let Ok(current_layout) = layout.current() {
 			for short_id in current_layout.ring_assignment_data.iter() {
@@ -231,33 +284,57 @@ impl RequestHandler for GetClusterStatisticsRequest {
 					.map(|c| c.0 / *parts)
 			})
 			.collect::<Vec<_>>();
-		if !meta_part_avail.is_empty() && !data_part_avail.is_empty() {
-			let meta_avail =
-				bytesize::ByteSize(meta_part_avail.iter().min().unwrap() * (1 << PARTITION_BITS));
-			let data_avail =
-				bytesize::ByteSize(data_part_avail.iter().min().unwrap() * (1 << PARTITION_BITS));
-			writeln!(
-				&mut ret,
-				"\nEstimated available storage space cluster-wide (might be lower in practice):"
-			)
-			.unwrap();
-			if meta_part_avail.len() < node_partition_count.len()
-				|| data_part_avail.len() < node_partition_count.len()
-			{
-				ret += &format_table_to_string(vec![
-					format!("  data: < {}", data_avail),
-					format!("  metadata: < {}", meta_avail),
-				]);
-				writeln!(&mut ret, "A precise estimate could not be given as information is missing for some storage nodes.").unwrap();
-			} else {
-				ret += &format_table_to_string(vec![
-					format!("  data: {}", data_avail),
-					format!("  metadata: {}", meta_avail),
-				]);
-			}
+
+		let metadata_avail: u64 =
+			meta_part_avail.iter().min().unwrap_or(&0) * (1 << PARTITION_BITS);
+		let data_avail: u64 = data_part_avail.iter().min().unwrap_or(&0) * (1 << PARTITION_BITS);
+
+		let metadata_avail_str = bytesize::ByteSize(metadata_avail);
+		let data_avail_str = bytesize::ByteSize(data_avail);
+
+		let incomplete_info = meta_part_avail.len() < node_partition_count.len()
+			|| data_part_avail.len() < node_partition_count.len();
+
+		// Display bucket statistics
+		let mut bucket_stats = vec![format!("Number of buckets:\t{}", bucket_count)];
+		if let Some(toc) = total_object_count {
+			bucket_stats.push(format!("Total number of objects:\t{}", toc));
+		}
+		if let Some(tob) = total_object_bytes {
+			bucket_stats.push(format!(
+				"Total size of objects:\t{}",
+				bytesize::ByteSize(tob)
+			));
+		}
+		writeln!(&mut ret, "\n{}", format_table_to_string(bucket_stats)).unwrap();
+
+		writeln!(
+			&mut ret,
+			"Estimated available storage space cluster-wide (might be lower in practice):"
+		)
+		.unwrap();
+		if incomplete_info {
+			ret += &format_table_to_string(vec![
+				format!("  data: < {}", data_avail_str),
+				format!("  metadata: < {}", metadata_avail_str),
+			]);
+			writeln!(&mut ret, "A precise estimate could not be given as information is missing for some storage nodes.").unwrap();
+		} else {
+			ret += &format_table_to_string(vec![
+				format!("  data: {}", data_avail_str),
+				format!("  metadata: {}", metadata_avail_str),
+			]);
 		}
 
-		Ok(GetClusterStatisticsResponse { freeform: ret })
+		Ok(GetClusterStatisticsResponse {
+			freeform: ret,
+			metadata_avail: Some(metadata_avail),
+			data_avail: Some(data_avail),
+			incomplete_avail_info: Some(incomplete_info),
+			bucket_count: Some(bucket_count),
+			total_object_count,
+			total_object_bytes,
+		})
 	}
 }
 

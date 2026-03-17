@@ -2340,6 +2340,16 @@
             "format": "int64",
             "description": "Total number of bytes used by objects in this bucket"
           },
+          "corsRules": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/cors.Rule"
+            },
+            "description": "CORS rules for this bucket"
+          },
           "created": {
             "type": "string",
             "format": "date-time",
@@ -2362,6 +2372,16 @@
               "$ref": "#/components/schemas/GetBucketInfoKey"
             },
             "description": "List of access keys that have permissions granted on this bucket"
+          },
+          "lifecycleRules": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/lifecycle.Rule"
+            },
+            "description": "Object lifecycle rules for this bucket"
           },
           "objects": {
             "type": "integer",
@@ -2423,6 +2443,15 @@
           },
           "indexDocument": {
             "type": "string"
+          },
+          "routingRules": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/website.RoutingRule"
+            }
           }
         }
       },
@@ -2581,8 +2610,61 @@
           "freeform"
         ],
         "properties": {
+          "bucketCount": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "number of buckets in the cluster",
+            "minimum": 0
+          },
+          "dataAvail": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "available storage space for object data in the entire cluster, in bytes",
+            "minimum": 0
+          },
           "freeform": {
-            "type": "string"
+            "type": "string",
+            "description": "cluster statistics as a free-form string, kept for compatibility with nodes\nrunning older v2.x versions of garage"
+          },
+          "incompleteAvailInfo": {
+            "type": [
+              "boolean",
+              "null"
+            ],
+            "description": "true if the available storage space statistics are imprecise due to missing\ninformation of disconnected nodes. When this is the case, the actual\nspace available in the cluster might be lower than the reported values."
+          },
+          "metadataAvail": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "available storage space for object metadata in the entire cluster, in bytes",
+            "minimum": 0
+          },
+          "totalObjectBytes": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "total size of objects stored in all buckets, before compression, deduplication and\nreplication (this is NOT equivalent to actual disk usage in the cluster)",
+            "minimum": 0
+          },
+          "totalObjectCount": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "total number of objects stored in all buckets",
+            "minimum": 0
           }
         }
       },
@@ -3055,7 +3137,8 @@
         ],
         "properties": {
           "dbEngine": {
-            "type": "string"
+            "type": "string",
+            "description": "database engine used for metadata"
           },
           "garageFeatures": {
             "type": [
@@ -3064,16 +3147,26 @@
             ],
             "items": {
               "type": "string"
-            }
+            },
+            "description": "build-time features enabled for this garage release"
           },
           "garageVersion": {
-            "type": "string"
+            "type": "string",
+            "description": "garage version running on this node"
+          },
+          "hostname": {
+            "type": [
+              "string",
+              "null"
+            ],
+            "description": "hostname of this node"
           },
           "nodeId": {
             "type": "string"
           },
           "rustVersion": {
-            "type": "string"
+            "type": "string",
+            "description": "rustc version with which this garage release was compiled"
           }
         }
       },
@@ -3083,8 +3176,30 @@
           "freeform"
         ],
         "properties": {
+          "blockManagerStats": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/NodeBlockManagerStats",
+                "description": "block manager statistics"
+              }
+            ]
+          },
           "freeform": {
-            "type": "string"
+            "type": "string",
+            "description": "node statistics as a free-form string, kept for compatibility with nodes\nrunning older v2.x versions of garage"
+          },
+          "tableStats": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/NodeTableStats"
+            },
+            "description": "metadata table statistics"
           }
         }
       },
@@ -3385,7 +3500,8 @@
               ],
               "properties": {
                 "dbEngine": {
-                  "type": "string"
+                  "type": "string",
+                  "description": "database engine used for metadata"
                 },
                 "garageFeatures": {
                   "type": [
@@ -3394,16 +3510,26 @@
                   ],
                   "items": {
                     "type": "string"
-                  }
+                  },
+                  "description": "build-time features enabled for this garage release"
                 },
                 "garageVersion": {
-                  "type": "string"
+                  "type": "string",
+                  "description": "garage version running on this node"
+                },
+                "hostname": {
+                  "type": [
+                    "string",
+                    "null"
+                  ],
+                  "description": "hostname of this node"
                 },
                 "nodeId": {
                   "type": "string"
                 },
                 "rustVersion": {
-                  "type": "string"
+                  "type": "string",
+                  "description": "rustc version with which this garage release was compiled"
                 }
               }
             },
@@ -3439,8 +3565,30 @@
                 "freeform"
               ],
               "properties": {
+                "blockManagerStats": {
+                  "oneOf": [
+                    {
+                      "type": "null"
+                    },
+                    {
+                      "$ref": "#/components/schemas/NodeBlockManagerStats",
+                      "description": "block manager statistics"
+                    }
+                  ]
+                },
                 "freeform": {
-                  "type": "string"
+                  "type": "string",
+                  "description": "node statistics as a free-form string, kept for compatibility with nodes\nrunning older v2.x versions of garage"
+                },
+                "tableStats": {
+                  "type": [
+                    "array",
+                    "null"
+                  ],
+                  "items": {
+                    "$ref": "#/components/schemas/NodeTableStats"
+                  },
+                  "description": "metadata table statistics"
                 }
               }
             },
@@ -3779,6 +3927,34 @@
           }
         }
       },
+      "NodeBlockManagerStats": {
+        "type": "object",
+        "required": [
+          "rcEntries",
+          "resyncQueueLen",
+          "resyncErrors"
+        ],
+        "properties": {
+          "rcEntries": {
+            "type": "integer",
+            "format": "int64",
+            "description": "number of reference counter entries",
+            "minimum": 0
+          },
+          "resyncErrors": {
+            "type": "integer",
+            "format": "int64",
+            "description": "number of blocks with resync errors",
+            "minimum": 0
+          },
+          "resyncQueueLen": {
+            "type": "integer",
+            "format": "int64",
+            "description": "number of blocks in the resync queue",
+            "minimum": 0
+          }
+        }
+      },
       "NodeResp": {
         "type": "object",
         "required": [
@@ -3941,6 +4117,53 @@
             ]
           }
         ]
+      },
+      "NodeTableStats": {
+        "type": "object",
+        "required": [
+          "tableName",
+          "items",
+          "merkleItems",
+          "merkleQueueLen",
+          "insertQueueLen",
+          "gcQueueLen"
+        ],
+        "properties": {
+          "gcQueueLen": {
+            "type": "integer",
+            "format": "int64",
+            "description": "number of items in the garbage collection queue",
+            "minimum": 0
+          },
+          "insertQueueLen": {
+            "type": "integer",
+            "format": "int64",
+            "description": "number of items in the remote insert queue",
+            "minimum": 0
+          },
+          "items": {
+            "type": "integer",
+            "format": "int64",
+            "description": "number of items stored in metadata table",
+            "minimum": 0
+          },
+          "merkleItems": {
+            "type": "integer",
+            "format": "int64",
+            "description": "size of the merkle tree representing all items in the table",
+            "minimum": 0
+          },
+          "merkleQueueLen": {
+            "type": "integer",
+            "format": "int64",
+            "description": "number of items in the merkle tree update queue",
+            "minimum": 0
+          },
+          "tableName": {
+            "type": "string",
+            "description": "name of metadata table"
+          }
+        }
       },
       "NodeUpdateTrackers": {
         "type": "object",
@@ -4117,7 +4340,7 @@
             "items": {
               "type": "string"
             },
-            "description": "Scope of the admin API token, a list of admin endpoint names (such as\n`GetClusterStatus`, etc), or the special value `*` to allow all\nadmin endpoints. **WARNING:** Granting a scope of `CreateAdminToken` or\n`UpdateAdminToken` trivially allows for privilege escalation, and is thus\nfunctionnally equivalent to granting a scope of `*`."
+            "description": "Scope of the admin API token, a list of admin endpoint names (such as\n`GetClusterStatus`, etc), or the special value `*` to allow all\nadmin endpoints. **WARNING:** Granting a scope of `CreateAdminToken` or\n`UpdateAdminToken` trivially allows for privilege escalation, and is thus\nfunctionally equivalent to granting a scope of `*`."
           }
         }
       },
@@ -4127,6 +4350,24 @@
       "UpdateBucketRequestBody": {
         "type": "object",
         "properties": {
+          "corsRules": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/cors.Rule"
+            }
+          },
+          "lifecycleRules": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/lifecycle.Rule"
+            }
+          },
           "quotas": {
             "oneOf": [
               {
@@ -4172,6 +4413,15 @@
               "string",
               "null"
             ]
+          },
+          "routingRules": {
+            "type": [
+              "array",
+              "null"
+            ],
+            "items": {
+              "$ref": "#/components/schemas/website.RoutingRule"
+            }
           }
         }
       },
@@ -4413,6 +4663,205 @@
             ]
           }
         ]
+      },
+      "cors.Rule": {
+        "type": "object",
+        "required": [
+          "AllowedOrigin",
+          "AllowedMethod"
+        ],
+        "properties": {
+          "AllowedHeader": {
+            "type": "array",
+            "items": {}
+          },
+          "AllowedMethod": {
+            "type": "array",
+            "items": {}
+          },
+          "AllowedOrigin": {
+            "type": "array",
+            "items": {}
+          },
+          "ExposeHeader": {
+            "type": "array",
+            "items": {}
+          },
+          "ID": {},
+          "MaxAgeSeconds": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/xml.IntValue"
+              }
+            ]
+          }
+        }
+      },
+      "lifecycle.AbortIncompleteMpu": {
+        "type": "object",
+        "required": [
+          "DaysAfterInitiation"
+        ],
+        "properties": {
+          "DaysAfterInitiation": {
+            "$ref": "#/components/schemas/xml.IntValue"
+          }
+        }
+      },
+      "lifecycle.Expiration": {
+        "type": "object",
+        "properties": {
+          "Date": {},
+          "Days": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/xml.IntValue"
+              }
+            ]
+          }
+        }
+      },
+      "lifecycle.Filter": {
+        "type": "object",
+        "properties": {
+          "And": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/lifecycle.Filter"
+              }
+            ]
+          },
+          "ObjectSizeGreaterThan": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/xml.IntValue"
+              }
+            ]
+          },
+          "ObjectSizeLessThan": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/xml.IntValue"
+              }
+            ]
+          },
+          "Prefix": {}
+        }
+      },
+      "lifecycle.Rule": {
+        "type": "object",
+        "required": [
+          "Status"
+        ],
+        "properties": {
+          "AbortIncompleteMultipartUpload": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/lifecycle.AbortIncompleteMpu"
+              }
+            ]
+          },
+          "Expiration": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/lifecycle.Expiration"
+              }
+            ]
+          },
+          "Filter": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/lifecycle.Filter"
+              }
+            ]
+          },
+          "ID": {},
+          "Status": {}
+        }
+      },
+      "website.Condition": {
+        "type": "object",
+        "properties": {
+          "HttpErrorCodeReturnedEquals": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/xml.IntValue"
+              }
+            ]
+          },
+          "KeyPrefixEquals": {}
+        }
+      },
+      "website.Redirect": {
+        "type": "object",
+        "properties": {
+          "HostName": {},
+          "HttpRedirectCode": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/xml.IntValue"
+              }
+            ]
+          },
+          "Protocol": {},
+          "ReplaceKeyPrefixWith": {},
+          "ReplaceKeyWith": {}
+        }
+      },
+      "website.RoutingRule": {
+        "type": "object",
+        "required": [
+          "Redirect"
+        ],
+        "properties": {
+          "Condition": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/website.Condition"
+              }
+            ]
+          },
+          "Redirect": {
+            "$ref": "#/components/schemas/website.Redirect"
+          }
+        }
+      },
+      "xml.IntValue": {
+        "type": "integer",
+        "format": "int64"
       }
     },
     "securitySchemes": {

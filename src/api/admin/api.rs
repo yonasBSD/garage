@@ -12,7 +12,7 @@ use garage_rpc::*;
 
 use garage_model::garage::Garage;
 
-use garage_api_common::{common_error::CommonError, helpers::is_default};
+use garage_api_common::{common_error::CommonError, helpers::is_default, xml};
 
 use crate::api_server::{find_matching_nodes, AdminRpc, AdminRpcResponse};
 use crate::error::Error;
@@ -282,8 +282,34 @@ pub struct GetClusterHealthResponse {
 pub struct GetClusterStatisticsRequest;
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
 pub struct GetClusterStatisticsResponse {
+	// FIXME for v3: remove freeform field and move display logic to garage crate
+	/// cluster statistics as a free-form string, kept for compatibility with nodes
+	/// running older v2.x versions of garage
 	pub freeform: String,
+	// FIXME for v3: remove Option<> and serde(default) for all fields below
+	/// available storage space for object data in the entire cluster, in bytes
+	#[serde(default, skip_serializing_if = "Option::is_none")]
+	pub data_avail: Option<u64>,
+	/// available storage space for object metadata in the entire cluster, in bytes
+	#[serde(default, skip_serializing_if = "Option::is_none")]
+	pub metadata_avail: Option<u64>,
+	/// true if the available storage space statistics are imprecise due to missing
+	/// information of disconnected nodes. When this is the case, the actual
+	/// space available in the cluster might be lower than the reported values.
+	#[serde(default, skip_serializing_if = "Option::is_none")]
+	pub incomplete_avail_info: Option<bool>,
+	/// number of buckets in the cluster
+	#[serde(default, skip_serializing_if = "Option::is_none")]
+	pub bucket_count: Option<u64>,
+	/// total number of objects stored in all buckets
+	#[serde(default, skip_serializing_if = "Option::is_none")]
+	pub total_object_count: Option<u64>,
+	/// total size of objects stored in all buckets, before compression, deduplication and
+	/// replication (this is NOT equivalent to actual disk usage in the cluster)
+	#[serde(default, skip_serializing_if = "Option::is_none")]
+	pub total_object_bytes: Option<u64>,
 }
 
 // ---- ConnectClusterNodes ----
@@ -843,9 +869,16 @@ pub struct GetBucketInfoResponse {
 	pub global_aliases: Vec<String>,
 	/// Whether website access is enabled for this bucket
 	pub website_access: bool,
-	#[serde(default)]
 	/// Website configuration for this bucket
+	#[serde(default, skip_serializing_if = "Option::is_none")]
 	pub website_config: Option<GetBucketInfoWebsiteResponse>,
+	// FIXME for v3: remove serde(default) for the two fields below
+	/// CORS rules for this bucket
+	#[serde(default, skip_serializing_if = "Option::is_none")]
+	pub cors_rules: Option<Vec<xml::cors::CorsRule>>,
+	/// Object lifecycle rules for this bucket
+	#[serde(default, skip_serializing_if = "Option::is_none")]
+	pub lifecycle_rules: Option<Vec<xml::lifecycle::LifecycleRule>>,
 	/// List of access keys that have permissions granted on this bucket
 	pub keys: Vec<GetBucketInfoKey>,
 	/// Number of objects in this bucket
@@ -869,6 +902,9 @@ pub struct GetBucketInfoResponse {
 pub struct GetBucketInfoWebsiteResponse {
 	pub index_document: String,
 	pub error_document: Option<String>,
+	// FIXME for v3: remove serde(default) for field below
+	#[serde(default, skip_serializing_if = "Option::is_none")]
+	pub routing_rules: Option<Vec<xml::website::RoutingRule>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
@@ -927,6 +963,11 @@ pub struct UpdateBucketResponse(pub GetBucketInfoResponse);
 pub struct UpdateBucketRequestBody {
 	pub website_access: Option<UpdateBucketWebsiteAccess>,
 	pub quotas: Option<ApiBucketQuotas>,
+	// FIXME for v3: remove serde(default) for the two fields below
+	#[serde(default)]
+	pub cors_rules: Option<Vec<xml::cors::CorsRule>>,
+	#[serde(default)]
+	pub lifecycle_rules: Option<Vec<xml::lifecycle::LifecycleRule>>,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
@@ -935,6 +976,9 @@ pub struct UpdateBucketWebsiteAccess {
 	pub enabled: bool,
 	pub index_document: Option<String>,
 	pub error_document: Option<String>,
+	// FIXME for v3: remove serde(default) for field below
+	#[serde(default)]
+	pub routing_rules: Option<Vec<xml::website::RoutingRule>>,
 }
 
 // ---- DeleteBucket ----
@@ -1109,9 +1153,17 @@ pub struct LocalGetNodeInfoRequest;
 #[serde(rename_all = "camelCase")]
 pub struct LocalGetNodeInfoResponse {
 	pub node_id: String,
+	// FIXME for v3: remove Option<> and serde(default) for field below
+	/// hostname of this node
+	#[serde(default, skip_serializing_if = "Option::is_none")]
+	pub hostname: Option<String>,
+	/// garage version running on this node
 	pub garage_version: String,
+	/// build-time features enabled for this garage release
 	pub garage_features: Option<Vec<String>>,
+	/// rustc version with which this garage release was compiled
 	pub rust_version: String,
+	/// database engine used for metadata
 	pub db_engine: String,
 }
 
@@ -1121,8 +1173,47 @@ pub struct LocalGetNodeInfoResponse {
 pub struct LocalGetNodeStatisticsRequest;
 
 #[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
 pub struct LocalGetNodeStatisticsResponse {
+	// FIXME for v3: remove freeform field and move display logic to garage crate
+	/// node statistics as a free-form string, kept for compatibility with nodes
+	/// running older v2.x versions of garage
 	pub freeform: String,
+	// FIXME for v3: remove serde(default) for fields below
+	/// metadata table statistics
+	#[serde(default, skip_serializing_if = "Option::is_none")]
+	pub table_stats: Option<Vec<NodeTableStats>>,
+	/// block manager statistics
+	#[serde(default, skip_serializing_if = "Option::is_none")]
+	pub block_manager_stats: Option<NodeBlockManagerStats>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct NodeTableStats {
+	/// name of metadata table
+	pub table_name: String,
+	/// number of items stored in metadata table
+	pub items: u64,
+	/// size of the merkle tree representing all items in the table
+	pub merkle_items: u64,
+	/// number of items in the merkle tree update queue
+	pub merkle_queue_len: u64,
+	/// number of items in the remote insert queue
+	pub insert_queue_len: u64,
+	/// number of items in the garbage collection queue
+	pub gc_queue_len: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema, Default)]
+#[serde(rename_all = "camelCase")]
+pub struct NodeBlockManagerStats {
+	/// number of reference counter entries
+	pub rc_entries: u64,
+	/// number of blocks in the resync queue
+	pub resync_queue_len: u64,
+	/// number of blocks with resync errors
+	pub resync_errors: u64,
 }
 
 // ---- CreateMetadataSnapshot ----

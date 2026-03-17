@@ -99,10 +99,6 @@ pub enum Error {
 	/// The provided digest (checksum) value was invalid
 	#[error("Invalid digest: {0}")]
 	InvalidDigest(String),
-
-	/// The client sent a request for an action not supported by garage
-	#[error("Unimplemented action: {0}")]
-	NotImplemented(String),
 }
 
 commonErrorDerivative!(Error);
@@ -151,7 +147,6 @@ impl Error {
 			Error::InvalidPartOrder => "InvalidPartOrder",
 			Error::EntityTooSmall => "EntityTooSmall",
 			Error::AuthorizationHeaderMalformed(_) => "AuthorizationHeaderMalformed",
-			Error::NotImplemented(_) => "NotImplemented",
 			Error::InvalidXml(_) => "MalformedXML",
 			Error::InvalidXmlDe(_) => "MalformedXML",
 			Error::InvalidXmlSe(_) => "InternalError",
@@ -176,7 +171,6 @@ impl ApiError for Error {
 			| Error::NoSuchLifecycleConfiguration => StatusCode::NOT_FOUND,
 			Error::PreconditionFailed => StatusCode::PRECONDITION_FAILED,
 			Error::InvalidRange(_) => StatusCode::RANGE_NOT_SATISFIABLE,
-			Error::NotImplemented(_) => StatusCode::NOT_IMPLEMENTED,
 			Error::InvalidXmlSe(_) => StatusCode::INTERNAL_SERVER_ERROR,
 			Error::AuthorizationHeaderMalformed(_)
 			| Error::InvalidPart

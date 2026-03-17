@@ -18,6 +18,7 @@ use garage_model::s3::mpu_table;
 use garage_model::s3::object_table::*;
 
 use garage_api_common::common_error::CommonError;
+use garage_api_common::xml;
 
 use crate::api::*;
 use crate::error::*;
@@ -37,7 +38,7 @@ impl RequestHandler for ListBucketsRequest {
 				&EmptyKey,
 				None,
 				Some(DeletedFilter::NotDeleted),
-				10000,
+				1_000_000,
 				EnumerationOrder::Forward,
 			)
 			.await?;
@@ -293,10 +294,28 @@ impl RequestHandler for UpdateBucketRequest {
 
 		if let Some(wa) = self.body.website_access {
 			if wa.enabled {
-				let (redirect_all, routing_rules) = match state.website_config.get() {
-					Some(wc) => (wc.redirect_all.clone(), wc.routing_rules.clone()),
-					None => (None, Vec::new()),
+				let redirect_all = state
+					.website_config
+					.get()
+					.as_ref()
+					.and_then(|wc| wc.redirect_all.clone());
+
+				let routing_rules = if let Some(rr) = wa.routing_rules {
+					for r in rr.iter() {
+						r.validate()?;
+					}
+					rr.into_iter()
+						.map(xml::website::RoutingRule::into_garage_routing_rule)
+						.collect::<Vec<_>>()
+				} else {
+					state
+						.website_config
+						.get()
+						.as_ref()
+						.map(|wc| wc.routing_rules.clone())
+						.unwrap_or_default()
 				};
+
 				state.website_config.update(Some(WebsiteConfig {
 					index_document: wa.index_document.ok_or_bad_request(
 						"Please specify indexDocument when enabling website access.",
@@ -320,6 +339,38 @@ impl RequestHandler for UpdateBucketRequest {
 				max_size: q.max_size,
 				max_objects: q.max_objects,
 			});
+		}
+
+		if let Some(cr) = self.body.cors_rules {
+			let cors_config = if cr.is_empty() {
+				None
+			} else {
+				let cc = xml::cors::CorsConfiguration {
+					xmlns: (),
+					cors_rules: cr,
+				};
+				cc.validate()?;
+				Some(cc.into_garage_cors_config()?)
+			};
+
+			state.cors_config.update(cors_config);
+		}
+
+		if let Some(lr) = self.body.lifecycle_rules {
+			let lifecycle_config = if lr.is_empty() {
+				None
+			} else {
+				let lc = xml::lifecycle::LifecycleConfiguration {
+					xmlns: (),
+					lifecycle_rules: lr,
+				};
+				Some(
+					lc.validate_into_garage_lifecycle_config()
+						.ok_or_bad_request("Invalid lifecycle configuration")?,
+				)
+			};
+
+			state.lifecycle_config.update(lifecycle_config);
 		}
 
 		garage.bucket_table.insert(&bucket).await?;
@@ -693,7 +744,24 @@ async fn bucket_info_results(
 			GetBucketInfoWebsiteResponse {
 				index_document: wsc.index_document,
 				error_document: wsc.error_document,
+				routing_rules: Some(
+					wsc.routing_rules
+						.into_iter()
+						.map(xml::website::RoutingRule::from_garage_routing_rule)
+						.collect::<Vec<_>>(),
+				),
 			}
+		}),
+		cors_rules: state.cors_config.get().as_ref().map(|rules| {
+			rules
+				.iter()
+				.map(xml::cors::CorsRule::from_garage_cors_rule)
+				.collect::<Vec<_>>()
+		}),
+		lifecycle_rules: state.lifecycle_config.get().as_ref().map(|lc| {
+			lc.iter()
+				.map(xml::lifecycle::LifecycleRule::from_garage_lifecycle_rule)
+				.collect::<Vec<_>>()
 		}),
 		keys: relevant_keys
 			.into_values()

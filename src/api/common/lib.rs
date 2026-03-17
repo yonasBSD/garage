@@ -10,3 +10,4 @@ pub mod generic_server;
 pub mod helpers;
 pub mod router_macros;
 pub mod signature;
+pub mod xml;
