@@ -1,4 +1,4 @@
-use structopt::StructOpt;
+use structopt::{clap::Shell, StructOpt};
 
 use garage_util::version::garage_version;
 
@@ -77,6 +77,10 @@ pub enum Command {
 		#[structopt(default_value = "null")]
 		payload: String,
 	},
+
+	/// Generate completions for a shell
+	#[structopt(name = "completions", version = garage_version())]
+	Completions { shell: Shell },
 }
 
 // ---------------------------

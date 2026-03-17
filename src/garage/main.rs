@@ -177,6 +177,10 @@ async fn run(opt: Opt) -> Result<(), Error> {
 			);
 			Ok(())
 		}
+		Command::Completions { shell } => {
+			cli::local::completions::generate_completions(shell);
+			Ok(())
+		}
 		_ => cli_command(opt).await,
 	}
 }
