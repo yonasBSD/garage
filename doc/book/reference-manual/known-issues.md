@@ -28,7 +28,9 @@ fixed yet.
 
 ### Layout updates might require manual intervention
 
+### Tag assignement
 
+You need to repeat mutiple time -t to have multiple tags, pushing tags with commas will result in a single string.
 
 ## General footguns
 
