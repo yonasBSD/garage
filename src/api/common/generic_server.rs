@@ -163,10 +163,11 @@ impl<A: ApiHandler> ApiServer<A> {
 			.map(|k| format!("(key {k}) "))
 			.unwrap_or_default();
 
+		let method = req.method().clone();
 		if A::API_NAME == "admin" && (uri.path() == "/health" || uri.path() == "/metrics") {
-			debug!("{source} {key}{} {uri}", req.method());
+			debug!("{source} {key}{method} {uri}");
 		} else {
-			info!("{source} {key}{} {uri}", req.method());
+			info!("{source} {key}{method} {uri}");
 		}
 
 		debug!("{:?}", req);
@@ -202,9 +203,17 @@ impl<A: ApiHandler> ApiServer<A> {
 				let http_error = http_error_builder.body(body)?;
 
 				if e.http_status_code().is_server_error() {
-					warn!("Response: error {}, {}", e.http_status_code(), e);
+					warn!(
+						"error {}, {} in response to {source} {key}{method} {uri}",
+						e.http_status_code(),
+						e
+					);
 				} else {
-					info!("Response: error {}, {}", e.http_status_code(), e);
+					info!(
+						"error {}, {} in response to {source} {key}{method} {uri}",
+						e.http_status_code(),
+						e
+					);
 				}
 				Ok(http_error
 					.map(|body| BoxBody::new(body.map_err(|_: Infallible| unreachable!()))))
