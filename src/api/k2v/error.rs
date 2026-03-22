@@ -20,8 +20,13 @@ pub enum Error {
 
 	// Category: cannot process
 	/// Authorization Header Malformed
-	#[error("Authorization header malformed, unexpected scope: {0}")]
-	AuthorizationHeaderMalformed(String),
+	#[error(
+		"Authorization header malformed, unexpected scope: '{unexpected}', expected: '{expected}'"
+	)]
+	AuthorizationHeaderMalformed {
+		unexpected: String,
+		expected: String,
+	},
 
 	/// The provided digest (checksum) value was invalid
 	#[error("Invalid digest: {0}")]
@@ -54,9 +59,13 @@ impl From<SignatureError> for Error {
 	fn from(err: SignatureError) -> Self {
 		match err {
 			SignatureError::Common(c) => Self::Common(c),
-			SignatureError::AuthorizationHeaderMalformed(c) => {
-				Self::AuthorizationHeaderMalformed(c)
-			}
+			SignatureError::AuthorizationHeaderMalformed {
+				unexpected,
+				expected,
+			} => Self::AuthorizationHeaderMalformed {
+				unexpected,
+				expected,
+			},
 			SignatureError::InvalidUtf8Str(i) => Self::InvalidUtf8Str(i),
 			SignatureError::InvalidDigest(d) => Self::InvalidDigest(d),
 		}
@@ -72,7 +81,7 @@ impl Error {
 			Error::Common(c) => c.aws_code(),
 			Error::NoSuchKey => "NoSuchKey",
 			Error::NotAcceptable(_) => "NotAcceptable",
-			Error::AuthorizationHeaderMalformed(_) => "AuthorizationHeaderMalformed",
+			Error::AuthorizationHeaderMalformed { .. } => "AuthorizationHeaderMalformed",
 			Error::InvalidBase64(_) => "InvalidBase64",
 			Error::InvalidUtf8Str(_) => "InvalidUtf8String",
 			Error::InvalidCausalityToken => "CausalityToken",
@@ -88,7 +97,7 @@ impl ApiError for Error {
 			Error::Common(c) => c.http_status_code(),
 			Error::NoSuchKey => StatusCode::NOT_FOUND,
 			Error::NotAcceptable(_) => StatusCode::NOT_ACCEPTABLE,
-			Error::AuthorizationHeaderMalformed(_)
+			Error::AuthorizationHeaderMalformed { .. }
 			| Error::InvalidBase64(_)
 			| Error::InvalidUtf8Str(_)
 			| Error::InvalidDigest(_)

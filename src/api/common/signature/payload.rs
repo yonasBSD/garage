@@ -340,7 +340,11 @@ pub fn canonical_request(
 	let canonical_uri: std::borrow::Cow<str> = if service != "s3" {
 		uri_encode(canonical_uri, false).into()
 	} else {
-		canonical_uri.into()
+		//TODO: decode is already do for construct Api::EndPoint, should be better to be able to keep it instead of compute it again.
+		let key = percent_encoding::percent_decode_str(canonical_uri)
+			.decode_utf8()
+			.unwrap();
+		uri_encode(&key, false).into()
 	};
 
 	// Canonical query string from passed HeaderMap
@@ -400,7 +404,10 @@ pub fn verify_v4(
 ) -> Result<Key, Error> {
 	let scope_expected = compute_scope(&auth.date, &garage.config.s3_api.s3_region, service);
 	if auth.scope != scope_expected {
-		return Err(Error::AuthorizationHeaderMalformed(auth.scope.to_string()));
+		return Err(Error::AuthorizationHeaderMalformed {
+			unexpected: auth.scope.to_string(),
+			expected: scope_expected,
+		});
 	}
 
 	let key = garage
