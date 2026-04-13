@@ -10,11 +10,14 @@ use crate::xml::{xmlns_tag, IntValue, Value};
 pub struct WebsiteConfiguration {
 	#[serde(rename = "@xmlns", serialize_with = "xmlns_tag", skip_deserializing)]
 	pub xmlns: (),
-	#[serde(rename = "ErrorDocument")]
+	#[serde(rename = "ErrorDocument", skip_serializing_if = "Option::is_none")]
 	pub error_document: Option<Key>,
-	#[serde(rename = "IndexDocument")]
+	#[serde(rename = "IndexDocument", skip_serializing_if = "Option::is_none")]
 	pub index_document: Option<Suffix>,
-	#[serde(rename = "RedirectAllRequestsTo")]
+	#[serde(
+		rename = "RedirectAllRequestsTo",
+		skip_serializing_if = "Option::is_none"
+	)]
 	pub redirect_all_requests_to: Option<Target>,
 	#[serde(
 		rename = "RoutingRules",
@@ -399,5 +402,22 @@ mod tests {
 		let message2 = to_xml_with_header(&ref_value).expect("xml serialization");
 
 		assert_eq!(unprettify_xml(message), unprettify_xml(&message2));
+	}
+
+	#[test]
+	fn test_serialize_empty() {
+		let conf = WebsiteConfiguration {
+			xmlns: (),
+			error_document: None,
+			index_document: None,
+			redirect_all_requests_to: None,
+			routing_rules: RoutingRules { rules: vec![] },
+		};
+		let serialized_ref = r#"<?xml version="1.0" encoding="UTF-8"?>
+<WebsiteConfiguration xmlns="http://s3.amazonaws.com/doc/2006-03-01/">
+</WebsiteConfiguration>"#;
+
+		let serialized = to_xml_with_header(&conf).expect("xml serialization");
+		assert_eq!(unprettify_xml(&serialized), unprettify_xml(&serialized_ref));
 	}
 }
