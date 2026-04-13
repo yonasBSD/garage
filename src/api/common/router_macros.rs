@@ -164,7 +164,7 @@ macro_rules! router_match {
         $query.$param.take().map(|param| param.into_owned())
     }};
     (@@parse_param $query:expr, query, $param:ident) => {{
-        // extract mendatory query parameter
+        // extract mandatory query parameter
         $query.$param.take()
             .ok_or_bad_request(
                 format!("Missing argument `{}` for endpoint", stringify!($param))
