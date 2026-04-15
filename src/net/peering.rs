@@ -29,6 +29,7 @@ const FAILED_PING_THRESHOLD: usize = 4;
 
 const DEFAULT_PING_TIMEOUT_MILLIS: u64 = 10_000;
 const ADDR_MAX_CONSECUTIVE_FAILURES: usize = 3;
+const KEEP_MAX_ADDRS: usize = 5;
 
 /// A known address for a peer, with connection status tracking.
 #[derive(Debug, Clone)]
@@ -515,8 +516,8 @@ impl PeeringManager {
 	}
 
 	async fn try_connect(self: Arc<Self>, id: NodeID, mut addresses: Vec<KnownAddr>) {
-		// Sort addresses: most recently successful first, then shuffle ties
-		// so that never-succeeded addresses get a fair chance.
+		// Sort addresses: most recently successful first, then shuffle addresses that
+		// were never successful so that they all get a fair chance.
 		addresses.sort_by(|a, b| match (a.last_success, b.last_success) {
 			(Some(ta), Some(tb)) => tb.cmp(&ta),
 			(Some(_), None) => std::cmp::Ordering::Less,
@@ -580,37 +581,32 @@ impl PeeringManager {
 				};
 			}
 
-			let now = Instant::now();
-			if let Some(ok_addr) = conn_addr {
-				if let Some(ka) = host.known_addrs.iter_mut().find(|ka| ka.addr == ok_addr) {
-					ka.last_success = Some(now);
+			// Register successes and failures in known address list
+			for ka in host.known_addrs.iter_mut() {
+				if conn_addr == Some(ka.addr) {
+					ka.last_success = Some(Instant::now());
 					ka.consecutive_failures = 0;
-				}
-			}
-			for addr in &failed_addrs {
-				if let Some(ka) = host.known_addrs.iter_mut().find(|ka| ka.addr == *addr) {
+				} else if failed_addrs.contains(&ka.addr) {
 					ka.consecutive_failures += 1;
 				}
 			}
 
-			// Never prune below 1 address, so that a long partition doesn't
-			// leave us unable to reconnect.  Protect the most recently
-			// successful address; if none ever succeeded, skip pruning
-			// entirely (we have nothing better to keep).
-			let best_addr = host
-				.known_addrs
-				.iter()
-				.filter_map(|ka| ka.last_success.map(|t| (ka.addr, t)))
-				.max_by_key(|(_, t)| *t)
-				.map(|(addr, _)| addr);
-
+			// If the address list is too big, prune some addresses to keep only a limited number of them.
 			let before = host.known_addrs.len();
-			if best_addr.is_some() {
-				host.known_addrs.retain(|ka| {
-					ka.consecutive_failures < ADDR_MAX_CONSECUTIVE_FAILURES
-						|| Some(ka.addr) == best_addr
-				});
+
+			while host.known_addrs.len() > KEEP_MAX_ADDRS {
+				// Prioritize pruning addresses that have too many failures.
+				// Then, prioritize pruning addresses that were used the longest time ago.
+				let i_prune = host
+					.known_addrs
+					.iter()
+					.enumerate()
+					.min_by_key(|(_, ka)| pruning_sort_key(ka))
+					.unwrap()
+					.0;
+				host.known_addrs.remove(i_prune);
 			}
+
 			let pruned = before - host.known_addrs.len();
 			if pruned > 0 {
 				info!(
@@ -699,5 +695,64 @@ impl EndpointHandler<PeerListMessage> for PeeringManager {
 		self.handle_peer_list(&peer_list.list[..]);
 		let peer_list = self.known_hosts.read().unwrap().connected_peers_vec();
 		PeerListMessage { list: peer_list }
+	}
+}
+
+fn pruning_sort_key(ka: &KnownAddr) -> (bool, Option<Instant>) {
+	(
+		ka.consecutive_failures < ADDR_MAX_CONSECUTIVE_FAILURES,
+		ka.last_success,
+	)
+}
+
+#[cfg(test)]
+mod tests {
+	use super::*;
+	use std::time::{Duration, Instant};
+
+	#[test]
+	fn test_pruning_sort_key() {
+		let now = Instant::now();
+
+		let addrs = [
+			// fourth pruned
+			KnownAddr {
+				addr: "0.0.0.0:1234".parse().unwrap(),
+				last_success: Some(now),
+				consecutive_failures: 0,
+			},
+			// second pruned
+			KnownAddr {
+				addr: "0.0.0.0:1234".parse().unwrap(),
+				last_success: None,
+				consecutive_failures: 1,
+			},
+			// third pruned
+			KnownAddr {
+				addr: "0.0.0.0:1234".parse().unwrap(),
+				last_success: Some(now - Duration::from_secs(60)),
+				consecutive_failures: 2,
+			},
+			// first pruned
+			KnownAddr {
+				addr: "0.0.0.0:1234".parse().unwrap(),
+				last_success: None,
+				consecutive_failures: 3,
+			},
+		];
+
+		let prune = |a: &[KnownAddr]| {
+			a.iter()
+				.enumerate()
+				.min_by_key(|(_, ka)| pruning_sort_key(ka))
+				.unwrap()
+				.0
+		};
+
+		assert_eq!(prune(&addrs[..]), 3);
+		assert_eq!(prune(&addrs[..3]), 1);
+		assert_eq!(prune(&addrs[..2]), 1);
+		assert_eq!(prune(&addrs[1..3]), 0);
+		assert_eq!(prune(&addrs[1..]), 2);
 	}
 }
