@@ -45,6 +45,11 @@ const TCP_KEEPALIVE_TIME: Duration = Duration::from_secs(30);
 /// Interval between keepalive probes after the first.
 const TCP_KEEPALIVE_INTERVAL: Duration = Duration::from_secs(10);
 
+/// Timeout for outgoing TCP connection attempts.
+/// Caps per-address connection time instead of relying on the kernel's
+/// TCP SYN timeout (75-130s on Linux, ~20s on macOS).
+const CONNECT_TIMEOUT: Duration = Duration::from_secs(10);
+
 fn set_keepalive(stream: &TcpStream) -> Result<(), std::io::Error> {
 	let sock_ref = socket2::SockRef::from(stream);
 	let keepalive = socket2::TcpKeepalive::new()
@@ -331,9 +336,13 @@ impl NetApp {
 					TcpSocket::new_v6()?
 				};
 				socket.bind(SocketAddr::new(addr, 0))?;
-				socket.connect(ip).await?
+				tokio::time::timeout(CONNECT_TIMEOUT, socket.connect(ip))
+					.await
+					.map_err(|_| Error::Message(format!("connect to {} timed out", ip)))??
 			}
-			None => TcpStream::connect(ip).await?,
+			None => tokio::time::timeout(CONNECT_TIMEOUT, TcpStream::connect(ip))
+				.await
+				.map_err(|_| Error::Message(format!("connect to {} timed out", ip)))??,
 		};
 		if let Err(e) = set_keepalive(&stream) {
 			warn!("Failed to set keepalive on connection to {}: {}", ip, e);
