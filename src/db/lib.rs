@@ -222,9 +222,13 @@ impl Tree {
 	}
 	#[inline]
 	pub fn get_gt<T: AsRef<[u8]>>(&self, from: T) -> Result<Option<(Value, Value)>> {
-		self.range((Bound::Excluded(from), Bound::Unbounded))?
-			.next()
-			.transpose()
+		if from.as_ref().is_empty() {
+			self.iter()?.next().transpose()
+		} else {
+			self.range((Bound::Excluded(from), Bound::Unbounded))?
+				.next()
+				.transpose()
+		}
 	}
 
 	/// Returns the old value if there was one
