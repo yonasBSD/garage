@@ -33,11 +33,14 @@ S3-compatible object store for small self-hosted geo-distributed deployments
 | garage.replicationFactor | string | `"3"` | Default to 3 replicas, see the replication_factor section at https://garagehq.deuxfleurs.fr/documentation/reference-manual/configuration/#replication_factor |
 | garage.consistencyMode | string | `"consistent"` | Default to read-after-write consistency, see the consistency_mode section at https://garagehq.deuxfleurs.fr/documentation/reference-manual/configuration/#consistency_mode |
 | garage.metadataAutoSnapshotInterval | string | `""` | If this value is set, Garage will automatically take a snapshot of the metadata DB file at a regular interval and save it in the metadata directory. https://garagehq.deuxfleurs.fr/documentation/reference-manual/configuration/#metadata_auto_snapshot_interval |
+| garage.admin.apiBindAddr | string | `"[::]:3903"` |  |
 | garage.rpcBindAddr | string | `"[::]:3901"` |  |
 | garage.rpcSecret | string | `""` | If not given, a random secret will be generated and stored in a Secret object |
+| garage.s3.api.bindAddr | string | `"[::]:3900"` |  |
 | garage.s3.api.region | string | `"garage"` |  |
 | garage.s3.api.rootDomain | string | `".s3.garage.tld"` |  |
 | garage.s3.web.index | string | `"index.html"` |  |
+| garage.s3.web.bindAddr | string | `"[::]:3902"` |  |
 | garage.s3.web.rootDomain | string | `".web.garage.tld"` |  |
 | image.pullPolicy | string | `"IfNotPresent"` |  |
 | image.repository | string | `"dxflrs/amd64_garage"` | default to amd64 docker image |

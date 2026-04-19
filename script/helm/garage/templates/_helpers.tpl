@@ -72,6 +72,13 @@ Create the name of the service account to use
 {{- end }}
 
 {{/*
+Extract the trailing port number from a bind address like [::]:3900 or 0.0.0.0:3900.
+*/}}
+{{- define "garage.portFromBindAddr" -}}
+{{- regexFind "[0-9]+$" . -}}
+{{- end }}
+
+{{/*
     Returns given number of random Hex characters.
     In practice, it generates up to 100 randAlphaNum strings
     that are filtered from non-hex characters and augmented
