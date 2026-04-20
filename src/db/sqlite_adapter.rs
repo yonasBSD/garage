@@ -426,15 +426,20 @@ impl<'a> ITx for SqliteTx<'a> {
 // complicated, they must hold the Statement and Row objects
 // therefore quite some unsafe code (it is a self-referential struct)
 
-struct DbValueIterator<'a> {
+struct DbValueIterator {
 	db: Connection,
-	stmt: Option<Statement<'a>>,
-	iter: Option<Rows<'a>>,
+	// These two are not really static (they are actually self referential :o)
+	stmt: Option<Statement<'static>>,
+	iter: Option<Rows<'static>>,
 	_pin: PhantomPinned,
 }
 
-impl<'a> DbValueIterator<'a> {
-	fn make<P: rusqlite::Params>(db: Connection, sql: &str, args: P) -> Result<ValueIter<'a>> {
+impl DbValueIterator {
+	fn make<'res, P: rusqlite::Params>(
+		db: Connection,
+		sql: &str,
+		args: P,
+	) -> Result<ValueIter<'res>> {
 		let res = DbValueIterator {
 			db,
 			stmt: None,
@@ -468,7 +473,7 @@ impl<'a> DbValueIterator<'a> {
 	}
 }
 
-impl<'a> Drop for DbValueIterator<'a> {
+impl Drop for DbValueIterator {
 	fn drop(&mut self) {
 		trace!("drop iter");
 		drop(self.iter.take());
@@ -476,9 +481,9 @@ impl<'a> Drop for DbValueIterator<'a> {
 	}
 }
 
-struct DbValueIteratorPin<'a>(Pin<Box<DbValueIterator<'a>>>);
+struct DbValueIteratorPin(Pin<Box<DbValueIterator>>);
 
-impl<'a> Iterator for DbValueIteratorPin<'a> {
+impl Iterator for DbValueIteratorPin {
 	type Item = Result<(Value, Value)>;
 
 	fn next(&mut self) -> Option<Self::Item> {
