@@ -113,7 +113,7 @@ kube = { version = "3.0", default-features = false, features = [
 ] }
 schemars = "1.2"
 reqwest = { version = "0.13", default-features = false, features = [
-    "rustls",
+    "rustls-no-provider",
     "json",
 ] }
 
