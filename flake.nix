@@ -6,9 +6,9 @@
   inputs.nixpkgs.url =
     "github:NixOS/nixpkgs/cfe2c7d5b5d3032862254e68c37a6576b633d632";
 
-  # Rust overlay as of 2025-11-24
+  # Rust overlay as of 2026-04-23
   inputs.rust-overlay.url =
-  "github:oxalica/rust-overlay/ab726555a9a72e6dc80649809147823a813fa95b";
+  "github:oxalica/rust-overlay/2d35c4358d7de3a0e606a6e8b27925d981c01cc3";
   inputs.rust-overlay.inputs.nixpkgs.follows = "nixpkgs";
 
   # Crane as of 2025-01-24
