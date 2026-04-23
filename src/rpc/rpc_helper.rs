@@ -241,11 +241,7 @@ impl RpcHelper {
 		)
 		.with_context(Context::current_with_span(span))
 		.await;
-		Ok(to
-			.iter()
-			.cloned()
-			.zip(resps.into_iter())
-			.collect::<Vec<_>>())
+		Ok(to.iter().cloned().zip(resps).collect::<Vec<_>>())
 	}
 
 	pub async fn broadcast<M, N, H, S>(

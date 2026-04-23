@@ -648,7 +648,7 @@ impl BlockStoreIterator {
 
 		let mut cum_cap = 0;
 		let mut todo = vec![];
-		for (dir, cap) in data_layout.data_dirs.iter().zip(dir_cap.into_iter()) {
+		for (dir, cap) in data_layout.data_dirs.iter().zip(dir_cap) {
 			let progress_min = (cum_cap * PROGRESS_FP) / sum_cap;
 			let progress_max = ((cum_cap + cap as u64) * PROGRESS_FP) / sum_cap;
 			cum_cap += cap as u64;

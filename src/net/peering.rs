@@ -313,10 +313,8 @@ impl PeeringManager {
 								to_ping.push(*id);
 							}
 						}
-						PeerConnState::Waiting(_, t) => {
-							if Instant::now() >= t {
-								to_retry.push(*id);
-							}
+						PeerConnState::Waiting(_, t) if Instant::now() >= t => {
+							to_retry.push(*id);
 						}
 						_ => (),
 					}

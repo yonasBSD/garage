@@ -473,12 +473,10 @@ where
 					))));
 				}
 			}
-			Poll::Ready(None) => {
-				if !self.length.contains(&self.read) {
-					return Poll::Ready(Some(Err(Error::bad_request(
-						"File size does not match policy",
-					))));
-				}
+			Poll::Ready(None) if !self.length.contains(&self.read) => {
+				return Poll::Ready(Some(Err(Error::bad_request(
+					"File size does not match policy",
+				))));
 			}
 			_ => {}
 		}
