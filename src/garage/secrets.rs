@@ -19,7 +19,12 @@ pub struct Secrets {
 
 	/// RPC secret network key, used to replace `rpc_secret` in config.toml when running the
 	/// daemon or doing admin operations
-	#[structopt(short = "s", long = "rpc-secret", env = "GARAGE_RPC_SECRET")]
+	#[structopt(
+		short = "s",
+		long = "rpc-secret",
+		env = "GARAGE_RPC_SECRET",
+		hide_env_values = true
+	)]
 	pub rpc_secret: Option<String>,
 
 	/// RPC secret network key, used to replace `rpc_secret` in config.toml and rpc-secret
@@ -29,7 +34,11 @@ pub struct Secrets {
 
 	/// Admin API authentication token, replaces `admin.admin_token` in config.toml when
 	/// running the Garage daemon
-	#[structopt(long = "admin-token", env = "GARAGE_ADMIN_TOKEN")]
+	#[structopt(
+		long = "admin-token",
+		env = "GARAGE_ADMIN_TOKEN",
+		hide_env_values = true
+	)]
 	pub admin_token: Option<String>,
 
 	/// Admin API authentication token file path, replaces `admin.admin_token` in config.toml
@@ -39,7 +48,11 @@ pub struct Secrets {
 
 	/// Metrics API authentication token, replaces `admin.metrics_token` in config.toml when
 	/// running the Garage daemon
-	#[structopt(long = "metrics-token", env = "GARAGE_METRICS_TOKEN")]
+	#[structopt(
+		long = "metrics-token",
+		env = "GARAGE_METRICS_TOKEN",
+		hide_env_values = true
+	)]
 	pub metrics_token: Option<String>,
 
 	/// Metrics API authentication token file path, replaces `admin.metrics_token` in config.toml
