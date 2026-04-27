@@ -291,6 +291,7 @@ mod v010 {
 
 	/// Checksum value for x-amz-checksum-algorithm
 	#[derive(PartialEq, Eq, PartialOrd, Ord, Clone, Copy, Debug, Serialize, Deserialize)]
+	#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 	pub enum ChecksumValue {
 		Crc32(#[serde(with = "serde_bytes")] [u8; 4]),
 		Crc32c(#[serde(with = "serde_bytes")] [u8; 4]),
