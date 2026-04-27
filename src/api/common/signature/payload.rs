@@ -357,7 +357,13 @@ pub fn canonical_request(
 		items.join("&")
 	};
 
-	// Canonical header string calculated from signed headers
+	// Canonical header string calculated from signed headers.
+	//
+	// Per the SigV4 spec, signed header values must have sequential
+	// internal whitespace collapsed to a single space, in addition to
+	// being trimmed. AWS SDKs do this before computing the signature
+	// but transmit the raw value on the wire, so we must match.
+	// -> https://docs.aws.amazon.com/IAM/latest/UserGuide/create-signed-request.html
 	let canonical_header_string = signed_headers
 		.iter()
 		.map(|name| {
@@ -372,7 +378,11 @@ pub fn canonical_request(
 				built_string.push(',');
 				built_string.push_str(extend_string);
 			}
-			Ok(format!("{}:{}", name.as_str(), built_string.trim()))
+			let normalized = built_string
+				.split_whitespace()
+				.collect::<Vec<_>>()
+				.join(" ");
+			Ok(format!("{}:{}", name.as_str(), normalized))
 		})
 		.collect::<Result<Vec<String>, Error>>()?
 		.join("\n");
