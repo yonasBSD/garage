@@ -18,3 +18,9 @@ path = "../src/table"
 path = "../src/model"
 features = ["arbitrary"]
 
+[[bin]]
+name = "version_crdt"
+path = "fuzz_targets/version_crdt.rs"
+test = false
+doc = false
+bench = false
