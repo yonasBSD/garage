@@ -6,13 +6,10 @@ use libfuzzer_sys::fuzz_target;
 
 /// Build a MultipartUpload from an arbitrary deleted flag and parts list, using a fixed
 /// upload_id/bucket_id/key so that CRDT state can be compared across merge results.
-/// Duplicate part keys are dropped before construction.
 /// `MpuPart.version` is fixed to a constant since it is identity data, not CRDT state:
 /// two replicas of the same part (same MpuPartKey) always share the same version UUID.
 /// If deleted, parts are cleared to ensure a valid initial CRDT state.
-fn make_mpu(deleted: bool, mut parts: Vec<(MpuPartKey, MpuPart)>) -> MultipartUpload {
-	parts.sort_by_key(|(k, _)| *k);
-	parts.dedup_by_key(|(k, _)| *k);
+fn make_mpu(deleted: bool, parts: Vec<(MpuPartKey, MpuPart)>) -> MultipartUpload {
 	let mut mpu = MultipartUpload::new(
 		[0u8; 32].into(),
 		0,

@@ -8,8 +8,8 @@ edition = "2018"
 cargo-fuzz = true
 
 [dependencies]
-arbitrary = { version = "1.4.2", features = ["derive"] }
-libfuzzer-sys = "0.4"
+arbitrary = { workspace = true, features = ["derive"]}
+libfuzzer-sys = { workspace = true }
 
 [dependencies.garage_table]
 path = "../src/table"

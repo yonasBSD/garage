@@ -93,7 +93,6 @@ pub(crate) mod v09 {
 	}
 
 	#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
-	#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 	pub enum VersionBacklink {
 		Object {
 			/// Bucket in which the related object is stored
