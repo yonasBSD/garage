@@ -159,7 +159,8 @@ impl ApiHandler for S3ApiServer {
 			return Err(Error::forbidden("Operation is not allowed for this key."));
 		}
 
-		let matching_cors_rule = find_matching_cors_rule(&bucket_params, &req)?.cloned();
+		let matching_cors = find_matching_cors_rule(&bucket_params, &req)?
+			.map(|(rule, origin)| (rule.clone(), origin.to_string()));
 
 		let ctx = ReqCtx {
 			garage,
@@ -334,8 +335,8 @@ impl ApiHandler for S3ApiServer {
 		// If request was a success and we have a CORS rule that applies to it,
 		// add the corresponding CORS headers to the response
 		let mut resp_ok = resp?;
-		if let Some(rule) = matching_cors_rule {
-			add_cors_headers(&mut resp_ok, &rule)
+		if let Some((rule, origin)) = matching_cors {
+			add_cors_headers(&mut resp_ok, &rule, &origin)
 				.ok_or_internal_error("Invalid bucket CORS configuration")?;
 		}
 

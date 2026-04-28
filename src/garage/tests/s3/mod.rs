@@ -1,3 +1,4 @@
+mod cors;
 mod list;
 mod multipart;
 mod objects;

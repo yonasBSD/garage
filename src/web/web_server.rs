@@ -405,8 +405,8 @@ impl WebServer {
 			}
 			Ok(mut resp) => {
 				// Maybe add CORS headers
-				if let Some(rule) = find_matching_cors_rule(&bucket_params, req)? {
-					add_cors_headers(&mut resp, rule)
+				if let Some((rule, origin)) = find_matching_cors_rule(&bucket_params, req)? {
+					add_cors_headers(&mut resp, rule, origin)
 						.ok_or_internal_error("Invalid bucket CORS configuration")?;
 				}
 				Ok(resp)

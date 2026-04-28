@@ -121,7 +121,7 @@ pub async fn handle_post_object(
 		&bucket_params,
 		&Request::from_parts(head.clone(), empty_body::<Infallible>()),
 	)?
-	.cloned();
+	.map(|(rule, origin)| (rule.clone(), origin.to_string()));
 
 	let decoded_policy = BASE64_STANDARD
 		.decode(policy)
@@ -351,8 +351,8 @@ pub async fn handle_post_object(
 		}
 	};
 
-	if let Some(rule) = matching_cors_rule {
-		add_cors_headers(&mut resp, &rule)
+	if let Some((rule, origin)) = matching_cors_rule {
+		add_cors_headers(&mut resp, &rule, &origin)
 			.ok_or_internal_error("Invalid bucket CORS configuration")?;
 	}
 
