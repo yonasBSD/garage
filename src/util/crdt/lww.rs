@@ -84,6 +84,11 @@ where
 		self.v = new_value;
 	}
 
+	pub fn update2(&mut self, f: impl FnOnce(&mut T), time: u64) {
+		self.ts = std::cmp::max(self.ts + 1, time);
+		f(&mut self.v)
+	}
+
 	/// Get the timestamp currently associated with the value
 	pub fn timestamp(&self) -> u64 {
 		self.ts

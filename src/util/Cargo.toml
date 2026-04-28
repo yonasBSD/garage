@@ -17,6 +17,7 @@ path = "lib.rs"
 garage_db.workspace = true
 garage_net.workspace = true
 
+arbitrary = { optional = true, workspace = true }
 arc-swap.workspace = true
 async-trait.workspace = true
 blake2.workspace = true
@@ -52,6 +53,7 @@ mktemp.workspace = true
 
 [features]
 k2v = []
+arbitrary = ["dep:arbitrary"]
 
 [lints]
 workspace = true

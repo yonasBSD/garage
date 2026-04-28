@@ -6,6 +6,7 @@ use std::fmt;
 
 /// An array of 32 bytes
 #[derive(Default, Clone, Hash, PartialEq, Eq, PartialOrd, Ord, Copy)]
+#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 pub struct FixedBytes32([u8; 32]);
 
 impl From<[u8; 32]> for FixedBytes32 {

@@ -146,6 +146,15 @@ source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "7f202df86484c868dbad7eaa557ef785d5c66295e41b460ef922eca0723b842c"
 
 [[package]]
+name = "arbitrary"
+version = "1.4.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "c3d036a3c4ab069c7b410a2ce876bd74808d2d0888a82667669f8e783a898bf1"
+dependencies = [
+ "derive_arbitrary",
+]
+
+[[package]]
 name = "arc-swap"
 version = "1.9.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1117,6 +1126,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "derive_arbitrary"
+version = "1.4.2"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "1e567bd82dcff979e4b03460c307b3cdc9e96fde3d73bed1496d2bc75d9dd62a"
+dependencies = [
+ "proc-macro2",
+ "quote",
+ "syn 2.0.114",
+]
+
+[[package]]
 name = "derive_more"
 version = "2.1.1"
 source = "registry+https://github.com/rust-lang/crates.io-index"
@@ -1524,6 +1544,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "garage-fuzz"
+version = "0.0.0"
+dependencies = [
+ "arbitrary",
+ "garage_model",
+ "garage_table",
+ "libfuzzer-sys",
+]
+
+[[package]]
 name = "garage_api_admin"
 version = "2.3.0"
 dependencies = [
@@ -1702,6 +1732,7 @@ dependencies = [
 name = "garage_model"
 version = "2.3.0"
 dependencies = [
+ "arbitrary",
  "argon2",
  "async-trait",
  "base64 0.22.1",
@@ -1810,6 +1841,7 @@ dependencies = [
 name = "garage_util"
 version = "2.3.0"
 dependencies = [
+ "arbitrary",
  "arc-swap",
  "async-trait",
  "blake2",
@@ -2933,6 +2965,16 @@ name = "libc"
 version = "0.2.185"
 source = "registry+https://github.com/rust-lang/crates.io-index"
 checksum = "52ff2c0fe9bc6cb6b14a0592c2ff4fa9ceb83eea9db979b0487cd054946a2b8f"
+
+[[package]]
+name = "libfuzzer-sys"
+version = "0.4.12"
+source = "registry+https://github.com/rust-lang/crates.io-index"
+checksum = "f12a681b7dd8ce12bff52488013ba614b869148d54dd79836ab85aafdd53f08d"
+dependencies = [
+ "arbitrary",
+ "cc",
+]
 
 [[package]]
 name = "libsodium-sys"
