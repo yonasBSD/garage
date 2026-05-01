@@ -224,7 +224,13 @@ impl BlockManager {
 				|p, tranquility| p.set_with(|x| x.tranquility = tranquility),
 			);
 			vars.register_ro(&self.scrub_persister, "scrub-last-completed", |p| {
-				p.get_with(|x| msec_to_rfc3339(x.time_last_complete_scrub))
+				p.get_with(|x| {
+					if x.time_last_complete_scrub == 0 {
+						"never".to_string()
+					} else {
+						msec_to_rfc3339(x.time_last_complete_scrub)
+					}
+				})
 			});
 			vars.register_ro(&self.scrub_persister, "scrub-next-run", |p| {
 				p.get_with(|x| msec_to_rfc3339(x.time_next_run_scrub))
