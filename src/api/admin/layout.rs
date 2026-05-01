@@ -53,7 +53,7 @@ fn format_cluster_layout(layout: &layout::LayoutHistory) -> GetClusterLayoutResp
 		.roles
 		.items()
 		.iter()
-		.filter(|(k, _, v)| current.roles.get(k) != Some(v))
+		.filter(|(k, _, v)| current.roles.get(k).and_then(|vv| vv.0.as_ref()) != v.0.as_ref())
 		.map(|(k, _, v)| match &v.0 {
 			None => NodeRoleChange {
 				id: hex::encode(k),
