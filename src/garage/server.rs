@@ -228,10 +228,10 @@ async fn initial_config(garage: &Arc<Garage>, opt: ServerOpt) -> Result<(), Erro
 				})),
 			);
 
-			let (layout, msg) = layout.apply_staged_changes(1)?;
+			let (layout, stat) = layout.apply_staged_changes(1)?;
 			info!(
 				"Created initial layout for single-node configuration:\n{}",
-				msg.join("\n")
+				stat.to_message().join("\n")
 			);
 
 			garage
