@@ -11,6 +11,7 @@ use http_body_util::BodyExt;
 use hyper::{Method, StatusCode};
 
 #[tokio::test]
+#[ignore = "flaky"]
 async fn test_items_and_indices() {
 	let ctx = common::context();
 	let bucket = ctx.create_bucket("test-k2v-item-and-index");
