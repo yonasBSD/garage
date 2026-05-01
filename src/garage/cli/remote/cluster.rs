@@ -9,37 +9,29 @@ use crate::cli::remote::*;
 use crate::cli::structs::*;
 
 impl Cli {
-	pub async fn cmd_health_check(&self, quiet: bool) -> Result<(), Error> {
-		let status = self.api_request(GetClusterStatusRequest).await?;
+	pub async fn cmd_health(&self, quiet: bool) -> Result<(), Error> {
+		let health = self.api_request(GetClusterHealthRequest).await?;
 
-		let mut result = Err(Error::Message(
-			"Failed to find node id in configuration".into(),
-		));
-
-		if let Some(config) = &self.config {
-			let local_node_id = hex::encode(
-					garage_rpc::system::read_node_id(&config.metadata_dir)
-						.err_context(crate::cli::local::init::READ_KEY_ERROR)?
-				).to_string();
-			result = Err(Error::Message("Cluster is not healthy".into()));
-
-			for node in status.nodes.iter() {
-				if node.id == local_node_id {
-					result = Ok(())
-				}
-			}
-			if !quiet {
-				match result {
-					Ok(_) => {
-						println!("Healthy");
-					}
-					Err(_) => {
-						println!("Not healthy");
-					}
-				}
-			}
+		if !quiet {
+			let table = vec![
+				format!("Cluster health:\t{}", health.status.to_uppercase()),
+				format!("Known nodes:\t{}", health.known_nodes),
+				format!("Connected nodes:\t{}", health.connected_nodes),
+				format!("Storage nodes:\t{}", health.storage_nodes),
+				format!("Storage nodes up:\t{}", health.storage_nodes_up),
+				format!("Partitions:\t{}", health.partitions),
+				format!("Partitions with quorum:\t{}", health.partitions_quorum),
+				format!("Fully healthy partitions:\t{}", health.partitions_all_ok),
+			];
+			format_table(table);
 		}
-		result
+
+		match health.status.as_str() {
+			"unavailable" => Err(Error::Message(
+				"Cluster is currently unavailable".to_string(),
+			)),
+			_ => Ok(()),
+		}
 	}
 
 	pub async fn cmd_status(&self) -> Result<(), Error> {

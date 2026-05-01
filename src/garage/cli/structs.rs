@@ -10,13 +10,13 @@ pub enum Command {
 	#[structopt(name = "server", version = garage_version())]
 	Server(ServerOpt),
 
+	/// Check the cluster health and set the exit code to 1 if it is unavailable
+	#[structopt(name = "health", version = garage_version())]
+	Health(HealthOpt),
+
 	/// Get network status
 	#[structopt(name = "status", version = garage_version())]
 	Status,
-
-	/// Check the local node health and set the exit code to 1 if it is unhealthy.
-	#[structopt(name = "health-check", version = garage_version())]
-	HealthCheck(HealthCheckOpt),
 
 	/// Operations on individual Garage nodes
 	#[structopt(name = "node", version = garage_version())]
@@ -108,11 +108,11 @@ pub struct ServerOpt {
 }
 
 // -------------------------
-// ---- garage health-check ... ----
+// ---- garage health ----
 // -------------------------
 
 #[derive(StructOpt, Debug)]
-pub struct HealthCheckOpt {
+pub struct HealthOpt {
 	/// Do not print healthyness to stdout
 	#[structopt(short = "q", long = "quiet")]
 	pub(crate) quiet: bool,
