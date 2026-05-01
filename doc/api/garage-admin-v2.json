@@ -1797,6 +1797,17 @@
               "type": "string"
             },
             "description": "Plain-text information about the layout computation\n(do not try to parse this)"
+          },
+          "statistics": {
+            "oneOf": [
+              {
+                "type": "null"
+              },
+              {
+                "$ref": "#/components/schemas/ComputationStat",
+                "description": "Structured statistics about the layout computation"
+              }
+            ]
           }
         }
       },
@@ -2118,6 +2129,180 @@
           "Draining",
           "Historical"
         ]
+      },
+      "ComputationStat": {
+        "type": "object",
+        "required": [
+          "replicationFactor",
+          "effectiveZoneRedundancy",
+          "partitionSize",
+          "lowPartitionSize",
+          "usableCapacity",
+          "totalCapacity",
+          "effectiveCapacity",
+          "lowUsableCapacity",
+          "zones"
+        ],
+        "properties": {
+          "effectiveCapacity": {
+            "type": "integer",
+            "format": "int64",
+            "description": "The final effective capacity of the cluster, accounting for replication",
+            "minimum": 0
+          },
+          "effectiveZoneRedundancy": {
+            "type": "integer",
+            "description": "The zone redundancy factor achieved by this layout",
+            "minimum": 0
+          },
+          "lowPartitionSize": {
+            "type": "boolean",
+            "description": "Warning flag indicating when partitions are very small"
+          },
+          "lowUsableCapacity": {
+            "type": "boolean",
+            "description": "Warning flag indicating that the raw node capacity could not be used\neffectively"
+          },
+          "partitionSize": {
+            "type": "integer",
+            "format": "int64",
+            "description": "The size of a partition, in bytes",
+            "minimum": 0
+          },
+          "previousPartitionSize": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "format": "int64",
+            "description": "The size of a partition, in bytes, in the previous layout",
+            "minimum": 0
+          },
+          "replicationFactor": {
+            "type": "integer",
+            "description": "The cluster's replication factor",
+            "minimum": 0
+          },
+          "totalCapacity": {
+            "type": "integer",
+            "format": "int64",
+            "description": "The total raw capacity of nodes",
+            "minimum": 0
+          },
+          "totalMovedPartitions": {
+            "type": [
+              "integer",
+              "null"
+            ],
+            "description": "The total number of partitions that will be moved to a new storage node",
+            "minimum": 0
+          },
+          "usableCapacity": {
+            "type": "integer",
+            "format": "int64",
+            "description": "The portion of total raw node capacity that is used by partitions",
+            "minimum": 0
+          },
+          "zones": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ComputationStatZone"
+            },
+            "description": "Per-zone storage statistics"
+          }
+        }
+      },
+      "ComputationStatNode": {
+        "type": "object",
+        "required": [
+          "id",
+          "tags",
+          "storedPartitions",
+          "newPartitions",
+          "totalCapacity",
+          "usableCapacity"
+        ],
+        "properties": {
+          "id": {
+            "type": "string",
+            "description": "The node's ID"
+          },
+          "newPartitions": {
+            "type": "integer",
+            "description": "The number of partitions that are newly replicated on this node",
+            "minimum": 0
+          },
+          "storedPartitions": {
+            "type": "integer",
+            "description": "The number of partitions that are replicated on this node",
+            "minimum": 0
+          },
+          "tags": {
+            "type": "array",
+            "items": {
+              "type": "string"
+            },
+            "description": "The node's tags as defined in the layout"
+          },
+          "totalCapacity": {
+            "type": "integer",
+            "format": "int64",
+            "description": "The node's raw capacity",
+            "minimum": 0
+          },
+          "usableCapacity": {
+            "type": "integer",
+            "format": "int64",
+            "description": "The portion of the node's raw capacity that is used by partitions it stores",
+            "minimum": 0
+          }
+        }
+      },
+      "ComputationStatZone": {
+        "type": "object",
+        "required": [
+          "name",
+          "nodes",
+          "totalReplicatedPartitions",
+          "uniquePartitions",
+          "totalCapacity",
+          "usableCapacity"
+        ],
+        "properties": {
+          "name": {
+            "type": "string",
+            "description": "The name of the zone"
+          },
+          "nodes": {
+            "type": "array",
+            "items": {
+              "$ref": "#/components/schemas/ComputationStatNode"
+            },
+            "description": "Per-node storage statistics for nodes in this zone"
+          },
+          "totalCapacity": {
+            "type": "integer",
+            "format": "int64",
+            "description": "The total raw capacity of nodes in this zone",
+            "minimum": 0
+          },
+          "totalReplicatedPartitions": {
+            "type": "integer",
+            "description": "The total number of partition replicas in this zone",
+            "minimum": 0
+          },
+          "uniquePartitions": {
+            "type": "integer",
+            "description": "The number of unique partitions that have at least one replica in this zone",
+            "minimum": 0
+          },
+          "usableCapacity": {
+            "type": "integer",
+            "format": "int64",
+            "description": "The used portion of the raw capacity of nodes in this zones",
+            "minimum": 0
+          }
+        }
       },
       "ConnectClusterNodesRequest": {
         "type": "array",
@@ -4221,6 +4406,17 @@
               "newLayout": {
                 "$ref": "#/components/schemas/GetClusterLayoutResponse",
                 "description": "Details about the new cluster layout"
+              },
+              "statistics": {
+                "oneOf": [
+                  {
+                    "type": "null"
+                  },
+                  {
+                    "$ref": "#/components/schemas/ComputationStat",
+                    "description": "Structured statistics about the layout computation"
+                  }
+                ]
               }
             }
           }

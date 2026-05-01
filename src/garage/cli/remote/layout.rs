@@ -40,6 +40,7 @@ impl Cli {
 				PreviewClusterLayoutChangesResponse::Success {
 					message,
 					new_layout,
+					..
 				} => {
 					println!();
 					println!("==== NEW CLUSTER LAYOUT AFTER APPLYING CHANGES ====");

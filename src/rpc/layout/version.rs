@@ -4,6 +4,8 @@ use std::convert::TryInto;
 
 use bytesize::ByteSize;
 use itertools::Itertools;
+use serde::{Deserialize, Serialize};
+use utoipa::ToSchema;
 
 use garage_util::crdt::{Crdt, LwwMap};
 use garage_util::data::*;
@@ -12,9 +14,6 @@ use garage_util::error::*;
 use super::graph_algo::*;
 use super::*;
 use crate::replication_mode::*;
-
-// The Message type will be used to collect information on the algorithm.
-pub type Message = Vec<String>;
 
 impl LayoutVersion {
 	pub fn new(replication_factor: ReplicationFactor) -> Self {
@@ -291,16 +290,16 @@ impl LayoutVersion {
 	pub(crate) fn calculate_next_version(
 		mut self,
 		staging: &LayoutStaging,
-	) -> Result<(Self, Message), Error> {
+	) -> Result<(Self, ComputationStat), Error> {
 		self.version += 1;
 
 		self.roles.merge(&staging.roles);
 		self.roles.retain(|(_, _, v)| v.0.is_some());
 		self.parameters = *staging.parameters.get();
 
-		let msg = self.calculate_partition_assignment()?;
+		let stat = self.calculate_partition_assignment()?;
 
-		Ok((self, msg))
+		Ok((self, stat))
 	}
 
 	/// This function calculates a new partition-to-node assignment.
@@ -312,21 +311,15 @@ impl LayoutVersion {
 	/// data to be moved.
 	/// Staged role changes must be merged with nodes roles before calling this function,
 	/// hence it must only be called from `apply_staged_changes()` and hence is not public.
-	fn calculate_partition_assignment(&mut self) -> Result<Message, Error> {
+	fn calculate_partition_assignment(&mut self) -> Result<ComputationStat, Error> {
 		// We update the node ids, since the node role list might have changed with the
 		// changes in the layout. We retrieve the old_assignment reframed with new ids
 		let old_assignment_opt = self.update_node_id_vec()?;
 
 		let zone_redundancy = self.effective_zone_redundancy();
 
-		let mut msg = Message::new();
-		msg.push("==== COMPUTATION OF A NEW PARTITION ASSIGNATION ====".into());
-		msg.push("".into());
-		msg.push(format!(
-			"Partitions are \
-        replicated {} times on at least {} distinct zones.",
-			self.replication_factor, zone_redundancy
-		));
+		let stat_replication_factor = self.replication_factor;
+		let stat_effective_zone_redundancy = zone_redundancy;
 
 		// We generate for once numerical ids for the zones of non gateway nodes,
 		// to use them as indices in the flow graphs.
@@ -355,28 +348,17 @@ impl LayoutVersion {
 		// optimality.
 		let partition_size = self.compute_optimal_partition_size(&zone_to_id, zone_redundancy)?;
 
-		msg.push("".into());
-		if old_assignment_opt.is_some() {
-			msg.push(format!(
-				"Optimal partition size:                     {} ({} in previous layout)",
-				ByteSize::b(partition_size).display().iec(),
-				ByteSize::b(self.partition_size).display().iec()
-			));
+		let stat_partition_size = partition_size;
+		let stat_previous_partition_size = if old_assignment_opt.is_some() {
+			Some(self.partition_size)
 		} else {
-			msg.push(format!(
-				"Optimal partition size:                     {}",
-				ByteSize::b(partition_size).display().iec()
-			));
-		}
+			None
+		};
+
 		// We write the partition size.
 		self.partition_size = partition_size;
 
-		if partition_size < 100 {
-			msg.push(
-				"WARNING: The partition size is low (< 100), make sure the capacities of your nodes are correct and are of at least a few MB"
-					.into(),
-			);
-		}
+		let stat_low_partition_size = partition_size < 100;
 
 		// We compute a first flow/assignment that is heuristically close to the previous
 		// assignment
@@ -388,18 +370,28 @@ impl LayoutVersion {
 		}
 
 		// We display statistics of the computation
-		msg.extend(self.output_stat(&gflow, &old_assignment_opt, &zone_to_id, &id_to_zone)?);
+		let stat = self.output_stat(
+			&gflow,
+			&old_assignment_opt,
+			&zone_to_id,
+			&id_to_zone,
+			stat_replication_factor,
+			stat_effective_zone_redundancy,
+			stat_partition_size,
+			stat_previous_partition_size,
+			stat_low_partition_size,
+		)?;
 
 		// We update the layout structure
 		self.update_ring_from_flow(id_to_zone.len(), &gflow)?;
 
 		if let Err(e) = self.check() {
 			return Err(Error::Message(
-				format!("Layout check returned an error: {}\nOriginal result of computation: <<<<\n{}\n>>>>", e, msg.join("\n"))
+				format!("Layout check returned an error: {}\nOriginal result of computation: <<<<\n{}\n>>>>", e, stat.to_message().join("\n"))
 			));
 		}
 
-		Ok(msg)
+		Ok(stat)
 	}
 
 	/// The `LwwMap` of node roles might have changed. This function updates the `node_id_vec`
@@ -706,47 +698,26 @@ impl LayoutVersion {
 
 	/// This function returns a message summing up the partition repartition of the new
 	/// layout, and other statistics of the partition assignment computation.
+	#[allow(clippy::too_many_arguments)]
 	fn output_stat(
 		&self,
 		gflow: &Graph<FlowEdge>,
 		prev_assign_opt: &Option<Vec<Vec<usize>>>,
 		zone_to_id: &HashMap<String, usize>,
 		id_to_zone: &[String],
-	) -> Result<Message, Error> {
-		let mut msg = Message::new();
+		replication_factor: usize,
+		effective_zone_redundancy: usize,
+		partition_size: u64,
+		previous_partition_size: Option<u64>,
+		low_partition_size: bool,
+	) -> Result<ComputationStat, Error> {
+		let usable_capacity =
+			self.partition_size * NB_PARTITIONS as u64 * self.replication_factor as u64;
+		let total_capacity = self.get_total_capacity();
+		let effective_capacity = usable_capacity / replication_factor as u64;
 
-		let used_cap = self.partition_size * NB_PARTITIONS as u64 * self.replication_factor as u64;
-		let total_cap = self.get_total_capacity();
-		let percent_cap = 100.0 * (used_cap as f32) / (total_cap as f32);
-		msg.push(format!(
-			"Usable capacity / total cluster capacity:   {} / {} ({:.1} %)",
-			ByteSize::b(used_cap).display().iec(),
-			ByteSize::b(total_cap).display().iec(),
-			percent_cap
-		));
-		msg.push(format!(
-			"Effective capacity (replication factor {}):  {}",
-			self.replication_factor,
-			ByteSize::b(used_cap / self.replication_factor as u64)
-				.display()
-				.iec()
-		));
-		if percent_cap < 80. {
-			msg.push("".into());
-			msg.push(
-				"If the percentage is too low, it might be that the \
-            cluster topology and redundancy constraints are forcing the use of nodes/zones with small \
-            storage capacities."
-					.into(),
-			);
-			msg.push(
-				"You might want to move storage capacity between zones or relax the redundancy constraint."
-					.into(),
-			);
-			msg.push(
-				"See the detailed statistics below and look for saturated nodes/zones.".into(),
-			);
-		}
+		let percent_cap = 100.0 * (usable_capacity as f32) / (total_capacity as f32);
+		let low_usable_capacity = percent_cap < 80.;
 
 		// We define and fill in the following tables
 		let storing_nodes = self.nongateway_nodes();
@@ -795,18 +766,13 @@ impl LayoutVersion {
 
 		// We display the statistics
 
-		msg.push("".into());
-		if prev_assign_opt.is_some() {
-			let total_new_partitions: usize = new_partitions.iter().sum();
-			msg.push(format!(
-				"A total of {} new copies of partitions need to be \
-                             transferred.",
-				total_new_partitions
-			));
-			msg.push("".into());
-		}
+		let total_moved_partitions = if prev_assign_opt.is_some() {
+			Some(new_partitions.iter().sum())
+		} else {
+			None
+		};
 
-		let mut table = vec![];
+		let mut zones = vec![];
 		for z in 0..id_to_zone.len() {
 			let mut nodes_of_z = Vec::<usize>::new();
 			for n in 0..storing_nodes.len() {
@@ -814,49 +780,224 @@ impl LayoutVersion {
 					nodes_of_z.push(n);
 				}
 			}
-			let replicated_partitions: usize =
+			let replicated_partitions_z: usize =
 				nodes_of_z.iter().map(|n| stored_partitions[*n]).sum();
-			table.push(format!(
-				"{}\tTags\tPartitions\tCapacity\tUsable capacity",
-				id_to_zone[z]
-			));
 
-			let available_cap_z: u64 = self.partition_size * replicated_partitions as u64;
+			let available_cap_z: u64 = self.partition_size * replicated_partitions_z as u64;
 			let mut total_cap_z = 0;
 			for n in nodes_of_z.iter() {
 				total_cap_z += self.expect_get_node_capacity(&self.node_id_vec[*n]);
 			}
-			let percent_cap_z = 100.0 * (available_cap_z as f32) / (total_cap_z as f32);
 
+			let mut nodes = vec![];
 			for n in nodes_of_z.iter() {
 				let available_cap_n = stored_partitions[*n] as u64 * self.partition_size;
 				let total_cap_n = self.expect_get_node_capacity(&self.node_id_vec[*n]);
-				let tags_n = (self.node_role(&self.node_id_vec[*n]).ok_or("<??>"))?.tags_string();
+				let tags_n = (self.node_role(&self.node_id_vec[*n]).ok_or("<??>"))?
+					.tags
+					.clone();
+				nodes.push(ComputationStatNode {
+					id: hex::encode(self.node_id_vec[*n]),
+					tags: tags_n,
+					stored_partitions: stored_partitions[*n],
+					new_partitions: new_partitions[*n],
+					total_capacity: total_cap_n,
+					usable_capacity: available_cap_n,
+				});
+			}
+
+			zones.push(ComputationStatZone {
+				name: id_to_zone[z].to_string(),
+				nodes,
+				total_replicated_partitions: replicated_partitions_z,
+				unique_partitions: stored_partitions_zone[z],
+				total_capacity: total_cap_z,
+				usable_capacity: available_cap_z,
+			});
+		}
+
+		Ok(ComputationStat {
+			replication_factor,
+			effective_zone_redundancy,
+			partition_size,
+			previous_partition_size,
+			low_partition_size,
+			usable_capacity,
+			total_capacity,
+			effective_capacity,
+			low_usable_capacity,
+			total_moved_partitions,
+			zones,
+		})
+	}
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ComputationStat {
+	/// The cluster's replication factor
+	pub replication_factor: usize,
+	/// The zone redundancy factor achieved by this layout
+	pub effective_zone_redundancy: usize,
+	/// The size of a partition, in bytes
+	pub partition_size: u64,
+	/// The size of a partition, in bytes, in the previous layout
+	pub previous_partition_size: Option<u64>,
+	/// Warning flag indicating when partitions are very small
+	pub low_partition_size: bool,
+	/// The portion of total raw node capacity that is used by partitions
+	pub usable_capacity: u64,
+	/// The total raw capacity of nodes
+	pub total_capacity: u64,
+	/// The final effective capacity of the cluster, accounting for replication
+	pub effective_capacity: u64,
+	/// Warning flag indicating that the raw node capacity could not be used
+	/// effectively
+	pub low_usable_capacity: bool,
+	/// The total number of partitions that will be moved to a new storage node
+	pub total_moved_partitions: Option<usize>,
+	/// Per-zone storage statistics
+	pub zones: Vec<ComputationStatZone>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ComputationStatZone {
+	/// The name of the zone
+	pub name: String,
+	/// Per-node storage statistics for nodes in this zone
+	pub nodes: Vec<ComputationStatNode>,
+	/// The total number of partition replicas in this zone
+	pub total_replicated_partitions: usize,
+	/// The number of unique partitions that have at least one replica in this zone
+	pub unique_partitions: usize,
+	/// The total raw capacity of nodes in this zone
+	pub total_capacity: u64,
+	/// The used portion of the raw capacity of nodes in this zones
+	pub usable_capacity: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize, ToSchema)]
+#[serde(rename_all = "camelCase")]
+pub struct ComputationStatNode {
+	/// The node's ID
+	pub id: String,
+	/// The node's tags as defined in the layout
+	pub tags: Vec<String>,
+	/// The number of partitions that are replicated on this node
+	pub stored_partitions: usize,
+	/// The number of partitions that are newly replicated on this node
+	pub new_partitions: usize,
+	/// The node's raw capacity
+	pub total_capacity: u64,
+	/// The portion of the node's raw capacity that is used by partitions it stores
+	pub usable_capacity: u64,
+}
+
+impl ComputationStat {
+	pub fn to_message(&self) -> Vec<String> {
+		let mut msg = Vec::new();
+		msg.push("==== COMPUTATION OF A NEW PARTITION ASSIGNATION ====".into());
+		msg.push("".into());
+		msg.push(format!(
+			"Partitions are \
+        replicated {} times on at least {} distinct zones.",
+			self.replication_factor, self.effective_zone_redundancy
+		));
+
+		msg.push("".into());
+		if let Some(prev) = self.previous_partition_size {
+			msg.push(format!(
+				"Optimal partition size:                     {} ({} in previous layout)",
+				ByteSize::b(self.partition_size).display().iec(),
+				ByteSize::b(prev).display().iec()
+			));
+		} else {
+			msg.push(format!(
+				"Optimal partition size:                     {}",
+				ByteSize::b(self.partition_size).display().iec()
+			));
+		}
+
+		if self.low_partition_size {
+			msg.push(
+				"WARNING: The partition size is low (< 100), make sure the capacities of your nodes are correct and are of at least a few MB"
+					.into(),
+			);
+		}
+
+		let percent_cap = 100.0 * (self.usable_capacity as f32) / (self.total_capacity as f32);
+		msg.push(format!(
+			"Usable capacity / total cluster capacity:   {} / {} ({:.1} %)",
+			ByteSize::b(self.usable_capacity).display().iec(),
+			ByteSize::b(self.total_capacity).display().iec(),
+			percent_cap
+		));
+		msg.push(format!(
+			"Effective capacity (replication factor {}):  {}",
+			self.replication_factor,
+			ByteSize::b(self.effective_capacity).display().iec()
+		));
+
+		if self.low_usable_capacity {
+			msg.push("".into());
+			msg.push(
+				"If the percentage is too low, it might be that the \
+            cluster topology and redundancy constraints are forcing the use of nodes/zones with small \
+            storage capacities."
+					.into(),
+			);
+			msg.push(
+				"You might want to move storage capacity between zones or relax the redundancy constraint."
+					.into(),
+			);
+			msg.push(
+				"See the detailed statistics below and look for saturated nodes/zones.".into(),
+			);
+		}
+
+		msg.push("".into());
+		if let Some(tmp) = self.total_moved_partitions {
+			msg.push(format!(
+				"A total of {} new copies of partitions need to be \
+                             transferred.",
+				tmp
+			));
+			msg.push("".into());
+		}
+
+		let mut table = vec![];
+		for z in self.zones.iter() {
+			table.push(format!(
+				"{}\tTags\tPartitions\tCapacity\tUsable capacity",
+				z.name
+			));
+
+			for n in z.nodes.iter() {
 				table.push(format!(
-					"  {:?}\t[{}]\t{} ({} new)\t{}\t{} ({:.1}%)",
-					self.node_id_vec[*n],
-					tags_n,
-					stored_partitions[*n],
-					new_partitions[*n],
-					ByteSize::b(total_cap_n).display().iec(),
-					ByteSize::b(available_cap_n).display().iec(),
-					(available_cap_n as f32) / (total_cap_n as f32) * 100.0,
+					"  {:.16}\t[{}]\t{} ({} new)\t{}\t{} ({:.1}%)",
+					n.id,
+					n.tags.join(","),
+					n.stored_partitions,
+					n.new_partitions,
+					ByteSize::b(n.total_capacity).display().iec(),
+					ByteSize::b(n.usable_capacity).display().iec(),
+					(n.usable_capacity as f32) / (n.total_capacity as f32) * 100.0,
 				));
 			}
 
 			table.push(format!(
 				"  TOTAL\t\t{} ({} unique)\t{}\t{} ({:.1}%)",
-				replicated_partitions,
-				stored_partitions_zone[z],
-				//new_partitions_zone[z],
-				ByteSize::b(total_cap_z).display().iec(),
-				ByteSize::b(available_cap_z).display().iec(),
-				percent_cap_z
+				z.total_replicated_partitions,
+				z.unique_partitions,
+				ByteSize::b(z.total_capacity).display().iec(),
+				ByteSize::b(z.usable_capacity).display().iec(),
+				(z.usable_capacity as f32) / (z.total_capacity as f32) * 100.0,
 			));
 			table.push("".into());
 		}
 		msg.push(format_table::format_table_to_string(table));
 
-		Ok(msg)
+		msg
 	}
 }

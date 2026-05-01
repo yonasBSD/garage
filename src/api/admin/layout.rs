@@ -255,10 +255,14 @@ impl RequestHandler for PreviewClusterLayoutChangesRequest {
 				Ok(PreviewClusterLayoutChangesResponse::Error { error })
 			}
 			Err(e) => Err(e.into()),
-			Ok((new_layout, msg)) => Ok(PreviewClusterLayoutChangesResponse::Success {
-				message: msg,
-				new_layout: format_cluster_layout(&new_layout),
-			}),
+			Ok((new_layout, stat)) => {
+				let message = stat.to_message();
+				Ok(PreviewClusterLayoutChangesResponse::Success {
+					message,
+					statistics: Some(Box::new(stat)),
+					new_layout: format_cluster_layout(&new_layout),
+				})
+			}
 		}
 	}
 }
@@ -272,7 +276,8 @@ impl RequestHandler for ApplyClusterLayoutRequest {
 		_admin: &Admin,
 	) -> Result<ApplyClusterLayoutResponse, Error> {
 		let layout = garage.system.cluster_layout().inner().clone();
-		let (layout, msg) = layout.apply_staged_changes(self.version)?;
+		let (layout, stat) = layout.apply_staged_changes(self.version)?;
+		let message = stat.to_message();
 
 		garage
 			.system
@@ -281,7 +286,8 @@ impl RequestHandler for ApplyClusterLayoutRequest {
 			.await?;
 
 		Ok(ApplyClusterLayoutResponse {
-			message: msg,
+			message,
+			statistics: Some(stat),
 			layout: format_cluster_layout(&layout),
 		})
 	}

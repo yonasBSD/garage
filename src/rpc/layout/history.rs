@@ -6,6 +6,7 @@ use garage_util::encode::nonversioned_encode;
 use garage_util::error::*;
 
 use super::*;
+use crate::layout::ComputationStat;
 use crate::replication_mode::*;
 
 impl LayoutHistory {
@@ -269,13 +270,13 @@ impl LayoutHistory {
 		changed
 	}
 
-	pub fn apply_staged_changes(mut self, version: u64) -> Result<(Self, Message), Error> {
+	pub fn apply_staged_changes(mut self, version: u64) -> Result<(Self, ComputationStat), Error> {
 		if version != self.current().version + 1 {
 			return Err(Error::Message("Invalid new layout version".into()));
 		}
 
 		// Compute new version and add it to history
-		let (new_version, msg) = self
+		let (new_version, stat) = self
 			.current()
 			.clone()
 			.calculate_next_version(self.staging.get())?;
@@ -289,7 +290,7 @@ impl LayoutHistory {
 			roles: LwwMap::new(),
 		});
 
-		Ok((self, msg))
+		Ok((self, stat))
 	}
 
 	pub fn revert_staged_changes(mut self) -> Result<Self, Error> {

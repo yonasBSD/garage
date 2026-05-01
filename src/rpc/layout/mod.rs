@@ -389,10 +389,6 @@ impl NodeRole {
 			None => "gateway".to_string(),
 		}
 	}
-
-	pub fn tags_string(&self) -> String {
-		self.tags.join(",")
-	}
 }
 
 impl UpdateTracker {
