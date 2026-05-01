@@ -9,6 +9,31 @@ use crate::cli::remote::*;
 use crate::cli::structs::*;
 
 impl Cli {
+	pub async fn cmd_health(&self, quiet: bool) -> Result<(), Error> {
+		let health = self.api_request(GetClusterHealthRequest).await?;
+
+		if !quiet {
+			let table = vec![
+				format!("Cluster health:\t{}", health.status.to_uppercase()),
+				format!("Known nodes:\t{}", health.known_nodes),
+				format!("Connected nodes:\t{}", health.connected_nodes),
+				format!("Storage nodes:\t{}", health.storage_nodes),
+				format!("Storage nodes up:\t{}", health.storage_nodes_up),
+				format!("Partitions:\t{}", health.partitions),
+				format!("Partitions with quorum:\t{}", health.partitions_quorum),
+				format!("Fully healthy partitions:\t{}", health.partitions_all_ok),
+			];
+			format_table(table);
+		}
+
+		match health.status.as_str() {
+			"unavailable" => Err(Error::Message(
+				"Cluster is currently unavailable".to_string(),
+			)),
+			_ => Ok(()),
+		}
+	}
+
 	pub async fn cmd_status(&self) -> Result<(), Error> {
 		let status = self.api_request(GetClusterStatusRequest).await?;
 		let layout = self.api_request(GetClusterLayoutRequest).await?;

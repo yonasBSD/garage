@@ -33,6 +33,7 @@ impl Cli {
 	pub async fn handle(&self, cmd: Command) -> Result<(), Error> {
 		match cmd {
 			Command::Status => self.cmd_status().await,
+			Command::Health(opt) => self.cmd_health(opt.quiet).await,
 			Command::Node(NodeOperation::Connect(connect_opt)) => {
 				self.cmd_connect(connect_opt).await
 			}

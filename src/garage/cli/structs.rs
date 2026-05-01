@@ -10,6 +10,10 @@ pub enum Command {
 	#[structopt(name = "server", version = garage_version())]
 	Server(ServerOpt),
 
+	/// Check the cluster health and set the exit code to 1 if it is unavailable
+	#[structopt(name = "health", version = garage_version())]
+	Health(HealthOpt),
+
 	/// Get network status
 	#[structopt(name = "status", version = garage_version())]
 	Status,
@@ -101,6 +105,17 @@ pub struct ServerOpt {
 	/// Implies `--default-access-key`. Requires `--single-node`.
 	#[structopt(long = "default-bucket")]
 	pub(crate) default_bucket: bool,
+}
+
+// -------------------------
+// ---- garage health ----
+// -------------------------
+
+#[derive(StructOpt, Debug)]
+pub struct HealthOpt {
+	/// Do not print healthyness to stdout
+	#[structopt(short = "q", long = "quiet")]
+	pub(crate) quiet: bool,
 }
 
 // -------------------------
