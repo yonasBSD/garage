@@ -41,6 +41,7 @@ mod v08 {
 	}
 
 	#[derive(PartialEq, Eq, Clone, Copy, Debug, Serialize, Deserialize)]
+	#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 	pub struct VersionBlockKey {
 		/// Number of the part
 		pub part_number: u64,
@@ -51,6 +52,7 @@ mod v08 {
 
 	/// Information about a single block
 	#[derive(PartialEq, Eq, Ord, PartialOrd, Clone, Copy, Debug, Serialize, Deserialize)]
+	#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 	pub struct VersionBlock {
 		/// Blake2 sum of the block
 		pub hash: Hash,

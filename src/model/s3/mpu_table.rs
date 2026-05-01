@@ -48,6 +48,7 @@ mod v09 {
 	}
 
 	#[derive(PartialEq, Eq, Clone, Copy, Debug, Serialize, Deserialize)]
+	#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 	pub struct MpuPartKey {
 		/// Number of the part
 		pub part_number: u64,
@@ -57,6 +58,7 @@ mod v09 {
 
 	/// The version of an uploaded part
 	#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
+	#[cfg_attr(feature = "arbitrary", derive(arbitrary::Arbitrary))]
 	pub struct MpuPart {
 		/// Links to a Version in `VersionTable`
 		pub version: Uuid,

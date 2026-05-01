@@ -21,6 +21,7 @@ garage_block.workspace = true
 garage_util.workspace = true
 garage_net.workspace = true
 
+arbitrary = { optional = true, workspace = true }
 argon2.workspace = true
 async-trait.workspace = true
 blake2.workspace = true
@@ -46,6 +47,7 @@ k2v = ["garage_util/k2v"]
 lmdb = ["garage_db/lmdb"]
 sqlite = ["garage_db/sqlite"]
 fjall = ["garage_db/fjall"]
+arbitrary = ["dep:arbitrary","garage_util/arbitrary"]
 
 [lints]
 workspace = true

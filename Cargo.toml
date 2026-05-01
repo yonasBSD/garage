@@ -16,6 +16,7 @@ members = [
 	"src/garage",
 	"src/k2v-client",
 	"src/format-table",
+    "fuzz",
 ]
 
 default-members = ["src/garage"]
@@ -40,6 +41,7 @@ k2v-client = { version = "0.0.4", path = "src/k2v-client" }
 
 # External crates from crates.io
 arc-swap = "1.8"
+arbitrary = { version = "1.4.2"}
 argon2 = "0.5"
 async-trait = "0.1"
 backtrace = "0.3"
@@ -59,6 +61,7 @@ hmac = "0.12"
 itertools = "0.14"
 ipnet = "2.11"
 lazy_static = "1.5"
+libfuzzer-sys = "0.4"
 md-5 = "0.10"
 mktemp = "0.5"
 nix = { version = "0.31", default-features = false, features = ["fs"] }

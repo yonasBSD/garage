@@ -95,6 +95,14 @@
                 killall
               ];
             };
+
+            # dev shell for fuzzing
+            fuzz = pkgs.mkShell {
+              buildInputs = with pkgs; [
+                targets.toolchainNightly
+                cargo-fuzz
+              ];
+            };
           };
       });
 }
