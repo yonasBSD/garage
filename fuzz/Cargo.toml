@@ -11,12 +11,9 @@ cargo-fuzz = true
 arbitrary = { workspace = true, features = ["derive"]}
 libfuzzer-sys = { workspace = true }
 
-[dependencies.garage_table]
-path = "../src/table"
-
-[dependencies.garage_model]
-path = "../src/model"
-features = ["arbitrary"]
+garage_db.workspace = true
+garage_table.workspace = true
+garage_model = { workspace = true, default-features = false, features = ["arbitrary"] }
 
 [[bin]]
 name = "version_crdt"

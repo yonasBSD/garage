@@ -1548,6 +1548,7 @@ name = "garage-fuzz"
 version = "0.0.0"
 dependencies = [
  "arbitrary",
+ "garage_db",
  "garage_model",
  "garage_table",
  "libfuzzer-sys",

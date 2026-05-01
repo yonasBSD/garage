@@ -148,6 +148,14 @@ let
 in rec {
   toolchain = toolchainFn pkgs;
 
+  toolchainNightly = pkgs.rust-bin.selectLatestNightlyWith (toolchain: toolchain.default.override {
+    targets = lib.optionals (target != null) [ rustTarget ];
+    extensions = [
+      "rust-src"
+      "rustfmt"
+    ];
+  });
+
   devShell = pkgs.mkShell {
     buildInputs = [
       toolchain
