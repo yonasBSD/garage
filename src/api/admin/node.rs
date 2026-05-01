@@ -25,6 +25,9 @@ impl RequestHandler for LocalGetNodeInfoRequest {
 		let sys_status = garage.system.local_status();
 		let hostname = sys_status.hostname.unwrap_or_default().to_string();
 
+		let layout = garage.system.cluster_layout();
+		let current_layout = layout.inner().current();
+
 		Ok(LocalGetNodeInfoResponse {
 			node_id: hex::encode(garage.system.id),
 			hostname: Some(hostname),
@@ -33,6 +36,41 @@ impl RequestHandler for LocalGetNodeInfoRequest {
 				.map(|features| features.iter().map(ToString::to_string).collect()),
 			rust_version: garage_util::version::rust_version().to_string(),
 			db_engine: garage.db.engine(),
+			is_up: Some(true),
+			addr: garage
+				.system
+				.get_known_nodes()
+				.iter()
+				.find(|x| x.id == garage.system.id)
+				.and_then(|x| x.addr),
+			draining: Some(
+				current_layout.node_role(&garage.system.id).is_none()
+					&& layout
+						.inner()
+						.versions
+						.iter()
+						.filter(|x| x.version != current_layout.version)
+						.any(|x| x.node_role(&garage.system.id).is_some()),
+			),
+			role: current_layout
+				.node_role(&garage.system.id)
+				.map(|v| NodeAssignedRole {
+					zone: v.zone.clone(),
+					capacity: v.capacity,
+					tags: v.tags.clone(),
+				}),
+			data_partition: sys_status
+				.data_disk_avail
+				.map(|(avail, total)| FreeSpaceResp {
+					available: avail,
+					total,
+				}),
+			metadata_partition: sys_status
+				.meta_disk_avail
+				.map(|(avail, total)| FreeSpaceResp {
+					available: avail,
+					total,
+				}),
 		})
 	}
 }

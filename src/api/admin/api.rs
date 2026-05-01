@@ -1165,6 +1165,29 @@ pub struct LocalGetNodeInfoResponse {
 	pub rust_version: String,
 	/// database engine used for metadata
 	pub db_engine: String,
+	// FIXME for v3: remove Option<> and serde(default) for field below
+	// FIXME for v3: merge LocalGetNodeInfoResponse and NodeResp
+	/// Socket address used by other nodes to connect to this node for RPC
+	#[serde(default, skip_serializing_if = "Option::is_none")]
+	#[schema(value_type = Option<String>)]
+	pub addr: Option<SocketAddr>,
+	/// Whether this node is connected in the cluster
+	#[serde(default, skip_serializing_if = "Option::is_none")]
+	pub is_up: Option<bool>,
+	/// Role assigned to this node in the current cluster layout
+	#[serde(default, skip_serializing_if = "Option::is_none")]
+	pub role: Option<NodeAssignedRole>,
+	/// Whether this node is part of an older layout version and is draining data.
+	#[serde(default, skip_serializing_if = "Option::is_none")]
+	pub draining: Option<bool>,
+	/// Total and available space on the disk partition(s) containing the data
+	/// directory(ies)
+	#[serde(default, skip_serializing_if = "Option::is_none")]
+	pub data_partition: Option<FreeSpaceResp>,
+	/// Total and available space on the disk partition containing the
+	/// metadata directory
+	#[serde(default, skip_serializing_if = "Option::is_none")]
+	pub metadata_partition: Option<FreeSpaceResp>,
 }
 
 // ---- GetNodeStatistics ----
