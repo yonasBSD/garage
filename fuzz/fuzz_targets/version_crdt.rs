@@ -28,10 +28,6 @@ fn make_version(deleted: bool, mut blocks: Vec<(VersionBlockKey, VersionBlock)>)
 	v
 }
 
-fn crdt_state(v: &Version) -> (bool, &[(VersionBlockKey, VersionBlock)]) {
-	(v.deleted.get(), v.blocks.items())
-}
-
 fuzz_target!(|inputs: (
 	(bool, Vec<(VersionBlockKey, VersionBlock)>),
 	(bool, Vec<(VersionBlockKey, VersionBlock)>),
@@ -46,14 +42,10 @@ fuzz_target!(|inputs: (
 	{
 		let mut a2 = a.clone();
 		a2.merge(&a.clone());
-		assert_eq!(
-			crdt_state(&a2),
-			crdt_state(&a),
-			"merge is not idempotent: {a2:#?} != {a:#?}"
-		);
+		assert_eq!(a2, a, "merge is not idempotent: {a2:#?} != {a:#?}");
 	}
 
-	// Commutativity: crdt_state(merge(a, b)) == crdt_state(merge(b, a))
+	// Commutativity: merge(a, b) == merge(b, a)
 	let ab = {
 		let mut t = a.clone();
 		t.merge(&b);
@@ -64,13 +56,9 @@ fuzz_target!(|inputs: (
 		t.merge(&a);
 		t
 	};
-	assert_eq!(
-		crdt_state(&ab),
-		crdt_state(&ba),
-		"merge is not commutative: {ab:#?} != {ba:#?}"
-	);
+	assert_eq!(ab, ba, "merge is not commutative: {ab:#?} != {ba:#?}");
 
-	// Associativity: crdt_state(merge(merge(a, b), c)) == crdt_state(merge(a, merge(b, c)))
+	// Associativity: merge(merge(a, b), c) == merge(a, merge(b, c))
 	let ab_c = {
 		let mut t = ab.clone();
 		t.merge(&c);
@@ -86,9 +74,5 @@ fuzz_target!(|inputs: (
 		t.merge(&bc);
 		t
 	};
-	assert_eq!(
-		crdt_state(&ab_c),
-		crdt_state(&a_bc),
-		"merge is not associative: {ab_c:#?} != {a_bc:#?}"
-	);
+	assert_eq!(ab_c, a_bc, "merge is not associative: {ab_c:#?} != {a_bc:#?}");
 });
