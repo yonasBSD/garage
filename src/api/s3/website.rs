@@ -16,7 +16,7 @@ pub const X_AMZ_WEBSITE_REDIRECT_LOCATION: HeaderName =
 
 pub async fn handle_get_website(ctx: ReqCtx) -> Result<Response<ResBody>, Error> {
 	let ReqCtx { bucket_params, .. } = ctx;
-	if let Some(website) = bucket_params.website_config.get() {
+	if let Some(website) = bucket_params.website_config.get().inner() {
 		let wc = WebsiteConfiguration {
 			xmlns: (),
 			error_document: website.error_document.as_ref().map(|v| Key {
@@ -54,7 +54,7 @@ pub async fn handle_delete_website(ctx: ReqCtx) -> Result<Response<ResBody>, Err
 		mut bucket_params,
 		..
 	} = ctx;
-	bucket_params.website_config.update(None);
+	bucket_params.website_config.update(None.into());
 	garage
 		.bucket_table
 		.insert(&Bucket::present(bucket_id, bucket_params))
@@ -83,7 +83,7 @@ pub async fn handle_put_website(
 
 	bucket_params
 		.website_config
-		.update(Some(conf.into_garage_website_config()?));
+		.update(Some(conf.into_garage_website_config()?).into());
 	garage
 		.bucket_table
 		.insert(&Bucket::present(bucket_id, bucket_params))

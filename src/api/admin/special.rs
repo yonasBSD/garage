@@ -164,7 +164,7 @@ async fn check_domain(garage: &Arc<Garage>, domain: &str) -> Result<bool, Error>
 	}
 
 	let bucket_state = bucket.state.as_option().unwrap();
-	let bucket_website_config = bucket_state.website_config.get();
+	let bucket_website_config = bucket_state.website_config.get().inner();
 
 	match bucket_website_config {
 		Some(_v) => Ok(true),

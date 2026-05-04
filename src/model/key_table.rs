@@ -43,7 +43,7 @@ mod v08 {
 
 		/// A key can have a local view of buckets names it is
 		/// the only one to see, this is the namespace for these aliases
-		pub local_aliases: crdt::LwwMap<String, Option<Uuid>>,
+		pub local_aliases: crdt::LwwMap<String, crdt::CancelingOption<Uuid>>,
 	}
 
 	impl garage_util::migrate::InitialFormat for Key {}
@@ -79,7 +79,7 @@ mod v2 {
 		/// Name for the key
 		pub name: crdt::Lww<String>,
 		/// The optional time of expiration of the key
-		pub expiration: crdt::Lww<Option<u64>>,
+		pub expiration: crdt::Lww<crdt::CancelingOption<u64>>,
 
 		/// Flag to allow users having this key to create buckets
 		pub allow_create_bucket: crdt::Lww<bool>,
@@ -91,7 +91,7 @@ mod v2 {
 
 		/// A key can have a local view of buckets names it is
 		/// the only one to see, this is the namespace for these aliases
-		pub local_aliases: crdt::LwwMap<String, Option<Uuid>>,
+		pub local_aliases: crdt::LwwMap<String, crdt::CancelingOption<Uuid>>,
 	}
 
 	impl garage_util::migrate::Migrate for Key {
@@ -106,7 +106,7 @@ mod v2 {
 					created: None,
 					secret_key: x.secret_key,
 					name: x.name,
-					expiration: crdt::Lww::raw(0, None),
+					expiration: crdt::Lww::raw(0, None.into()),
 					allow_create_bucket: x.allow_create_bucket,
 					authorized_buckets: x.authorized_buckets,
 					local_aliases: x.local_aliases,
@@ -124,7 +124,7 @@ impl KeyParams {
 			created: Some(now_msec()),
 			secret_key: secret_key.to_string(),
 			name: crdt::Lww::new(name.to_string()),
-			expiration: crdt::Lww::new(None),
+			expiration: crdt::Lww::new(None.into()),
 			allow_create_bucket: crdt::Lww::new(false),
 			authorized_buckets: crdt::Map::new(),
 			local_aliases: crdt::LwwMap::new(),
@@ -229,9 +229,9 @@ impl Key {
 
 impl KeyParams {
 	pub fn is_expired(&self, ts_now: u64) -> bool {
-		match *self.expiration.get() {
+		match self.expiration.get().inner() {
 			None => false,
-			Some(exp) => ts_now >= exp,
+			Some(exp) => ts_now >= *exp,
 		}
 	}
 }

@@ -14,7 +14,7 @@ use garage_model::bucket_table::Bucket;
 pub async fn handle_get_lifecycle(ctx: ReqCtx) -> Result<Response<ResBody>, Error> {
 	let ReqCtx { bucket_params, .. } = ctx;
 
-	if let Some(lifecycle) = bucket_params.lifecycle_config.get() {
+	if let Some(lifecycle) = bucket_params.lifecycle_config.get().inner() {
 		let wc = LifecycleConfiguration::from_garage_lifecycle_config(lifecycle);
 		let xml = to_xml_with_header(&wc)?;
 		Ok(Response::builder()
@@ -33,7 +33,7 @@ pub async fn handle_delete_lifecycle(ctx: ReqCtx) -> Result<Response<ResBody>, E
 		mut bucket_params,
 		..
 	} = ctx;
-	bucket_params.lifecycle_config.update(None);
+	bucket_params.lifecycle_config.update(None.into());
 	garage
 		.bucket_table
 		.insert(&Bucket::present(bucket_id, bucket_params))
@@ -62,7 +62,7 @@ pub async fn handle_put_lifecycle(
 		.validate_into_garage_lifecycle_config()
 		.ok_or_bad_request("Invalid lifecycle configuration")?;
 
-	bucket_params.lifecycle_config.update(Some(config));
+	bucket_params.lifecycle_config.update(Some(config).into());
 	garage
 		.bucket_table
 		.insert(&Bucket::present(bucket_id, bucket_params))

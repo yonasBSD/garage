@@ -19,7 +19,7 @@ pub fn find_matching_cors_rule<'a, B>(
 	bucket_params: &'a BucketParams,
 	req: &'a Request<B>,
 ) -> Result<Option<(&'a GarageCorsRule, &'a str)>, CommonError> {
-	if let Some(cors_config) = bucket_params.cors_config.get() {
+	if let Some(cors_config) = bucket_params.cors_config.get().inner() {
 		if let Some(origin) = req.headers().get("Origin") {
 			let origin = origin.to_str()?;
 			let request_headers = match req.headers().get(ACCESS_CONTROL_REQUEST_HEADERS) {
@@ -158,7 +158,7 @@ pub fn handle_options_for_bucket<B>(
 		None => vec![],
 	};
 
-	if let Some(cors_config) = bucket_params.cors_config.get() {
+	if let Some(cors_config) = bucket_params.cors_config.get().inner() {
 		let matching_rule = cors_config
 			.iter()
 			.find(|rule| cors_rule_matches(rule, origin, request_method, request_headers.iter()));
@@ -192,14 +192,17 @@ mod tests {
 
 	fn bucket_params_with_rule(allow_origins: Vec<&str>) -> BucketParams {
 		let mut bucket_params = BucketParams::default();
-		bucket_params.cors_config.update(Some(vec![GarageCorsRule {
-			id: Some("cors-test".into()),
-			max_age_seconds: None,
-			allow_origins: allow_origins.into_iter().map(str::to_string).collect(),
-			allow_methods: vec!["GET".into(), "PUT".into()],
-			allow_headers: vec!["*".into()],
-			expose_headers: vec![],
-		}]));
+		bucket_params.cors_config.update(
+			Some(vec![GarageCorsRule {
+				id: Some("cors-test".into()),
+				max_age_seconds: None,
+				allow_origins: allow_origins.into_iter().map(str::to_string).collect(),
+				allow_methods: vec!["GET".into(), "PUT".into()],
+				allow_headers: vec!["*".into()],
+				expose_headers: vec![],
+			}])
+			.into(),
+		);
 		bucket_params
 	}
 

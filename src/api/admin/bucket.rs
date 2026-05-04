@@ -90,7 +90,7 @@ impl RequestHandler for GetBucketInfoRequest {
 				.bucket_alias_table
 				.get(&EmptyKey, &ga)
 				.await?
-				.and_then(|x| *x.state.get())
+				.and_then(|x| x.state.get().into_inner())
 				.ok_or_else(|| HelperError::NoSuchBucket(ga.to_string()))?,
 			(None, None, Some(search)) => {
 				let helper = garage.bucket_helper();
@@ -168,7 +168,7 @@ impl RequestHandler for CreateBucketRequest {
 			}
 
 			if let Some(alias) = garage.bucket_alias_table.get(&EmptyKey, ga).await? {
-				if alias.state.get().is_some() {
+				if alias.state.get().inner().is_some() {
 					return Err(CommonError::BucketAlreadyExists.into());
 				}
 			}
@@ -297,7 +297,7 @@ impl RequestHandler for UpdateBucketRequest {
 				let redirect_all = state
 					.website_config
 					.get()
-					.as_ref()
+					.inner()
 					.and_then(|wc| wc.redirect_all.clone());
 
 				let routing_rules = if let Some(rr) = wa.routing_rules {
@@ -311,26 +311,29 @@ impl RequestHandler for UpdateBucketRequest {
 					state
 						.website_config
 						.get()
-						.as_ref()
+						.inner()
 						.map(|wc| wc.routing_rules.clone())
 						.unwrap_or_default()
 				};
 
-				state.website_config.update(Some(WebsiteConfig {
-					index_document: wa.index_document.ok_or_bad_request(
-						"Please specify indexDocument when enabling website access.",
-					)?,
-					error_document: wa.error_document,
-					redirect_all,
-					routing_rules,
-				}));
+				state.website_config.update(
+					Some(WebsiteConfig {
+						index_document: wa.index_document.ok_or_bad_request(
+							"Please specify indexDocument when enabling website access.",
+						)?,
+						error_document: wa.error_document,
+						redirect_all,
+						routing_rules,
+					})
+					.into(),
+				);
 			} else {
 				if wa.index_document.is_some() || wa.error_document.is_some() {
 					return Err(Error::bad_request(
                         "Cannot specify indexDocument or errorDocument when disabling website access.",
                     ));
 				}
-				state.website_config.update(None);
+				state.website_config.update(None.into());
 			}
 		}
 
@@ -353,7 +356,7 @@ impl RequestHandler for UpdateBucketRequest {
 				Some(cc.into_garage_cors_config()?)
 			};
 
-			state.cors_config.update(cors_config);
+			state.cors_config.update(cors_config.into());
 		}
 
 		if let Some(lr) = self.body.lifecycle_rules {
@@ -370,7 +373,7 @@ impl RequestHandler for UpdateBucketRequest {
 				)
 			};
 
-			state.lifecycle_config.update(lifecycle_config);
+			state.lifecycle_config.update(lifecycle_config.into());
 		}
 
 		garage.bucket_table.insert(&bucket).await?;
@@ -739,8 +742,8 @@ async fn bucket_info_results(
 			.filter(|(_, _, a)| *a)
 			.map(|(n, _, _)| n.to_string())
 			.collect::<Vec<_>>(),
-		website_access: state.website_config.get().is_some(),
-		website_config: state.website_config.get().clone().map(|wsc| {
+		website_access: state.website_config.get().inner().is_some(),
+		website_config: state.website_config.get().inner().cloned().map(|wsc| {
 			GetBucketInfoWebsiteResponse {
 				index_document: wsc.index_document,
 				error_document: wsc.error_document,
@@ -752,13 +755,13 @@ async fn bucket_info_results(
 				),
 			}
 		}),
-		cors_rules: state.cors_config.get().as_ref().map(|rules| {
+		cors_rules: state.cors_config.get().inner().map(|rules| {
 			rules
 				.iter()
 				.map(xml::cors::CorsRule::from_garage_cors_rule)
 				.collect::<Vec<_>>()
 		}),
-		lifecycle_rules: state.lifecycle_config.get().as_ref().map(|lc| {
+		lifecycle_rules: state.lifecycle_config.get().inner().map(|lc| {
 			lc.iter()
 				.map(xml::lifecycle::LifecycleRule::from_garage_lifecycle_rule)
 				.collect::<Vec<_>>()
@@ -784,7 +787,7 @@ async fn bucket_info_results(
 						.local_aliases
 						.items()
 						.iter()
-						.filter(|(_, _, b)| *b == Some(bucket.id))
+						.filter(|(_, _, b)| b.into_inner() == Some(bucket.id))
 						.map(|(n, _, _)| n.to_string())
 						.collect::<Vec<_>>(),
 				})

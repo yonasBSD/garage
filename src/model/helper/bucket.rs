@@ -52,7 +52,7 @@ impl<'a> BucketHelper<'a> {
 					.0
 					.bucket_alias_table
 					.get_local(&EmptyKey, bucket_name)?
-					.and_then(|x| *x.state.get());
+					.and_then(|x| x.state.get().into_inner());
 				match alias {
 					Some(id) => id,
 					None => return Ok(None),
@@ -91,15 +91,18 @@ impl<'a> BucketHelper<'a> {
 			.as_option()
 			.ok_or_message("Key should not be deleted at this point")?;
 
-		let bucket_opt =
-			if let Some(Some(bucket_id)) = api_key_params.local_aliases.get(bucket_name) {
-				self.0
-					.bucket_table
-					.get_local(&EmptyKey, bucket_id)?
-					.filter(|x| !x.state.is_deleted())
-			} else {
-				self.resolve_global_bucket_fast(bucket_name)?
-			};
+		let bucket_opt = if let Some(bucket_id) = api_key_params
+			.local_aliases
+			.get(bucket_name)
+			.and_then(|x| x.inner())
+		{
+			self.0
+				.bucket_table
+				.get_local(&EmptyKey, bucket_id)?
+				.filter(|x| !x.state.is_deleted())
+		} else {
+			self.resolve_global_bucket_fast(bucket_name)?
+		};
 		bucket_opt.ok_or_else(|| Error::NoSuchBucket(bucket_name.to_string()))
 	}
 
@@ -125,7 +128,7 @@ impl<'a> BucketHelper<'a> {
 					.bucket_alias_table
 					.get(&EmptyKey, bucket_name)
 					.await?
-					.and_then(|x| *x.state.get());
+					.and_then(|x| x.state.get().into_inner());
 				match alias {
 					Some(id) => id,
 					None => return Ok(None),
@@ -163,8 +166,7 @@ impl<'a> BucketHelper<'a> {
 			.ok_or_else(|| GarageError::Message(format!("access key {} has been deleted", key_id)))?
 			.local_aliases
 			.get(bucket_name)
-			.copied()
-			.flatten();
+			.and_then(|x| x.inner().copied());
 
 		if let Some(bucket_id) = local_alias {
 			Ok(self

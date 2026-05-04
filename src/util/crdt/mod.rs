@@ -16,6 +16,7 @@ mod deletable;
 mod lww;
 mod lww_map;
 mod map;
+mod option;
 
 pub use self::bool::*;
 pub use crdt::*;
@@ -23,3 +24,4 @@ pub use deletable::*;
 pub use lww::*;
 pub use lww_map::*;
 pub use map::*;
+pub use option::*;

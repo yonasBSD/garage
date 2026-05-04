@@ -40,8 +40,8 @@ impl RequestHandler for ListKeysRequest {
 						DateTime::from_timestamp_millis(x as i64)
 							.expect("invalid timestamp stored in db")
 					}),
-					expiration: p.expiration.get().map(|x| {
-						DateTime::from_timestamp_millis(x as i64)
+					expiration: p.expiration.get().inner().map(|x| {
+						DateTime::from_timestamp_millis(*x as i64)
 							.expect("invalid timestamp stored in db")
 					}),
 					expired: p.is_expired(now),
@@ -201,7 +201,7 @@ async fn key_info_results(
 				.local_aliases
 				.items()
 				.iter()
-				.filter_map(|(_, _, v)| v.as_ref()),
+				.filter_map(|(_, _, v)| v.inner()),
 		) {
 		if !relevant_buckets.contains_key(id) {
 			if let Some(b) = garage.bucket_table.get(&EmptyKey, id).await? {
@@ -217,8 +217,8 @@ async fn key_info_results(
 		created: key_state.created.map(|x| {
 			DateTime::from_timestamp_millis(x as i64).expect("invalid timestamp stored in db")
 		}),
-		expiration: key_state.expiration.get().map(|x| {
-			DateTime::from_timestamp_millis(x as i64).expect("invalid timestamp stored in db")
+		expiration: key_state.expiration.get().inner().map(|x| {
+			DateTime::from_timestamp_millis(*x as i64).expect("invalid timestamp stored in db")
 		}),
 		expired: key_state.is_expired(now_msec()),
 		access_key_id: key.key_id.clone(),
@@ -283,10 +283,10 @@ fn apply_key_updates(key: &mut Key, updates: UpdateKeyRequestBody) -> Result<(),
 	if let Some(expiration) = updates.expiration {
 		key_state
 			.expiration
-			.update(Some(expiration.timestamp_millis() as u64));
+			.update(Some(expiration.timestamp_millis() as u64).into());
 	}
 	if updates.never_expires {
-		key_state.expiration.update(None);
+		key_state.expiration.update(None.into());
 	}
 	if let Some(allow) = updates.allow {
 		if allow.create_bucket {

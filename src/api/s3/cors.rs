@@ -13,7 +13,7 @@ use crate::xml::to_xml_with_header;
 
 pub async fn handle_get_cors(ctx: ReqCtx) -> Result<Response<ResBody>, Error> {
 	let ReqCtx { bucket_params, .. } = ctx;
-	if let Some(cors) = bucket_params.cors_config.get() {
+	if let Some(cors) = bucket_params.cors_config.get().inner() {
 		let wc = CorsConfiguration {
 			xmlns: (),
 			cors_rules: cors
@@ -38,7 +38,7 @@ pub async fn handle_delete_cors(ctx: ReqCtx) -> Result<Response<ResBody>, Error>
 		mut bucket_params,
 		..
 	} = ctx;
-	bucket_params.cors_config.update(None);
+	bucket_params.cors_config.update(None.into());
 	garage
 		.bucket_table
 		.insert(&Bucket::present(bucket_id, bucket_params))
@@ -67,7 +67,7 @@ pub async fn handle_put_cors(
 
 	bucket_params
 		.cors_config
-		.update(Some(conf.into_garage_cors_config()?));
+		.update(Some(conf.into_garage_cors_config()?).into());
 	garage
 		.bucket_table
 		.insert(&Bucket::present(bucket_id, bucket_params))

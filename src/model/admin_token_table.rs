@@ -35,7 +35,7 @@ mod v2 {
 		pub name: crdt::Lww<String>,
 
 		/// The optional time of expiration of the token
-		pub expiration: crdt::Lww<Option<u64>>,
+		pub expiration: crdt::Lww<crdt::CancelingOption<u64>>,
 
 		/// The scope of the token, i.e. list of authorized admin API calls
 		pub scope: crdt::Lww<AdminApiTokenScope>,
@@ -106,7 +106,7 @@ impl AdminApiToken {
 				created: now_msec(),
 				token_hash: hashed_token,
 				name: crdt::Lww::new(name.to_string()),
-				expiration: crdt::Lww::new(None),
+				expiration: crdt::Lww::new(None.into()),
 				scope: crdt::Lww::new(AdminApiTokenScope(vec!["*".to_string()])),
 			}),
 		};
@@ -147,9 +147,9 @@ impl AdminApiToken {
 
 impl AdminApiTokenParams {
 	pub fn is_expired(&self, ts_now: u64) -> bool {
-		match *self.expiration.get() {
+		match self.expiration.get().inner() {
 			None => false,
-			Some(exp) => ts_now >= exp,
+			Some(exp) => ts_now >= *exp,
 		}
 	}
 

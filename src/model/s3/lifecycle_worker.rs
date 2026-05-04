@@ -271,7 +271,7 @@ async fn process_object(
 	let lifecycle_policy: &[LifecycleRule] = bucket
 		.state
 		.as_option()
-		.and_then(|s| s.lifecycle_config.get().as_deref())
+		.and_then(|s| s.lifecycle_config.get().inner().map(|x| &x[..]))
 		.unwrap_or_default();
 
 	if lifecycle_policy.iter().all(|x| !x.enabled) {

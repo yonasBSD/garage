@@ -122,7 +122,7 @@ pub async fn handle_list_buckets(
 			for (alias, _, _active) in bucket.aliases().iter().filter(|(_, _, active)| *active) {
 				let alias_opt = garage.bucket_alias_table.get(&EmptyKey, alias).await?;
 				if let Some(alias_ent) = alias_opt {
-					if *alias_ent.state.get() == Some(*bucket_id) {
+					if alias_ent.state.get().inner() == Some(bucket_id) {
 						aliases.insert(alias_ent.name().to_string(), *bucket_id);
 					}
 				}
@@ -134,7 +134,7 @@ pub async fn handle_list_buckets(
 	}
 
 	for (alias, _, id_opt) in key_p.local_aliases.items() {
-		if let Some(id) = id_opt {
+		if let Some(id) = id_opt.inner() {
 			aliases.insert(alias.clone(), *id);
 		}
 	}
@@ -256,7 +256,10 @@ pub async fn handle_delete_bucket(ctx: ReqCtx) -> Result<Response<ResBody>, Erro
 
 	let key_params = api_key.params().unwrap();
 
-	let is_local_alias = matches!(key_params.local_aliases.get(bucket_name), Some(Some(_)));
+	let is_local_alias = matches!(
+		key_params.local_aliases.get(bucket_name).map(|x| x.inner()),
+		Some(Some(_))
+	);
 
 	// If the bucket has no other aliases, this is a true deletion.
 	// Otherwise, it is just an alias removal.

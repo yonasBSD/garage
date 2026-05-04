@@ -45,12 +45,12 @@ mod v08 {
 		/// Whether this bucket is allowed for website access
 		/// (under all of its global alias names),
 		/// and if so, the website configuration XML document
-		pub website_config: crdt::Lww<Option<WebsiteConfig>>,
+		pub website_config: crdt::Lww<crdt::CancelingOption<WebsiteConfig>>,
 		/// CORS rules
-		pub cors_config: crdt::Lww<Option<Vec<CorsRule>>>,
+		pub cors_config: crdt::Lww<crdt::CancelingOption<Vec<CorsRule>>>,
 		/// Lifecycle configuration
 		#[serde(default)]
-		pub lifecycle_config: crdt::Lww<Option<Vec<LifecycleRule>>>,
+		pub lifecycle_config: crdt::Lww<crdt::CancelingOption<Vec<LifecycleRule>>>,
 		/// Bucket quotas
 		#[serde(default)]
 		pub quotas: crdt::Lww<BucketQuotas>,
@@ -164,11 +164,11 @@ mod v2 {
 		/// Whether this bucket is allowed for website access
 		/// (under all of its global alias names),
 		/// and if so, the website configuration XML document
-		pub website_config: crdt::Lww<Option<WebsiteConfig>>,
+		pub website_config: crdt::Lww<crdt::CancelingOption<WebsiteConfig>>,
 		/// CORS rules
-		pub cors_config: crdt::Lww<Option<Vec<CorsRule>>>,
+		pub cors_config: crdt::Lww<crdt::CancelingOption<Vec<CorsRule>>>,
 		/// Lifecycle configuration
-		pub lifecycle_config: crdt::Lww<Option<Vec<LifecycleRule>>>,
+		pub lifecycle_config: crdt::Lww<crdt::CancelingOption<Vec<LifecycleRule>>>,
 		/// Bucket quotas
 		pub quotas: crdt::Lww<BucketQuotas>,
 	}
@@ -259,9 +259,9 @@ impl BucketParams {
 			authorized_keys: crdt::Map::new(),
 			aliases: crdt::LwwMap::new(),
 			local_aliases: crdt::LwwMap::new(),
-			website_config: crdt::Lww::new(None),
-			cors_config: crdt::Lww::new(None),
-			lifecycle_config: crdt::Lww::new(None),
+			website_config: crdt::Lww::new(None.into()),
+			cors_config: crdt::Lww::new(None.into()),
+			lifecycle_config: crdt::Lww::new(None.into()),
 			quotas: crdt::Lww::new(BucketQuotas::default()),
 		}
 	}

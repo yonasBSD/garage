@@ -13,7 +13,7 @@ mod v08 {
 	#[derive(PartialEq, Eq, Clone, Debug, Serialize, Deserialize)]
 	pub struct BucketAlias {
 		pub(super) name: String,
-		pub state: crdt::Lww<Option<Uuid>>,
+		pub state: crdt::Lww<crdt::CancelingOption<Uuid>>,
 	}
 
 	impl garage_util::migrate::InitialFormat for BucketAlias {}
@@ -25,12 +25,12 @@ impl BucketAlias {
 	pub fn new(name: String, ts: u64, bucket_id: Option<Uuid>) -> Self {
 		BucketAlias {
 			name,
-			state: crdt::Lww::raw(ts, bucket_id),
+			state: crdt::Lww::raw(ts, CancelingOption(bucket_id)),
 		}
 	}
 
 	pub fn is_deleted(&self) -> bool {
-		self.state.get().is_none()
+		self.state.get().inner().is_none()
 	}
 	pub fn name(&self) -> &str {
 		&self.name

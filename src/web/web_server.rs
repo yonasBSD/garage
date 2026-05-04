@@ -241,7 +241,7 @@ impl WebServer {
 			.bucket_alias_table
 			.get(&EmptyKey, &bucket_name.to_string())
 			.await?
-			.and_then(|x| x.state.take())
+			.and_then(|x| x.state.get().into_inner())
 			.ok_or(Error::NotFound)?;
 
 		// Check bucket isn't deleted and has website access enabled
@@ -256,7 +256,7 @@ impl WebServer {
 		let website_config = bucket_params
 			.website_config
 			.get()
-			.as_ref()
+			.inner()
 			.ok_or(Error::NotFound)?;
 
 		// Get path
