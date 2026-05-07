@@ -51,6 +51,14 @@ mod v2 {
 
 pub use v2::*;
 
+#[cfg(feature = "arbitrary")]
+impl<'a> arbitrary::Arbitrary<'a> for AdminApiTokenScope {
+	fn arbitrary(u: &mut arbitrary::Unstructured<'a>) -> arbitrary::Result<Self> {
+		let set: std::collections::BTreeSet<String> = arbitrary::Arbitrary::arbitrary(u)?;
+		Ok(AdminApiTokenScope(set.into_iter().collect()))
+	}
+}
+
 impl Crdt for AdminApiTokenParams {
 	fn merge(&mut self, o: &Self) {
 		self.name.merge(&o.name);

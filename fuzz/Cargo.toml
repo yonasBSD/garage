@@ -43,3 +43,10 @@ path = "fuzz_targets/block_ref_crdt.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "admin_api_token_crdt"
+path = "fuzz_targets/admin_api_token_crdt.rs"
+test = false
+doc = false
+bench = false
