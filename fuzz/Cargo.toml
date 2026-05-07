@@ -57,3 +57,10 @@ path = "fuzz_targets/key_crdt.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "bucket_alias_crdt"
+path = "fuzz_targets/bucket_alias_crdt.rs"
+test = false
+doc = false
+bench = false
