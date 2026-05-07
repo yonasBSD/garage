@@ -36,3 +36,10 @@ path = "fuzz_targets/bucket_crdt.rs"
 test = false
 doc = false
 bench = false
+
+[[bin]]
+name = "block_ref_crdt"
+path = "fuzz_targets/block_ref_crdt.rs"
+test = false
+doc = false
+bench = false
