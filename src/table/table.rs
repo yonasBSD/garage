@@ -293,7 +293,26 @@ impl<F: TableSchema, R: TableReplication> Table<F, R> {
 		let span = tracer.start(format!("{} get", F::TABLE_NAME));
 
 		let res = self
-			.get_internal(partition_key, sort_key)
+			.get_internal(partition_key, sort_key, false)
+			.bound_record_duration(&self.data.metrics.get_request_duration)
+			.with_context(Context::current_with_span(span))
+			.await?;
+
+		self.data.metrics.get_request_counter.add(1);
+
+		Ok(res)
+	}
+
+	pub async fn get_monotonic(
+		self: &Arc<Self>,
+		partition_key: &F::P,
+		sort_key: &F::S,
+	) -> Result<Option<F::E>, Error> {
+		let tracer = opentelemetry::global::tracer("garage_table");
+		let span = tracer.start(format!("{} get_monotonic", F::TABLE_NAME));
+
+		let res = self
+			.get_internal(partition_key, sort_key, true)
 			.bound_record_duration(&self.data.metrics.get_request_duration)
 			.with_context(Context::current_with_span(span))
 			.await?;
@@ -307,6 +326,7 @@ impl<F: TableSchema, R: TableReplication> Table<F, R> {
 		self: &Arc<Self>,
 		partition_key: &F::P,
 		sort_key: &F::S,
+		monotonic_read: bool,
 	) -> Result<Option<F::E>, Error> {
 		let hash = partition_key.hash();
 		let who = self.data.replication.read_nodes(&hash)?;
@@ -355,14 +375,8 @@ impl<F: TableSchema, R: TableReplication> Table<F, R> {
 		}
 
 		if let Some(ret_entry) = &ret {
-			if not_all_same {
-				let self2 = self.clone();
-				let ent2 = ret_entry.clone();
-				tokio::spawn(async move {
-					if let Err(e) = self2.repair_on_read(&who[..], ent2).await {
-						warn!("Error doing repair on read: {}", e);
-					}
-				});
+			if monotonic_read && not_all_same {
+				self.repair_on_read(&who, ret_entry.clone()).await?;
 			}
 		}
 
@@ -387,6 +401,36 @@ impl<F: TableSchema, R: TableReplication> Table<F, R> {
 				filter,
 				limit,
 				enumeration_order,
+				false,
+			)
+			.bound_record_duration(&self.data.metrics.get_request_duration)
+			.with_context(Context::current_with_span(span))
+			.await?;
+
+		self.data.metrics.get_request_counter.add(1);
+
+		Ok(res)
+	}
+
+	pub async fn get_range_monotonic(
+		self: &Arc<Self>,
+		partition_key: &F::P,
+		begin_sort_key: Option<F::S>,
+		filter: Option<F::Filter>,
+		limit: usize,
+		enumeration_order: EnumerationOrder,
+	) -> Result<Vec<F::E>, Error> {
+		let tracer = opentelemetry::global::tracer("garage_table");
+		let span = tracer.start(format!("{} get_range_monotonic", F::TABLE_NAME));
+
+		let res = self
+			.get_range_internal(
+				partition_key,
+				begin_sort_key,
+				filter,
+				limit,
+				enumeration_order,
+				true,
 			)
 			.bound_record_duration(&self.data.metrics.get_request_duration)
 			.with_context(Context::current_with_span(span))
@@ -404,6 +448,7 @@ impl<F: TableSchema, R: TableReplication> Table<F, R> {
 		filter: Option<F::Filter>,
 		limit: usize,
 		enumeration_order: EnumerationOrder,
+		monotonic_read: bool,
 	) -> Result<Vec<F::E>, Error> {
 		let hash = partition_key.hash();
 		let who = self.data.replication.read_nodes(&hash)?;
@@ -465,19 +510,11 @@ impl<F: TableSchema, R: TableReplication> Table<F, R> {
 			}
 		}
 
-		if !to_repair.is_empty() {
-			let self2 = self.clone();
-			let to_repair = to_repair
-				.into_iter()
-				.map(|k| ret.get(&k).unwrap().clone())
-				.collect::<Vec<_>>();
-			tokio::spawn(async move {
-				for v in to_repair {
-					if let Err(e) = self2.repair_on_read(&who[..], v).await {
-						warn!("Error doing repair on read: {}", e);
-					}
-				}
-			});
+		if monotonic_read && !to_repair.is_empty() {
+			let to_repair = to_repair.into_iter().map(|k| ret.get(&k).unwrap().clone());
+			for v in to_repair {
+				self.repair_on_read(&who, v).await?;
+			}
 		}
 
 		// At this point, the `ret` btreemap might contain more than `limit`
