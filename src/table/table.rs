@@ -376,7 +376,7 @@ impl<F: TableSchema, R: TableReplication> Table<F, R> {
 
 		if let Some(ret_entry) = &ret {
 			if monotonic_read && not_all_same {
-				self.repair_on_read(&who, ret_entry.clone()).await?;
+				self.repair_on_read(&who, &[&ret_entry]).await?;
 			}
 		}
 
@@ -511,10 +511,11 @@ impl<F: TableSchema, R: TableReplication> Table<F, R> {
 		}
 
 		if monotonic_read && !to_repair.is_empty() {
-			let to_repair = to_repair.into_iter().map(|k| ret.get(&k).unwrap().clone());
-			for v in to_repair {
-				self.repair_on_read(&who, v).await?;
-			}
+			let to_repair: Vec<_> = to_repair
+				.into_iter()
+				.map(|k| ret.get(&k).unwrap())
+				.collect();
+			self.repair_on_read(&who, &to_repair).await?;
 		}
 
 		// At this point, the `ret` btreemap might contain more than `limit`
@@ -552,14 +553,17 @@ impl<F: TableSchema, R: TableReplication> Table<F, R> {
 
 	// =============== UTILITY FUNCTION FOR CLIENT OPERATIONS ===============
 
-	pub async fn repair_on_read(&self, who: &[Uuid], what: F::E) -> Result<(), Error> {
-		let what_enc = Arc::new(ByteBuf::from(what.encode()?));
+	pub async fn repair_on_read(&self, who: &[Uuid], what: &[&F::E]) -> Result<(), Error> {
+		let what_enc = what
+			.iter()
+			.map(|v| Ok(Arc::new(ByteBuf::from(v.encode()?))))
+			.collect::<Result<Vec<_>, Error>>()?;
 		self.system
 			.rpc_helper()
 			.try_call_many(
 				&self.endpoint,
 				who,
-				TableRpc::<F>::Update(vec![what_enc]),
+				TableRpc::<F>::Update(what_enc),
 				RequestStrategy::with_priority(PRIO_NORMAL).with_quorum(who.len()),
 			)
 			.await?;

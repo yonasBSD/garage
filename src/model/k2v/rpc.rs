@@ -273,7 +273,7 @@ impl K2VRpcHandler {
 
 		if let Some(v) = &resp {
 			if monotonic_read && not_all_same {
-				self.item_table.repair_on_read(&nodes, v.clone()).await?;
+				self.item_table.repair_on_read(&nodes, &[&v]).await?;
 			}
 		}
 
@@ -403,12 +403,11 @@ impl K2VRpcHandler {
 		}
 
 		if monotonic_read && !to_repair.is_empty() {
-			let to_repair = to_repair
+			let to_repair: Vec<_> = to_repair
 				.into_iter()
-				.map(|k| new_items.get(&k).unwrap().clone());
-			for v in to_repair {
-				self.item_table.repair_on_read(&nodes, v).await?
-			}
+				.map(|k| new_items.get(&k).unwrap())
+				.collect();
+			self.item_table.repair_on_read(&nodes, &to_repair).await?
 		}
 
 		if new_items.is_empty() && has_seen_marker {
