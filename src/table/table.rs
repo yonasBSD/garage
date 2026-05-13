@@ -326,25 +326,34 @@ impl<F: TableSchema, R: TableReplication> Table<F, R> {
 
 		let mut ret = None;
 		let mut not_all_same = false;
-		for resp in resps {
-			if let TableRpc::ReadEntryResponse(value) = resp {
-				if let Some(v_bytes) = value {
-					let v = self.data.decode_entry(v_bytes.as_slice())?;
-					ret = match ret {
-						None => Some(v),
-						Some(mut x) => {
-							if x != v {
-								not_all_same = true;
-								x.merge(&v);
+		{
+			let mut vals_nb = 0;
+			for resp in &resps {
+				if let TableRpc::ReadEntryResponse(value) = resp {
+					if let Some(v_bytes) = value {
+						vals_nb += 1;
+						let v = self.data.decode_entry(v_bytes.as_slice())?;
+						ret = match ret {
+							None => Some(v),
+							Some(mut x) => {
+								if x != v {
+									not_all_same = true;
+									x.merge(&v);
+								}
+								Some(x)
 							}
-							Some(x)
 						}
 					}
+				} else {
+					return Err(Error::Message("Invalid return value to read".to_string()));
 				}
-			} else {
-				return Err(Error::Message("Invalid return value to read".to_string()));
+			}
+			// Only some nodes store this value; we must propagate it during repair
+			if vals_nb < resps.len() {
+				not_all_same = true;
 			}
 		}
+
 		if let Some(ret_entry) = &ret {
 			if not_all_same {
 				let self2 = self.clone();
@@ -421,11 +430,26 @@ impl<F: TableSchema, R: TableReplication> Table<F, R> {
 
 		let mut ret: BTreeMap<Vec<u8>, F::E> = BTreeMap::new();
 		let mut to_repair = BTreeSet::new();
-		for resp in resps {
-			if let TableRpc::Update(entries) = resp {
-				for entry_bytes in entries.iter() {
-					let entry = self.data.decode_entry(entry_bytes.as_slice())?;
-					let entry_key = self.data.tree_key(entry.partition_key(), entry.sort_key());
+		{
+			let mut all_entries: BTreeMap<Vec<u8>, Vec<F::E>> = BTreeMap::new();
+			for resp in &resps {
+				if let TableRpc::Update(entries) = resp {
+					for entry_bytes in entries.iter() {
+						let entry = self.data.decode_entry(entry_bytes.as_slice())?;
+						let entry_key = self.data.tree_key(entry.partition_key(), entry.sort_key());
+						all_entries.entry(entry_key).or_default().push(entry);
+					}
+				} else {
+					return Err(Error::unexpected_rpc_message(resp));
+				}
+			}
+			for (entry_key, entries) in all_entries {
+				// Only some nodes store this entry; we must propagate it during repair
+				if entries.len() < resps.len() {
+					to_repair.insert(entry_key.clone());
+				}
+				// Merge all entries for this key together
+				for entry in entries {
 					match ret.get_mut(&entry_key) {
 						Some(e) => {
 							if *e != entry {
@@ -434,12 +458,10 @@ impl<F: TableSchema, R: TableReplication> Table<F, R> {
 							}
 						}
 						None => {
-							ret.insert(entry_key, entry);
+							ret.insert(entry_key.clone(), entry);
 						}
 					}
 				}
-			} else {
-				return Err(Error::unexpected_rpc_message(resp));
 			}
 		}
 
