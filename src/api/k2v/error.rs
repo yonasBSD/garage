@@ -44,6 +44,10 @@ pub enum Error {
 	#[error("Invalid causality token")]
 	InvalidCausalityToken,
 
+	/// Invalid parameter for x-garage-non-monotonic-read
+	#[error("Invalid X-Garage-Non-Monotonic-Read value: {0}")]
+	InvalidNonMonotonicRead(String),
+
 	/// The client asked for an invalid return format (invalid Accept header)
 	#[error("Not acceptable: {0}")]
 	NotAcceptable(String),
@@ -85,6 +89,7 @@ impl Error {
 			Error::InvalidBase64(_) => "InvalidBase64",
 			Error::InvalidUtf8Str(_) => "InvalidUtf8String",
 			Error::InvalidCausalityToken => "CausalityToken",
+			Error::InvalidNonMonotonicRead(_) => "InvalidNonMonotonicRead",
 			Error::InvalidDigest(_) => "InvalidDigest",
 		}
 	}
@@ -101,7 +106,8 @@ impl ApiError for Error {
 			| Error::InvalidBase64(_)
 			| Error::InvalidUtf8Str(_)
 			| Error::InvalidDigest(_)
-			| Error::InvalidCausalityToken => StatusCode::BAD_REQUEST,
+			| Error::InvalidCausalityToken
+			| Error::InvalidNonMonotonicRead(_) => StatusCode::BAD_REQUEST,
 		}
 	}
 

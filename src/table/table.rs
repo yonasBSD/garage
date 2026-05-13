@@ -552,7 +552,7 @@ impl<F: TableSchema, R: TableReplication> Table<F, R> {
 
 	// =============== UTILITY FUNCTION FOR CLIENT OPERATIONS ===============
 
-	async fn repair_on_read(&self, who: &[Uuid], what: F::E) -> Result<(), Error> {
+	pub async fn repair_on_read(&self, who: &[Uuid], what: F::E) -> Result<(), Error> {
 		let what_enc = Arc::new(ByteBuf::from(what.encode()?));
 		self.system
 			.rpc_helper()

@@ -5,7 +5,7 @@
 //! node does not process the entry directly, as this would
 //! mean the vector clock gets much larger than needed).
 
-use std::collections::{BTreeMap, HashMap};
+use std::collections::{BTreeMap, BTreeSet, HashMap};
 use std::convert::TryInto;
 use std::sync::{Arc, Mutex, MutexGuard};
 use std::time::{Duration, Instant};
@@ -210,6 +210,7 @@ impl K2VRpcHandler {
 		sort_key: String,
 		causal_context: CausalContext,
 		timeout_msec: u64,
+		monotonic_read: bool,
 	) -> Result<Option<K2VItem>, Error> {
 		let poll_key = PollKey {
 			partition: K2VItemPartition {
@@ -244,17 +245,35 @@ impl K2VRpcHandler {
 		};
 
 		let mut resp: Option<K2VItem> = None;
-		for v in resps {
-			match v {
-				K2VRpc::PollItemResponse(Some(x)) => {
-					if let Some(y) = &mut resp {
-						y.merge(&x);
-					} else {
-						resp = Some(x);
+		let mut not_all_same = false;
+		{
+			let mut vals_nb = 0;
+			let resps_nb = resps.len();
+			for v in resps {
+				match v {
+					K2VRpc::PollItemResponse(Some(x)) => {
+						vals_nb += 1;
+						if let Some(y) = &mut resp {
+							if *y != x {
+								not_all_same = true;
+								y.merge(&x);
+							}
+						} else {
+							resp = Some(x);
+						}
 					}
+					K2VRpc::PollItemResponse(None) => (),
+					v => return Err(Error::unexpected_rpc_message(v)),
 				}
-				K2VRpc::PollItemResponse(None) => (),
-				v => return Err(Error::unexpected_rpc_message(v)),
+			}
+			if vals_nb < resps_nb {
+				not_all_same = true;
+			}
+		}
+
+		if let Some(v) = &resp {
+			if monotonic_read && not_all_same {
+				self.item_table.repair_on_read(&nodes, v.clone()).await?;
 			}
 		}
 
@@ -266,6 +285,7 @@ impl K2VRpcHandler {
 		range: PollRange,
 		seen_str: Option<String>,
 		timeout_msec: u64,
+		monotonic_read: bool,
 	) -> Result<Option<(BTreeMap<String, K2VItem>, String)>, HelperError> {
 		let has_seen_marker = seen_str.is_some();
 
@@ -343,21 +363,51 @@ impl K2VRpcHandler {
 
 		// Take all returned items into account to produce the response.
 		let mut new_items = BTreeMap::<String, K2VItem>::new();
-		for v in resps {
-			if let K2VRpc::PollRangeResponse(node, items) = v {
-				seen.mark_seen_node_items(node, items.iter());
+		let mut to_repair = BTreeSet::new();
+		{
+			let mut all_items: BTreeMap<_, Vec<_>> = BTreeMap::new();
+			let resps_nb = resps.len();
+			for v in resps {
+				if let K2VRpc::PollRangeResponse(node, items) = v {
+					seen.mark_seen_node_items(node, items.iter());
+					for item in items.into_iter() {
+						all_items
+							.entry(item.sort_key.clone())
+							.or_default()
+							.push(item);
+					}
+				} else {
+					return Err(Error::unexpected_rpc_message(v).into());
+				}
+			}
+			for (item_key, items) in all_items {
+				// Only some nodes store this item; we must propage it during repair
+				if items.len() < resps_nb {
+					to_repair.insert(item_key.clone());
+				}
+				// Merge all items for this key together
 				for item in items.into_iter() {
 					match new_items.get_mut(&item.sort_key) {
 						Some(ent) => {
-							ent.merge(&item);
+							if *ent != item {
+								ent.merge(&item);
+								to_repair.insert(item.sort_key.clone());
+							}
 						}
 						None => {
 							new_items.insert(item.sort_key.clone(), item);
 						}
 					}
 				}
-			} else {
-				return Err(Error::unexpected_rpc_message(v).into());
+			}
+		}
+
+		if monotonic_read && !to_repair.is_empty() {
+			let to_repair = to_repair
+				.into_iter()
+				.map(|k| new_items.get(&k).unwrap().clone());
+			for v in to_repair {
+				self.item_table.repair_on_read(&nodes, v).await?
 			}
 		}
 
