@@ -5,6 +5,7 @@ use serde::{Deserialize, Serialize};
 use garage_table::{EnumerationOrder, TableSchema};
 
 use garage_model::k2v::item_table::*;
+use garage_model::k2v::rpc::K2VMonotonicRead;
 
 use garage_api_common::helpers::*;
 
@@ -68,7 +69,7 @@ pub async fn handle_read_batch(
 async fn handle_read_batch_query(
 	ctx: &ReqCtx,
 	query: ReadBatchQuery,
-	monotonic_read: bool,
+	monotonic_read: K2VMonotonicRead,
 ) -> Result<ReadBatchResponse, Error> {
 	let ReqCtx {
 		garage, bucket_id, ..
@@ -92,10 +93,11 @@ async fn handle_read_batch_query(
 			.start
 			.as_ref()
 			.ok_or_bad_request("start should be specified if single_item is set")?;
-		let item = if monotonic_read {
-			garage.k2v.item_table.get_monotonic(&partition, sk).await?
-		} else {
-			garage.k2v.item_table.get(&partition, sk).await?
+		let item = match monotonic_read {
+			K2VMonotonicRead::Monotonic => {
+				garage.k2v.item_table.get_monotonic(&partition, sk).await?
+			}
+			K2VMonotonicRead::NonMonotonic => garage.k2v.item_table.get(&partition, sk).await?,
 		}
 		.filter(|e| K2VItemTable::matches_filter(e, &filter));
 		match item {

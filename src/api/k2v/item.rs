@@ -5,6 +5,7 @@ use hyper::{Request, Response, StatusCode};
 
 use garage_model::k2v::causality::*;
 use garage_model::k2v::item_table::*;
+use garage_model::k2v::rpc::K2VMonotonicRead;
 
 use garage_api_common::helpers::*;
 
@@ -24,19 +25,17 @@ pub(crate) fn parse_causality_token(s: &str) -> Result<CausalContext, Error> {
 	CausalContext::parse(s).ok_or(Error::InvalidCausalityToken)
 }
 
-pub(crate) fn is_monotonic_read(req: &Request<ReqBody>) -> Result<bool, Error> {
+pub(crate) fn is_monotonic_read(req: &Request<ReqBody>) -> Result<K2VMonotonicRead, Error> {
 	let v_opt = req
 		.headers()
 		.get(X_GARAGE_NON_MONOTONIC_READ)
 		.map(|s| s.to_str())
 		.transpose()?;
 
-	// The header is set to 'true' if the read may be *non*-monotonic,
-	// and this function returns if we must do a *monotonic* read; hence
-	// the boolean negation.
 	match v_opt {
-		Some("true") => Ok(false),
-		Some("false") | None => Ok(true),
+		Some("true") => Ok(K2VMonotonicRead::NonMonotonic),
+		// Reads are monotonic by default
+		Some("false") | None => Ok(K2VMonotonicRead::Monotonic),
 		Some(s) => Err(Error::InvalidNonMonotonicRead(s.to_string())),
 	}
 }
@@ -133,14 +132,17 @@ pub async fn handle_read_item(
 		partition_key: partition_key.to_string(),
 	};
 
-	let item = if monotonic_read {
-		garage
-			.k2v
-			.item_table
-			.get_monotonic(&partition_key, sort_key)
-			.await?
-	} else {
-		garage.k2v.item_table.get(&partition_key, sort_key).await?
+	let item = match monotonic_read {
+		K2VMonotonicRead::Monotonic => {
+			garage
+				.k2v
+				.item_table
+				.get_monotonic(&partition_key, sort_key)
+				.await?
+		}
+		K2VMonotonicRead::NonMonotonic => {
+			garage.k2v.item_table.get(&partition_key, sort_key).await?
+		}
 	}
 	.ok_or(Error::NoSuchKey)?;
 

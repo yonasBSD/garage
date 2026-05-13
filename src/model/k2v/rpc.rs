@@ -38,6 +38,12 @@ const POLL_RANGE_EXTRA_DELAY: Duration = Duration::from_millis(200);
 
 const TIMESTAMP_KEY: &[u8] = b"timestamp";
 
+#[derive(Debug, Clone, Copy, PartialEq)]
+pub enum K2VMonotonicRead {
+	Monotonic,
+	NonMonotonic,
+}
+
 /// RPC messages for K2V
 #[derive(Debug, Serialize, Deserialize)]
 enum K2VRpc {
@@ -210,7 +216,7 @@ impl K2VRpcHandler {
 		sort_key: String,
 		causal_context: CausalContext,
 		timeout_msec: u64,
-		monotonic_read: bool,
+		monotonic_read: K2VMonotonicRead,
 	) -> Result<Option<K2VItem>, Error> {
 		let poll_key = PollKey {
 			partition: K2VItemPartition {
@@ -272,7 +278,7 @@ impl K2VRpcHandler {
 		}
 
 		if let Some(v) = &resp {
-			if monotonic_read && not_all_same {
+			if monotonic_read == K2VMonotonicRead::Monotonic && not_all_same {
 				self.item_table.repair_on_read(&nodes, &[&v]).await?;
 			}
 		}
@@ -285,7 +291,7 @@ impl K2VRpcHandler {
 		range: PollRange,
 		seen_str: Option<String>,
 		timeout_msec: u64,
-		monotonic_read: bool,
+		monotonic_read: K2VMonotonicRead,
 	) -> Result<Option<(BTreeMap<String, K2VItem>, String)>, HelperError> {
 		let has_seen_marker = seen_str.is_some();
 
@@ -402,7 +408,7 @@ impl K2VRpcHandler {
 			}
 		}
 
-		if monotonic_read && !to_repair.is_empty() {
+		if monotonic_read == K2VMonotonicRead::Monotonic && !to_repair.is_empty() {
 			let to_repair: Vec<_> = to_repair
 				.into_iter()
 				.map(|k| new_items.get(&k).unwrap())
