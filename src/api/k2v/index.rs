@@ -4,6 +4,7 @@ use serde::Serialize;
 use garage_table::util::*;
 
 use garage_model::k2v::item_table::{BYTES, CONFLICTS, ENTRIES, VALUES};
+use garage_model::k2v::rpc::K2VMonotonicRead;
 
 use garage_api_common::helpers::*;
 
@@ -40,6 +41,7 @@ pub async fn handle_read_index(
 		limit,
 		Some((DeletedFilter::NotDeleted, node_id_vec)),
 		EnumerationOrder::from_reverse(reverse),
+		K2VMonotonicRead::NonMonotonic,
 	)
 	.await?;
 

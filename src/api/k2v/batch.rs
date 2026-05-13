@@ -114,6 +114,7 @@ async fn handle_read_batch_query(
 			query.limit,
 			Some(filter),
 			EnumerationOrder::from_reverse(query.reverse),
+			monotonic_read,
 		)
 		.await?;
 
@@ -222,6 +223,7 @@ async fn handle_delete_batch_query(
 			None,
 			Some(filter),
 			EnumerationOrder::Forward,
+			K2VMonotonicRead::NonMonotonic,
 		)
 		.await?;
 		assert!(!more);

@@ -4,6 +4,8 @@
 
 use std::sync::Arc;
 
+use garage_model::k2v::rpc::K2VMonotonicRead;
+
 use garage_table::replication::TableShardedReplication;
 use garage_table::*;
 
@@ -23,6 +25,7 @@ pub(crate) async fn read_range<F>(
 	limit: Option<u64>,
 	filter: Option<F::Filter>,
 	enumeration_order: EnumerationOrder,
+	monotonic_read: K2VMonotonicRead,
 ) -> Result<(Vec<F::E>, bool, Option<String>), Error>
 where
 	F: TableSchema<S = String> + 'static,
@@ -53,15 +56,30 @@ where
 			1000,
 			limit.map(|x| x as usize).unwrap_or(usize::MAX - 10) - entries.len() + 2,
 		);
-		let get_ret = table
-			.get_range(
-				partition_key,
-				start.clone(),
-				filter.clone(),
-				n_get,
-				enumeration_order,
-			)
-			.await?;
+		let get_ret = match monotonic_read {
+			K2VMonotonicRead::Monotonic => {
+				table
+					.get_range_monotonic(
+						partition_key,
+						start.clone(),
+						filter.clone(),
+						n_get,
+						enumeration_order,
+					)
+					.await?
+			}
+			K2VMonotonicRead::NonMonotonic => {
+				table
+					.get_range(
+						partition_key,
+						start.clone(),
+						filter.clone(),
+						n_get,
+						enumeration_order,
+					)
+					.await?
+			}
+		};
 
 		let get_ret_len = get_ret.len();
 
