@@ -279,7 +279,7 @@ impl K2VRpcHandler {
 
 		if let Some(v) = &resp {
 			if monotonic_read == K2VMonotonicRead::Monotonic && not_all_same {
-				self.item_table.repair_on_read(&nodes, &[&v]).await?;
+				self.item_table.repair_on_read(&nodes, &[v]).await?;
 			}
 		}
 
@@ -387,7 +387,7 @@ impl K2VRpcHandler {
 				}
 			}
 			for (item_key, items) in all_items {
-				// Only some nodes store this item; we must propage it during repair
+				// Only some nodes store this item; we must propagate it during repair
 				if items.len() < resps_nb {
 					to_repair.insert(item_key.clone());
 				}
@@ -413,7 +413,7 @@ impl K2VRpcHandler {
 				.into_iter()
 				.map(|k| new_items.get(&k).unwrap())
 				.collect();
-			self.item_table.repair_on_read(&nodes, &to_repair).await?
+			self.item_table.repair_on_read(&nodes, &to_repair).await?;
 		}
 
 		if new_items.is_empty() && has_seen_marker {

@@ -376,7 +376,7 @@ impl<F: TableSchema, R: TableReplication> Table<F, R> {
 
 		if let Some(ret_entry) = &ret {
 			if monotonic_read && not_all_same {
-				self.repair_on_read(&who, &[&ret_entry]).await?;
+				self.repair_on_read(&who, &[ret_entry]).await?;
 			}
 		}
 

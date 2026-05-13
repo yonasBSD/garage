@@ -174,7 +174,7 @@ K2V provides the following consistency guarantees:
 successfully), a subsequent read is guaranteed to contain the value that was
 written.
 
-**Monotonic Reads**. Two sequencial reads will return values in an order that is
+**Monotonic Reads**. Two sequential reads will return values in an order that is
 consistent with the order in which they are written (e.g. by concurrent writes).
 For example, consider a scenario where a value is set initially set to 0 and a
 request writing 1 is performed. Doing two subsequent reads concurrently with the
