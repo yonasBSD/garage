@@ -46,6 +46,7 @@ const PATH_ENCODE_SET: AsciiSet = NON_ALPHANUMERIC
 	.remove(b'.')
 	.remove(b'~');
 
+#[derive(Clone)]
 pub struct K2vClientConfig {
 	pub endpoint: String,
 	pub region: String,
@@ -56,6 +57,7 @@ pub struct K2vClientConfig {
 }
 
 /// Client used to query a K2V server.
+#[derive(Clone)]
 pub struct K2vClient {
 	config: K2vClientConfig,
 	user_agent: HeaderValue,
