@@ -26,6 +26,10 @@ mod error;
 
 pub use error::Error;
 
+// Re-export these crates: values from these are passed to K2vClient::new_with_client
+pub use hyper_rustls;
+pub use hyper_util;
+
 pub type Body = FullBody<Bytes>;
 
 const DEFAULT_TIMEOUT: Duration = Duration::from_secs(5);
