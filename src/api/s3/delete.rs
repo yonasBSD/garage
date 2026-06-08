@@ -83,8 +83,21 @@ pub async fn handle_delete_objects(
 				}
 				ret_deleted.push(s3_xml::Deleted {
 					key: s3_xml::Value(obj.key.clone()),
-					version_id: s3_xml::Value(hex::encode(deleted_version)),
-					delete_marker_version_id: s3_xml::Value(hex::encode(delete_marker_version)),
+					version_id: Some(s3_xml::Value(hex::encode(deleted_version))),
+					delete_marker_version_id: Some(s3_xml::Value(hex::encode(
+						delete_marker_version,
+					))),
+				});
+			}
+			Err(Error::NoSuchKey) => {
+				if cmd.quiet {
+					continue;
+				}
+				// Deleting a non-existent key is a success in S3
+				ret_deleted.push(s3_xml::Deleted {
+					key: s3_xml::Value(obj.key.clone()),
+					version_id: None,
+					delete_marker_version_id: None,
 				});
 			}
 			Err(e) => {
