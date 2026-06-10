@@ -14,7 +14,7 @@ type Database = heed::Database<Bytes, Bytes>;
 
 use crate::{
 	open::{Engine, OpenOpt},
-	Db, Error, IDb, ITx, ITxFn, OnCommit, Result, TxError, TxFnResult, TxOpError, TxOpResult,
+	Db, DbError, DbResult, Error, IDb, ITx, ITxFn, OnCommit, TxError, TxFnResult, TxOpError,
 	TxResult, TxValueIter, Value, ValueIter,
 };
 
@@ -22,10 +22,10 @@ pub use heed;
 
 // ---- top-level open function
 
-pub(crate) fn open_db(path: &PathBuf, opt: &OpenOpt) -> Result<Db> {
+pub(crate) fn open_db(path: &PathBuf, opt: &OpenOpt) -> DbResult<Db> {
 	info!("Opening LMDB database at: {}", path.display());
 	if let Err(e) = std::fs::create_dir_all(path) {
-		return Err(Error(
+		return Err(DbError(
 			format!("Unable to create LMDB data directory: {}", e).into(),
 		));
 	}
@@ -48,7 +48,7 @@ pub(crate) fn open_db(path: &PathBuf, opt: &OpenOpt) -> Result<Db> {
 		env_builder.open(path)
 	};
 	match open_res {
-		Err(heed::Error::Io(e)) if e.kind() == std::io::ErrorKind::OutOfMemory => Err(Error(
+		Err(heed::Error::Io(e)) if e.kind() == std::io::ErrorKind::OutOfMemory => Err(DbError(
 			"OutOfMemory error while trying to open LMDB database. This can happen \
                 if your operating system is not allowing you to use sufficient virtual \
                 memory address space. Please check that no limit is set (ulimit -v). \
@@ -56,22 +56,28 @@ pub(crate) fn open_db(path: &PathBuf, opt: &OpenOpt) -> Result<Db> {
                 On 32-bit machines, you should probably switch to another database engine."
 				.into(),
 		)),
-		Err(e) => Err(Error(format!("Cannot open LMDB database: {}", e).into())),
+		Err(e) => Err(DbError(format!("Cannot open LMDB database: {}", e).into())),
 		Ok(db) => Ok(LmdbDb::init(db)),
 	}
 }
 
 // -- err
 
+impl From<heed::Error> for DbError {
+	fn from(e: heed::Error) -> DbError {
+		DbError(format!("LMDB: {}", e).into())
+	}
+}
+
 impl From<heed::Error> for Error {
 	fn from(e: heed::Error) -> Error {
-		Error(format!("LMDB: {}", e).into())
+		DbError::from(e).into()
 	}
 }
 
 impl From<heed::Error> for TxOpError {
 	fn from(e: heed::Error) -> TxOpError {
-		TxOpError(e.into())
+		DbError::from(e).into()
 	}
 }
 
@@ -91,14 +97,14 @@ impl LmdbDb {
 		Db(Arc::new(s))
 	}
 
-	fn get_tree(&self, i: usize) -> Result<Database> {
+	fn get_tree(&self, i: usize) -> DbResult<Database> {
 		self.trees
 			.read()
 			.unwrap()
 			.0
 			.get(i)
 			.cloned()
-			.ok_or_else(|| Error("invalid tree id".into()))
+			.ok_or_else(|| DbError("invalid tree id".into()))
 	}
 }
 
@@ -107,7 +113,7 @@ impl IDb for LmdbDb {
 		"LMDB (using Heed crate)".into()
 	}
 
-	fn open_tree(&self, name: &str) -> Result<usize> {
+	fn open_tree(&self, name: &str) -> DbResult<usize> {
 		let mut trees = self.trees.write().unwrap();
 		if let Some(i) = trees.1.get(name) {
 			Ok(*i)
@@ -122,7 +128,7 @@ impl IDb for LmdbDb {
 		}
 	}
 
-	fn list_trees(&self) -> Result<Vec<String>> {
+	fn list_trees(&self) -> DbResult<Vec<String>> {
 		let rtxn = self.db.read_txn()?;
 		let tree0 = match self
 			.db
@@ -153,7 +159,7 @@ impl IDb for LmdbDb {
 		Ok(ret2)
 	}
 
-	fn snapshot(&self, base_path: &Path) -> Result<()> {
+	fn snapshot(&self, base_path: &Path) -> DbResult<()> {
 		std::fs::create_dir_all(base_path)?;
 		let path = Engine::Lmdb.db_path(base_path);
 		self.db
@@ -163,7 +169,7 @@ impl IDb for LmdbDb {
 
 	// ----
 
-	fn get(&self, tree: usize, key: &[u8]) -> Result<Option<Value>> {
+	fn get(&self, tree: usize, key: &[u8]) -> DbResult<Option<Value>> {
 		let tree = self.get_tree(tree)?;
 
 		let tx = self.db.read_txn()?;
@@ -174,18 +180,18 @@ impl IDb for LmdbDb {
 		}
 	}
 
-	fn approximate_len(&self, tree: usize) -> Result<usize> {
+	fn approximate_len(&self, tree: usize) -> DbResult<usize> {
 		let tree = self.get_tree(tree)?;
 		let tx = self.db.read_txn()?;
 		Ok(tree.len(&tx)?.try_into().unwrap())
 	}
-	fn is_empty(&self, tree: usize) -> Result<bool> {
+	fn is_empty(&self, tree: usize) -> DbResult<bool> {
 		let tree = self.get_tree(tree)?;
 		let tx = self.db.read_txn()?;
 		Ok(tree.is_empty(&tx)?)
 	}
 
-	fn insert(&self, tree: usize, key: &[u8], value: &[u8]) -> Result<()> {
+	fn insert(&self, tree: usize, key: &[u8], value: &[u8]) -> DbResult<()> {
 		let tree = self.get_tree(tree)?;
 		let mut tx = self.db.write_txn()?;
 		tree.put(&mut tx, key, value)?;
@@ -193,7 +199,7 @@ impl IDb for LmdbDb {
 		Ok(())
 	}
 
-	fn remove(&self, tree: usize, key: &[u8]) -> Result<()> {
+	fn remove(&self, tree: usize, key: &[u8]) -> DbResult<()> {
 		let tree = self.get_tree(tree)?;
 		let mut tx = self.db.write_txn()?;
 		tree.delete(&mut tx, key)?;
@@ -201,7 +207,7 @@ impl IDb for LmdbDb {
 		Ok(())
 	}
 
-	fn clear(&self, tree: usize) -> Result<()> {
+	fn clear(&self, tree: usize) -> DbResult<()> {
 		let tree = self.get_tree(tree)?;
 		let mut tx = self.db.write_txn()?;
 		tree.clear(&mut tx)?;
@@ -209,14 +215,14 @@ impl IDb for LmdbDb {
 		Ok(())
 	}
 
-	fn iter(&self, tree: usize) -> Result<ValueIter<'_>> {
+	fn iter(&self, tree: usize) -> DbResult<ValueIter<'_>> {
 		let tree = self.get_tree(tree)?;
 		let tx = self.db.read_txn()?;
 		// Safety: the cloture does not store its argument anywhere,
 		unsafe { TxAndIterator::make(tx, |tx| Ok(tree.iter(tx)?)) }
 	}
 
-	fn iter_rev(&self, tree: usize) -> Result<ValueIter<'_>> {
+	fn iter_rev(&self, tree: usize) -> DbResult<ValueIter<'_>> {
 		let tree = self.get_tree(tree)?;
 		let tx = self.db.read_txn()?;
 		// Safety: the cloture does not store its argument anywhere,
@@ -228,7 +234,7 @@ impl IDb for LmdbDb {
 		tree: usize,
 		low: Bound<&'r [u8]>,
 		high: Bound<&'r [u8]>,
-	) -> Result<ValueIter<'_>> {
+	) -> DbResult<ValueIter<'_>> {
 		let tree = self.get_tree(tree)?;
 		let tx = self.db.read_txn()?;
 		// Safety: the cloture does not store its argument anywhere,
@@ -239,7 +245,7 @@ impl IDb for LmdbDb {
 		tree: usize,
 		low: Bound<&'r [u8]>,
 		high: Bound<&'r [u8]>,
-	) -> Result<ValueIter<'_>> {
+	) -> DbResult<ValueIter<'_>> {
 		let tree = self.get_tree(tree)?;
 		let tx = self.db.read_txn()?;
 		// Safety: the cloture does not store its argument anywhere,
@@ -271,9 +277,9 @@ impl IDb for LmdbDb {
 			}
 			TxFnResult::DbErr => {
 				tx.tx.abort();
-				Err(TxError::Db(Error(
-					"(this message will be discarded)".into(),
-				)))
+				Err(TxError::Db(
+					DbError("(this message will be discarded)".into()).into(),
+				))
 			}
 		}
 	}
@@ -287,49 +293,49 @@ struct LmdbTx<'a> {
 }
 
 impl<'a> LmdbTx<'a> {
-	fn get_tree(&self, i: usize) -> TxOpResult<&Database> {
+	fn get_tree(&self, i: usize) -> DbResult<&Database> {
 		self.trees.get(i).ok_or_else(|| {
-			TxOpError(Error(
+			DbError(
 				"invalid tree id (it might have been opened after the transaction started)".into(),
-			))
+			)
 		})
 	}
 }
 
 impl<'a> ITx for LmdbTx<'a> {
-	fn get(&self, tree: usize, key: &[u8]) -> TxOpResult<Option<Value>> {
+	fn get(&self, tree: usize, key: &[u8]) -> DbResult<Option<Value>> {
 		let tree = self.get_tree(tree)?;
 		match tree.get(&self.tx, key)? {
 			Some(v) => Ok(Some(v.to_vec())),
 			None => Ok(None),
 		}
 	}
-	fn len(&self, tree: usize) -> TxOpResult<usize> {
+	fn len(&self, tree: usize) -> DbResult<usize> {
 		let tree = self.get_tree(tree)?;
 		Ok(tree.len(&self.tx)? as usize)
 	}
 
-	fn insert(&mut self, tree: usize, key: &[u8], value: &[u8]) -> TxOpResult<()> {
+	fn insert(&mut self, tree: usize, key: &[u8], value: &[u8]) -> DbResult<()> {
 		let tree = *self.get_tree(tree)?;
 		tree.put(&mut self.tx, key, value)?;
 		Ok(())
 	}
-	fn remove(&mut self, tree: usize, key: &[u8]) -> TxOpResult<()> {
+	fn remove(&mut self, tree: usize, key: &[u8]) -> DbResult<()> {
 		let tree = *self.get_tree(tree)?;
 		tree.delete(&mut self.tx, key)?;
 		Ok(())
 	}
-	fn clear(&mut self, tree: usize) -> TxOpResult<()> {
+	fn clear(&mut self, tree: usize) -> DbResult<()> {
 		let tree = *self.get_tree(tree)?;
 		tree.clear(&mut self.tx)?;
 		Ok(())
 	}
 
-	fn iter(&self, tree: usize) -> TxOpResult<TxValueIter<'_>> {
+	fn iter(&self, tree: usize) -> DbResult<TxValueIter<'_>> {
 		let tree = *self.get_tree(tree)?;
 		Ok(Box::new(tree.iter(&self.tx)?.map(tx_iter_item)))
 	}
-	fn iter_rev(&self, tree: usize) -> TxOpResult<TxValueIter<'_>> {
+	fn iter_rev(&self, tree: usize) -> DbResult<TxValueIter<'_>> {
 		let tree = *self.get_tree(tree)?;
 		Ok(Box::new(tree.rev_iter(&self.tx)?.map(tx_iter_item)))
 	}
@@ -339,7 +345,7 @@ impl<'a> ITx for LmdbTx<'a> {
 		tree: usize,
 		low: Bound<&'r [u8]>,
 		high: Bound<&'r [u8]>,
-	) -> TxOpResult<TxValueIter<'_>> {
+	) -> DbResult<TxValueIter<'_>> {
 		let tree = *self.get_tree(tree)?;
 		Ok(Box::new(
 			tree.range(&self.tx, &(low, high))?.map(tx_iter_item),
@@ -350,7 +356,7 @@ impl<'a> ITx for LmdbTx<'a> {
 		tree: usize,
 		low: Bound<&'r [u8]>,
 		high: Bound<&'r [u8]>,
-	) -> TxOpResult<TxValueIter<'_>> {
+	) -> DbResult<TxValueIter<'_>> {
 		let tree = *self.get_tree(tree)?;
 		Ok(Box::new(
 			tree.rev_range(&self.tx, &(low, high))?.map(tx_iter_item),
@@ -386,9 +392,9 @@ where
 	}
 
 	/// Safety: iterfun must not store its argument anywhere but in its result.
-	unsafe fn make<F>(tx: RoTxn<'a, WithTls>, iterfun: F) -> Result<ValueIter<'a>>
+	unsafe fn make<F>(tx: RoTxn<'a, WithTls>, iterfun: F) -> DbResult<ValueIter<'a>>
 	where
-		F: FnOnce(&'a RoTxn<'a>) -> Result<I>,
+		F: FnOnce(&'a RoTxn<'a>) -> DbResult<I>,
 	{
 		let res = TxAndIterator {
 			tx,
@@ -436,13 +442,13 @@ impl<'a, I> Iterator for TxAndIteratorPin<'a, I>
 where
 	I: Iterator<Item = IteratorItem<'a>> + 'a,
 {
-	type Item = Result<(Value, Value)>;
+	type Item = DbResult<(Value, Value)>;
 
 	fn next(&mut self) -> Option<Self::Item> {
 		let mut_ref = Pin::as_mut(&mut self.0);
 		let next = mut_ref.iter().as_mut()?.next()?;
 		let res = match next {
-			Err(e) => Err(e.into()),
+			Err(e) => Err(DbError::from(e)),
 			Ok((k, v)) => Ok((k.to_vec(), v.to_vec())),
 		};
 		Some(res)
@@ -453,9 +459,9 @@ where
 
 fn tx_iter_item<'a>(
 	item: std::result::Result<(&'a [u8], &'a [u8]), heed::Error>,
-) -> TxOpResult<(Vec<u8>, Vec<u8>)> {
+) -> DbResult<(Vec<u8>, Vec<u8>)> {
 	item.map(|(k, v)| (k.to_vec(), v.to_vec()))
-		.map_err(|e| TxOpError(Error::from(e)))
+		.map_err(DbError::from)
 }
 
 // ---- utility ----

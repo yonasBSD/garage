@@ -49,7 +49,7 @@ pub struct OpenLmdbOpt {
 
 pub(crate) fn do_conversion(args: ConvertDbOpt) -> Result<()> {
 	if args.input_engine == args.output_engine {
-		return Err(Error("input and output database engine must differ".into()));
+		return Err(DbError("input and output database engine must differ".into()).into());
 	}
 
 	let opt = OpenOpt {
