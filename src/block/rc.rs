@@ -1,4 +1,5 @@
 use std::convert::TryInto;
+use std::num::NonZeroU64;
 
 use arc_swap::ArcSwapOption;
 
@@ -33,7 +34,7 @@ impl BlockRc {
 		tx: &mut db::Transaction,
 		hash: &Hash,
 	) -> db::TxOpResult<bool> {
-		let old_rc = self.rc_table.tx_get(tx, hash)?.unwrap_or(RcEntry::Absent);
+		let old_rc = RcState(self.rc_table.tx_get(tx, hash)?);
 		self.rc_table.tx_insert(tx, hash, &old_rc.increment())?;
 		Ok(old_rc.is_zero())
 	}
@@ -45,17 +46,17 @@ impl BlockRc {
 		tx: &mut db::Transaction,
 		hash: &Hash,
 	) -> db::TxOpResult<bool> {
-		let new_rc = self.rc_table.tx_get(tx, hash)?.unwrap_or(RcEntry::Absent).decrement();
-		match new_rc {
-			RcEntry::Absent => self.rc_table.tx_remove(tx, hash)?,
-			_ => self.rc_table.tx_insert(tx, hash, &new_rc)?,
+		let new_rc = RcState(self.rc_table.tx_get(tx, hash)?).decrement();
+		match &new_rc.0 {
+			None => self.rc_table.tx_remove(tx, hash)?,
+			Some(rc) => self.rc_table.tx_insert(tx, hash, rc)?,
 		}
-		Ok(matches!(new_rc, RcEntry::Deletable { .. }))
+		Ok(matches!(new_rc.0, Some(RcEntry::Deletable { .. })))
 	}
 
-	/// Read a block's reference count
-	pub(crate) fn get_block_rc(&self, hash: &Hash) -> Result<RcEntry, Error> {
-		Ok(self.rc_table.get(hash)?.unwrap_or(RcEntry::Absent))
+	/// Read a block's reference counting state
+	pub(crate) fn get_block_rc(&self, hash: &Hash) -> Result<RcState, Error> {
+		Ok(RcState(self.rc_table.get(hash)?))
 	}
 
 	/// Return the first hash stored in the RC table at or after `cursor`
@@ -73,8 +74,8 @@ impl BlockRc {
 	pub(crate) fn clear_deleted_block_rc(&self, hash: &Hash) -> Result<(), Error> {
 		let now = now_msec();
 		self.rc_table.db().transaction(|tx| {
-			let rcval = self.rc_table.tx_get(tx, hash)?.unwrap_or(RcEntry::Absent);
-			if let RcEntry::Deletable { at_time } = rcval {
+			let rcval = self.rc_table.tx_get(tx, hash)?;
+			if let Some(RcEntry::Deletable { at_time }) = rcval {
 				if now > at_time {
 					self.rc_table.tx_remove(tx, hash)?;
 				}
@@ -97,26 +98,23 @@ impl BlockRc {
 					for f in recalc_fns.iter() {
 						cnt += f(tx, hash)?;
 					}
-					let old_rc = self.rc_table.tx_get(tx, hash)?.unwrap_or(RcEntry::Absent);
+					let old_count = RcState(self.rc_table.tx_get(tx, hash)?).as_u64();
 					trace!(
 						"Block RC for {:?}: stored={}, calculated={}",
 						hash,
-						old_rc.as_u64(),
+						old_count,
 						cnt
 					);
-					if cnt as u64 != old_rc.as_u64() {
+					if cnt as u64 != old_count {
 						warn!(
 							"Fixing inconsistent block RC for {:?}: was {}, should be {}",
-							hash,
-							old_rc.as_u64(),
-							cnt
+							hash, old_count, cnt
 						);
-						let new_rc = if cnt > 0 {
-							RcEntry::Present { count: cnt as u64 }
-						} else {
-							RcEntry::Deletable {
+						let new_rc = match NonZeroU64::new(cnt as u64) {
+							Some(count) => RcEntry::Present { count },
+							None => RcEntry::Deletable {
 								at_time: now_msec() + BLOCK_GC_DELAY.as_millis() as u64,
-							}
+							},
 						};
 						self.rc_table.tx_insert(tx, hash, &new_rc)?;
 						Ok((cnt, true))
@@ -140,25 +138,24 @@ impl BlockRc {
 impl db::DbBytes for RcEntry {
 	fn encode(&self) -> Vec<u8> {
 		match self {
-			RcEntry::Present { count } => u64::to_be_bytes(*count).to_vec(),
+			RcEntry::Present { count } => u64::to_be_bytes(count.get()).to_vec(),
 			RcEntry::Deletable { at_time } => {
 				[u64::to_be_bytes(0), u64::to_be_bytes(*at_time)].concat()
 			}
-			RcEntry::Absent => panic!("cannot encode RcEntry::Absent"),
 		}
 	}
 
-	fn decode(bytes: &[u8]) -> db::Result<Self> {
+	fn decode(bytes: &[u8]) -> std::result::Result<Self, db::DecodeError> {
 		if bytes.len() == 8 {
-			Ok(RcEntry::Present {
-				count: u64::from_be_bytes(bytes.try_into().unwrap()),
-			})
+			let count = NonZeroU64::new(u64::from_be_bytes(bytes.try_into().unwrap()))
+				.ok_or(db::DecodeError("invalid RC entry: zero count".into()))?;
+			Ok(RcEntry::Present { count })
 		} else if bytes.len() == 16 {
 			Ok(RcEntry::Deletable {
 				at_time: u64::from_be_bytes(bytes[8..16].try_into().unwrap()),
 			})
 		} else {
-			Err(db::Error::Decode(
+			Err(db::DecodeError(
 				format!(
 					"invalid RC entry: expected 8 or 16 bytes, got {}",
 					bytes.len()
@@ -169,13 +166,16 @@ impl db::DbBytes for RcEntry {
 	}
 }
 
-/// Describes the state of the reference counter for a block
+/// A block's entry in the RC table.
+///
+/// A block with zero references and no pending deletion has no entry
+/// in the RC table at all: see [`RcState`].
 #[derive(Clone, Copy, Debug)]
 pub(crate) enum RcEntry {
-	/// Present: the block has `count` references, with `count` > 0.
+	/// Present: the block has `count` references.
 	///
 	/// This is stored as `u64::to_be_bytes(count)`
-	Present { count: u64 },
+	Present { count: NonZeroU64 },
 
 	/// Deletable: the block has zero references, and can be deleted
 	/// once time (returned by `now_msec`) is larger than `at_time`
@@ -185,40 +185,39 @@ pub(crate) enum RcEntry {
 	/// (this allows for the data format to be backwards compatible with
 	/// previous Garage versions that didn't have this intermediate state)
 	Deletable { at_time: u64 },
-
-	/// Absent: the block has zero references, and can be deleted
-	/// immediately
-	Absent,
 }
 
-impl RcEntry {
-	fn increment(self) -> Self {
-		let old_count = match self {
-			RcEntry::Present { count } => count,
-			_ => 0,
+/// Describes the state of the reference counter for a block: the block's
+/// entry in the RC table, or `None` if it has none, meaning the block has
+/// zero references and can be deleted immediately.
+#[derive(Clone, Copy, Debug)]
+pub(crate) struct RcState(Option<RcEntry>);
+
+impl RcState {
+	/// The new RC table entry after a reference is taken on the block
+	fn increment(&self) -> RcEntry {
+		let count = match self.0 {
+			Some(RcEntry::Present { count }) => count.saturating_add(1),
+			_ => NonZeroU64::new(1).unwrap(),
 		};
-		RcEntry::Present {
-			count: old_count + 1,
-		}
+		RcEntry::Present { count }
 	}
 
-	fn decrement(self) -> Self {
-		match self {
-			RcEntry::Present { count } => {
-				if count > 1 {
-					RcEntry::Present { count: count - 1 }
-				} else {
-					RcEntry::Deletable {
-						at_time: now_msec() + BLOCK_GC_DELAY.as_millis() as u64,
-					}
-				}
-			}
-			del => del,
-		}
+	/// The new state after a reference to the block is dropped
+	fn decrement(&self) -> Self {
+		RcState(match self.0 {
+			Some(RcEntry::Present { count }) => Some(match NonZeroU64::new(count.get() - 1) {
+				Some(count) => RcEntry::Present { count },
+				None => RcEntry::Deletable {
+					at_time: now_msec() + BLOCK_GC_DELAY.as_millis() as u64,
+				},
+			}),
+			unchanged => unchanged,
+		})
 	}
 
 	pub(crate) fn is_zero(&self) -> bool {
-		matches!(self, RcEntry::Deletable { .. } | RcEntry::Absent)
+		matches!(self.0, None | Some(RcEntry::Deletable { .. }))
 	}
 
 	pub(crate) fn is_nonzero(&self) -> bool {
@@ -226,10 +225,10 @@ impl RcEntry {
 	}
 
 	pub(crate) fn is_deletable(&self) -> bool {
-		match self {
-			RcEntry::Present { .. } => false,
-			RcEntry::Deletable { at_time } => now_msec() > *at_time,
-			RcEntry::Absent => true,
+		match self.0 {
+			Some(RcEntry::Present { .. }) => false,
+			Some(RcEntry::Deletable { at_time }) => now_msec() > at_time,
+			None => true,
 		}
 	}
 
@@ -238,8 +237,8 @@ impl RcEntry {
 	}
 
 	pub(crate) fn as_u64(&self) -> u64 {
-		match self {
-			RcEntry::Present { count } => *count,
+		match self.0 {
+			Some(RcEntry::Present { count }) => count.get(),
 			_ => 0,
 		}
 	}
