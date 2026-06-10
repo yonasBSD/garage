@@ -155,6 +155,21 @@ pub fn gen_uuid() -> Uuid {
 	rand::rng().random::<[u8; 32]>().into()
 }
 
+impl garage_db::DbBytes for FixedBytes32 {
+	fn encode(&self) -> Vec<u8> {
+		self.0.into()
+	}
+	fn decode(bytes: &[u8]) -> std::result::Result<Self, garage_db::DecodeError> {
+		Self::try_from(bytes).ok_or_else(|| {
+			garage_db::DecodeError(
+				format!("invalid hash: expected 32 bytes, got {}", bytes.len()).into(),
+			)
+		})
+	}
+}
+
+impl garage_db::DbOrdKey for FixedBytes32 {}
+
 #[cfg(test)]
 mod test {
 	use super::*;

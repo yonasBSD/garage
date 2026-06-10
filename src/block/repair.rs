@@ -102,16 +102,15 @@ impl Worker for RepairWorker {
 				let mut batch_of_hashes = vec![];
 				let start_bound = match self.next_start.as_ref() {
 					None => Bound::Unbounded,
-					Some(x) => Bound::Excluded(x.as_slice()),
+					Some(x) => Bound::Excluded(*x),
 				};
 				for entry in self
 					.manager
 					.rc
 					.rc_table
-					.range::<&[u8], _>((start_bound, Bound::Unbounded))?
+					.range((start_bound, Bound::Unbounded))?
 				{
 					let (hash, _) = entry?;
-					let hash = Hash::try_from(&hash[..]).unwrap();
 					batch_of_hashes.push(hash);
 					if batch_of_hashes.len() >= 1000 {
 						break;

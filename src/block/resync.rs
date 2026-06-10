@@ -44,14 +44,57 @@ pub(crate) const MAX_RESYNC_WORKERS: usize = 8;
 const INITIAL_RESYNC_TRANQUILITY: u32 = 2;
 
 pub struct BlockResyncManager {
-	pub(crate) queue: db::Tree,
+	pub(crate) queue: db::TypedTree<ResyncQueueKey, Hash>,
 	pub(crate) notify: Arc<Notify>,
-	pub(crate) errors: db::Tree,
+	pub(crate) errors: db::TypedTree<Hash, ErrorCounter>,
 
 	busy_set: BusySet,
 
 	persister: PersisterShared<ResyncPersistedConfig>,
 }
+
+/// Key of the resync queue tree: blocks are resynced in order of increasing
+/// `when` (msec timestamp of the next try), with the block hash as tie-breaker.
+///
+// CAREFUL: this type implements `DbOrdKey`, so its byte encoding must be
+// order-preserving.
+// The derived `Ord` compares fields in declaration order, which must match
+// the order in which `encode()` writes them; and `when` must remain an
+// *unsigned* integer, as the big-endian encoding is only order-preserving
+// for unsigned types.
+#[derive(Clone, Copy, Debug, PartialEq, Eq, PartialOrd, Ord, Hash)]
+pub(crate) struct ResyncQueueKey {
+	pub(crate) when: u64,
+	pub(crate) hash: Hash,
+}
+
+impl db::DbBytes for ResyncQueueKey {
+	fn encode(&self) -> Vec<u8> {
+		let mut v = Vec::with_capacity(40);
+		v.extend_from_slice(&u64::to_be_bytes(self.when));
+		v.extend_from_slice(self.hash.as_slice());
+		v
+	}
+
+	fn decode(bytes: &[u8]) -> std::result::Result<Self, db::DecodeError> {
+		if bytes.len() != 40 {
+			return Err(db::DecodeError(
+				format!(
+					"invalid resync queue key: expected 40 bytes, got {}",
+					bytes.len()
+				)
+				.into(),
+			));
+		}
+		Ok(ResyncQueueKey {
+			when: u64::from_be_bytes(bytes[..8].try_into().unwrap()),
+			hash: Hash::try_from(&bytes[8..])
+				.ok_or_else(|| db::DecodeError("invalid resync queue key: bad hash".into()))?,
+		})
+	}
+}
+
+impl db::DbOrdKey for ResyncQueueKey {}
 
 #[derive(Serialize, Deserialize, Clone, Copy)]
 struct ResyncPersistedConfig {
@@ -74,22 +117,21 @@ enum ResyncIterResult {
 	IdleFor(Duration),
 }
 
-type BusySet = Arc<Mutex<HashSet<Vec<u8>>>>;
+type BusySet = Arc<Mutex<HashSet<ResyncQueueKey>>>;
 
 struct BusyBlock {
-	time_bytes: Vec<u8>,
-	hash_bytes: Vec<u8>,
+	key: ResyncQueueKey,
 	busy_set: BusySet,
 }
 
 impl BlockResyncManager {
 	pub(crate) fn new(db: &db::Db, system: &System) -> Self {
 		let queue = db
-			.open_tree("block_local_resync_queue")
+			.open_typed_tree("block_local_resync_queue")
 			.expect("Unable to open block_local_resync_queue tree");
 
 		let errors = db
-			.open_tree("block_local_resync_errors")
+			.open_typed_tree("block_local_resync_errors")
 			.expect("Unable to open block_local_resync_errors tree");
 
 		let persister = PersisterShared::new(&system.metadata_dir, "resync_cfg");
@@ -116,11 +158,10 @@ impl BlockResyncManager {
 	/// Clear the error counter for a block and put it in queue immediately
 	pub fn clear_backoff(&self, hash: &Hash) -> Result<(), Error> {
 		let now = now_msec();
-		if let Some(ec) = self.errors.get(hash)? {
-			let mut ec = ErrorCounter::decode(&ec);
+		if let Some(mut ec) = self.errors.get(hash)? {
 			if ec.errors > 0 {
 				ec.last_try = now - ec.delay_msec();
-				self.errors.insert(hash, ec.encode())?;
+				self.errors.insert(hash, &ec)?;
 				self.put_to_resync_at(hash, now)?;
 				return Ok(());
 			}
@@ -251,23 +292,21 @@ impl BlockResyncManager {
 
 	pub(crate) fn put_to_resync_at(&self, hash: &Hash, when: u64) -> db::Result<()> {
 		trace!("Put resync_queue: {} {:?}", when, hash);
-		let mut key = u64::to_be_bytes(when).to_vec();
-		key.extend(hash.as_ref());
-		self.queue.insert(key, hash.as_ref())?;
+		let qkey = ResyncQueueKey { when, hash: *hash };
+		self.queue.insert(&qkey, hash)?;
 		self.notify.notify_waiters();
 		Ok(())
 	}
 
 	async fn resync_iter(&self, manager: &BlockManager) -> Result<ResyncIterResult, db::Error> {
 		if let Some(block) = self.get_block_to_resync()? {
-			let time_msec = u64::from_be_bytes(block.time_bytes[0..8].try_into().unwrap());
+			let time_msec = block.key.when;
 			let now = now_msec();
 
 			if now >= time_msec {
-				let hash = Hash::try_from(&block.hash_bytes[..]).unwrap();
+				let hash = block.key.hash;
 
-				if let Some(ec) = self.errors.get(hash.as_slice())? {
-					let ec = ErrorCounter::decode(&ec);
+				if let Some(ec) = self.errors.get(&hash)? {
 					if now < ec.next_try() {
 						// if next retry after an error is not yet,
 						// don't do resync and return early, but still
@@ -277,7 +316,7 @@ impl BlockResyncManager {
 						// is not removing the one we added just above
 						// (we want to do the remove after the insert to ensure
 						// that the item is not lost if we crash in-between)
-						self.queue.remove(&block.time_bytes)?;
+						self.queue.remove(&block.key)?;
 						return Ok(ResyncIterResult::BusyDidNothing);
 					}
 				}
@@ -307,21 +346,21 @@ impl BlockResyncManager {
 					manager.metrics.resync_error_counter.add(1);
 					error!("Error when resyncing {:?}: {}", hash, e);
 
-					let err_counter = match self.errors.get(hash.as_slice())? {
-						Some(ec) => ErrorCounter::decode(&ec).add1(now + 1),
+					let err_counter = match self.errors.get(&hash)? {
+						Some(ec) => ec.add1(now + 1),
 						None => ErrorCounter::new(now + 1),
 					};
 
-					self.errors.insert(hash.as_slice(), err_counter.encode())?;
+					self.errors.insert(&hash, &err_counter)?;
 
 					self.put_to_resync_at(&hash, err_counter.next_try())?;
 					// err_counter.next_try() >= now + 1 > now,
 					// the entry we remove from the queue is not
 					// the entry we inserted with put_to_resync_at
-					self.queue.remove(&block.time_bytes)?;
+					self.queue.remove(&block.key)?;
 				} else {
-					self.errors.remove(hash.as_slice())?;
-					self.queue.remove(&block.time_bytes)?;
+					self.errors.remove(&hash)?;
+					self.queue.remove(&block.key)?;
 				}
 
 				Ok(ResyncIterResult::BusyDidSomething)
@@ -344,12 +383,11 @@ impl BlockResyncManager {
 	fn get_block_to_resync(&self) -> Result<Option<BusyBlock>, db::Error> {
 		let mut busy = self.busy_set.lock().unwrap();
 		for it in self.queue.iter()? {
-			let (time_bytes, hash_bytes) = it?;
-			if !busy.contains(&time_bytes) {
-				busy.insert(time_bytes.clone());
+			let (key, _) = it?;
+			if !busy.contains(&key) {
+				busy.insert(key);
 				return Ok(Some(BusyBlock {
-					time_bytes,
-					hash_bytes,
+					key,
 					busy_set: self.busy_set.clone(),
 				}));
 			}
@@ -506,7 +544,7 @@ impl BlockResyncManager {
 impl Drop for BusyBlock {
 	fn drop(&mut self) {
 		let mut busy = self.busy_set.lock().unwrap();
-		busy.remove(&self.time_bytes);
+		busy.remove(&self.key);
 	}
 }
 
@@ -602,11 +640,37 @@ impl Worker for ResyncWorker {
 
 /// Counts the number of errors when resyncing a block,
 /// and the time of the last try.
+///
 /// Used to implement exponential backoff.
 #[derive(Clone, Copy, Debug)]
 pub(crate) struct ErrorCounter {
 	pub(crate) errors: u64,
 	pub(crate) last_try: u64,
+}
+
+impl db::DbBytes for ErrorCounter {
+	fn encode(&self) -> Vec<u8> {
+		let mut v = Vec::with_capacity(16);
+		v.extend_from_slice(&u64::to_be_bytes(self.errors));
+		v.extend_from_slice(&u64::to_be_bytes(self.last_try));
+		v
+	}
+
+	fn decode(bytes: &[u8]) -> std::result::Result<Self, db::DecodeError> {
+		if bytes.len() != 16 {
+			return Err(db::DecodeError(
+				format!(
+					"invalid error counter: expected 16 bytes, got {}",
+					bytes.len()
+				)
+				.into(),
+			));
+		}
+		Ok(Self {
+			errors: u64::from_be_bytes(bytes[..8].try_into().unwrap()),
+			last_try: u64::from_be_bytes(bytes[8..].try_into().unwrap()),
+		})
+	}
 }
 
 impl ErrorCounter {
@@ -615,21 +679,6 @@ impl ErrorCounter {
 			errors: 1,
 			last_try: now,
 		}
-	}
-
-	pub(crate) fn decode(data: &[u8]) -> Self {
-		Self {
-			errors: u64::from_be_bytes(data[0..8].try_into().unwrap()),
-			last_try: u64::from_be_bytes(data[8..16].try_into().unwrap()),
-		}
-	}
-
-	fn encode(&self) -> Vec<u8> {
-		[
-			u64::to_be_bytes(self.errors),
-			u64::to_be_bytes(self.last_try),
-		]
-		.concat()
 	}
 
 	fn add1(self, now: u64) -> Self {

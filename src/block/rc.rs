@@ -14,12 +14,12 @@ pub type CalculateRefcount =
 	Box<dyn Fn(&db::Transaction, &Hash) -> db::TxResult<usize, Error> + Send + Sync>;
 
 pub struct BlockRc {
-	pub rc_table: db::Tree,
+	pub(crate) rc_table: db::TypedTree<Hash, RcEntry>,
 	pub(crate) recalc_rc: ArcSwapOption<Vec<CalculateRefcount>>,
 }
 
 impl BlockRc {
-	pub(crate) fn new(rc: db::Tree) -> Self {
+	pub(crate) fn new(rc: db::TypedTree<Hash, RcEntry>) -> Self {
 		Self {
 			rc_table: rc,
 			recalc_rc: ArcSwapOption::new(None),
@@ -33,11 +33,8 @@ impl BlockRc {
 		tx: &mut db::Transaction,
 		hash: &Hash,
 	) -> db::TxOpResult<bool> {
-		let old_rc = RcEntry::parse_opt(tx.get(&self.rc_table, hash)?);
-		match old_rc.increment().serialize() {
-			Some(x) => tx.insert(&self.rc_table, hash, x)?,
-			None => unreachable!(),
-		}
+		let old_rc = self.rc_table.tx_get(tx, hash)?.unwrap_or(RcEntry::Absent);
+		self.rc_table.tx_insert(tx, hash, &old_rc.increment())?;
 		Ok(old_rc.is_zero())
 	}
 
@@ -48,17 +45,27 @@ impl BlockRc {
 		tx: &mut db::Transaction,
 		hash: &Hash,
 	) -> db::TxOpResult<bool> {
-		let new_rc = RcEntry::parse_opt(tx.get(&self.rc_table, hash)?).decrement();
-		match new_rc.serialize() {
-			Some(x) => tx.insert(&self.rc_table, hash, x)?,
-			None => tx.remove(&self.rc_table, hash)?,
+		let new_rc = self.rc_table.tx_get(tx, hash)?.unwrap_or(RcEntry::Absent).decrement();
+		match new_rc {
+			RcEntry::Absent => self.rc_table.tx_remove(tx, hash)?,
+			_ => self.rc_table.tx_insert(tx, hash, &new_rc)?,
 		}
 		Ok(matches!(new_rc, RcEntry::Deletable { .. }))
 	}
 
 	/// Read a block's reference count
 	pub(crate) fn get_block_rc(&self, hash: &Hash) -> Result<RcEntry, Error> {
-		Ok(RcEntry::parse_opt(self.rc_table.get(hash.as_ref())?))
+		Ok(self.rc_table.get(hash)?.unwrap_or(RcEntry::Absent))
+	}
+
+	/// Return the first hash stored in the RC table at or after `cursor`
+	pub fn get_first_hash_from(&self, cursor: Hash) -> Result<Option<Hash>, Error> {
+		Ok(self
+			.rc_table
+			.range(cursor..)?
+			.next()
+			.transpose()?
+			.map(|(k, _)| k))
 	}
 
 	/// Delete an entry in the RC table if it is deletable and the
@@ -66,12 +73,11 @@ impl BlockRc {
 	pub(crate) fn clear_deleted_block_rc(&self, hash: &Hash) -> Result<(), Error> {
 		let now = now_msec();
 		self.rc_table.db().transaction(|tx| {
-			let rcval = RcEntry::parse_opt(tx.get(&self.rc_table, hash)?);
-			match rcval {
-				RcEntry::Deletable { at_time } if now > at_time => {
-					tx.remove(&self.rc_table, hash)?;
+			let rcval = self.rc_table.tx_get(tx, hash)?.unwrap_or(RcEntry::Absent);
+			if let RcEntry::Deletable { at_time } = rcval {
+				if now > at_time {
+					self.rc_table.tx_remove(tx, hash)?;
 				}
-				_ => (),
 			}
 			Ok(())
 		})?;
@@ -91,7 +97,7 @@ impl BlockRc {
 					for f in recalc_fns.iter() {
 						cnt += f(tx, hash)?;
 					}
-					let old_rc = RcEntry::parse_opt(tx.get(&self.rc_table, hash)?);
+					let old_rc = self.rc_table.tx_get(tx, hash)?.unwrap_or(RcEntry::Absent);
 					trace!(
 						"Block RC for {:?}: stored={}, calculated={}",
 						hash,
@@ -112,7 +118,7 @@ impl BlockRc {
 								at_time: now_msec() + BLOCK_GC_DELAY.as_millis() as u64,
 							}
 						};
-						tx.insert(&self.rc_table, hash, new_rc.serialize().unwrap())?;
+						self.rc_table.tx_insert(tx, hash, &new_rc)?;
 						Ok((cnt, true))
 					} else {
 						Ok((cnt, false))
@@ -126,6 +132,38 @@ impl BlockRc {
 		} else {
 			Err(Error::Message(
 				"Block RC recalculation is not available at this point".into(),
+			))
+		}
+	}
+}
+
+impl db::DbBytes for RcEntry {
+	fn encode(&self) -> Vec<u8> {
+		match self {
+			RcEntry::Present { count } => u64::to_be_bytes(*count).to_vec(),
+			RcEntry::Deletable { at_time } => {
+				[u64::to_be_bytes(0), u64::to_be_bytes(*at_time)].concat()
+			}
+			RcEntry::Absent => panic!("cannot encode RcEntry::Absent"),
+		}
+	}
+
+	fn decode(bytes: &[u8]) -> db::Result<Self> {
+		if bytes.len() == 8 {
+			Ok(RcEntry::Present {
+				count: u64::from_be_bytes(bytes.try_into().unwrap()),
+			})
+		} else if bytes.len() == 16 {
+			Ok(RcEntry::Deletable {
+				at_time: u64::from_be_bytes(bytes[8..16].try_into().unwrap()),
+			})
+		} else {
+			Err(db::Error::Decode(
+				format!(
+					"invalid RC entry: expected 8 or 16 bytes, got {}",
+					bytes.len()
+				)
+				.into(),
 			))
 		}
 	}
@@ -154,38 +192,6 @@ pub(crate) enum RcEntry {
 }
 
 impl RcEntry {
-	fn parse(bytes: &[u8]) -> Self {
-		if bytes.len() == 8 {
-			RcEntry::Present {
-				count: u64::from_be_bytes(bytes.try_into().unwrap()),
-			}
-		} else if bytes.len() == 16 {
-			RcEntry::Deletable {
-				at_time: u64::from_be_bytes(bytes[8..16].try_into().unwrap()),
-			}
-		} else {
-			panic!("Invalid RC entry: {:?}, database is corrupted. This is an error Garage is currently unable to recover from. Sorry, and also please report a bug.",
-				bytes
-			)
-		}
-	}
-
-	fn parse_opt<V: AsRef<[u8]>>(bytes: Option<V>) -> Self {
-		bytes
-			.map(|b| Self::parse(b.as_ref()))
-			.unwrap_or(Self::Absent)
-	}
-
-	fn serialize(self) -> Option<Vec<u8>> {
-		match self {
-			RcEntry::Present { count } => Some(u64::to_be_bytes(count).to_vec()),
-			RcEntry::Deletable { at_time } => {
-				Some([u64::to_be_bytes(0), u64::to_be_bytes(at_time)].concat())
-			}
-			RcEntry::Absent => None,
-		}
-	}
-
 	fn increment(self) -> Self {
 		let old_count = match self {
 			RcEntry::Present { count } => count,

@@ -144,7 +144,7 @@ impl BlockManager {
 
 		// Open metadata tables
 		let rc = db
-			.open_tree("block_local_rc")
+			.open_typed_tree("block_local_rc")
 			.expect("Unable to open block_local_rc tree");
 		let rc = BlockRc::new(rc);
 
@@ -158,9 +158,9 @@ impl BlockManager {
 
 		let metrics = BlockManagerMetrics::new(
 			config.compression_level,
-			rc.rc_table.clone(),
-			resync.queue.clone(),
-			resync.errors.clone(),
+			rc.rc_table.untyped().clone(),
+			resync.queue.untyped().clone(),
+			resync.errors.untyped().clone(),
 			buffer_kb_semaphore.clone(),
 		);
 
@@ -449,9 +449,8 @@ impl BlockManager {
 		let mut blocks = Vec::with_capacity(self.resync.errors.approximate_len()?);
 		for ent in self.resync.errors.iter()? {
 			let (hash, cnt) = ent?;
-			let cnt = ErrorCounter::decode(&cnt);
 			blocks.push(BlockResyncErrorInfo {
-				hash: Hash::try_from(&hash).unwrap(),
+				hash,
 				refcount: 0,
 				error_count: cnt.errors,
 				last_try: cnt.last_try,
