@@ -166,6 +166,25 @@ that map to zeroes.  Note that we need to filter out values from nodes that are
 no longer part of the cluster layout, as when nodes are removed they won't
 necessarily have had the time to set their counters to zero.
 
+### Consistency guarantees
+
+K2V provides the following consistency guarantees:
+
+**Read after Write**. After a write has been acknowledged (the request returned
+successfully), a subsequent read is guaranteed to contain the value that was
+written.
+
+**Monotonic Reads**. Two sequential reads will return values in an order that is
+consistent with the order in which they are written (e.g. by concurrent writes).
+For example, consider a scenario where a value is set initially set to 0 and a
+request writing 1 is performed. Doing two subsequent reads concurrently with the
+write is guaranteed to return either `0`, `0` or `0`,`1` or `1`,`1`, but not
+`1`,`0`.
+
+It is also possible to perform non-monotonic reads (allowing this last
+behavior), which are slightly faster than monotonic reads. This is done by
+passing a dedicated flag to read operations (see the endpoints documentation).
+
 ## Important details
 
 **THIS SECTION CONTAINS A FEW WARNINGS ON THE K2V API WHICH ARE IMPORTANT
@@ -209,6 +228,12 @@ Query parameters:
 | name       | default value | meaning                          |
 |------------|---------------|----------------------------------|
 | `sort_key` | **mandatory** | The sort key of the item to read |
+
+Headers:
+
+| name                          | default value | meaning                                  |
+|-------------------------------|---------------|------------------------------------------|
+| `X-Garage-Non-Monotonic-Read` | `false`       | Whether to allow for non-monotonic reads |
 
 Returns the item with specified partition key and sort key. Values can be
 returned in either of two ways:
@@ -324,6 +349,12 @@ Query parameters:
 | `timeout`         | 300           | The timeout before 304 NOT MODIFIED is returned if the value isn't updated |
 
 The timeout can be set to any number of seconds, with a maximum of 600 seconds (10 minutes).
+
+Headers:
+
+| name                          | default value | meaning                                  |
+|-------------------------------|---------------|------------------------------------------|
+| `X-Garage-Non-Monotonic-Read` | `false`       | Whether to allow for non-monotonic reads |
 
 
 **InsertItem: `PUT /<bucket>/<partition key>?sort_key=<sort_key>`**
@@ -521,6 +552,14 @@ HTTP/1.1 204 NO CONTENT
 
 Batch read of triplets in a bucket.
 
+Headers:
+
+| name                          | default value | meaning                                  |
+|-------------------------------|---------------|------------------------------------------|
+| `X-Garage-Non-Monotonic-Read` | `false`       | Whether to allow for non-monotonic reads |
+
+Body:
+
 The request body is a JSON list of searches, that each specify a range of
 items to get (to get single items, set `singleItem` to `true`). A search is a
 JSON struct with the following fields:
@@ -710,6 +749,14 @@ HTTP/1.1 200 OK
 **PollRange: `SEARCH /<bucket>/<partition key>?poll_range`**
 
 Polls a range of items for changes.
+
+Headers:
+
+| name                          | default value | meaning                                  |
+|-------------------------------|---------------|------------------------------------------|
+| `X-Garage-Non-Monotonic-Read` | `false`       | Whether to allow for non-monotonic reads |
+
+Body:
 
 The query body is a JSON object consisting of the following fields:
 

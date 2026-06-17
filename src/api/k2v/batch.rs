@@ -5,12 +5,13 @@ use serde::{Deserialize, Serialize};
 use garage_table::{EnumerationOrder, TableSchema};
 
 use garage_model::k2v::item_table::*;
+use garage_model::k2v::rpc::K2VMonotonicRead;
 
 use garage_api_common::helpers::*;
 
 use crate::api_server::{ReqBody, ResBody};
 use crate::error::*;
-use crate::item::parse_causality_token;
+use crate::item::{is_monotonic_read, parse_causality_token};
 use crate::range::read_range;
 
 pub async fn handle_insert_batch(
@@ -47,12 +48,13 @@ pub async fn handle_read_batch(
 	ctx: ReqCtx,
 	req: Request<ReqBody>,
 ) -> Result<Response<ResBody>, Error> {
+	let monotonic_read = is_monotonic_read(&req)?;
 	let queries = req.into_body().json::<Vec<ReadBatchQuery>>().await?;
 
 	let resp_results = futures::future::join_all(
 		queries
 			.into_iter()
-			.map(|q| handle_read_batch_query(&ctx, q)),
+			.map(|q| handle_read_batch_query(&ctx, q, monotonic_read)),
 	)
 	.await;
 
@@ -67,6 +69,7 @@ pub async fn handle_read_batch(
 async fn handle_read_batch_query(
 	ctx: &ReqCtx,
 	query: ReadBatchQuery,
+	monotonic_read: K2VMonotonicRead,
 ) -> Result<ReadBatchResponse, Error> {
 	let ReqCtx {
 		garage, bucket_id, ..
@@ -90,12 +93,13 @@ async fn handle_read_batch_query(
 			.start
 			.as_ref()
 			.ok_or_bad_request("start should be specified if single_item is set")?;
-		let item = garage
-			.k2v
-			.item_table
-			.get(&partition, sk)
-			.await?
-			.filter(|e| K2VItemTable::matches_filter(e, &filter));
+		let item = match monotonic_read {
+			K2VMonotonicRead::Monotonic => {
+				garage.k2v.item_table.get_monotonic(&partition, sk).await?
+			}
+			K2VMonotonicRead::NonMonotonic => garage.k2v.item_table.get(&partition, sk).await?,
+		}
+		.filter(|e| K2VItemTable::matches_filter(e, &filter));
 		match item {
 			Some(i) => (vec![ReadBatchResponseItem::from(i)], false, None),
 			None => (vec![], false, None),
@@ -110,6 +114,7 @@ async fn handle_read_batch_query(
 			query.limit,
 			Some(filter),
 			EnumerationOrder::from_reverse(query.reverse),
+			monotonic_read,
 		)
 		.await?;
 
@@ -218,6 +223,7 @@ async fn handle_delete_batch_query(
 			None,
 			Some(filter),
 			EnumerationOrder::Forward,
+			K2VMonotonicRead::NonMonotonic,
 		)
 		.await?;
 		assert!(!more);
@@ -260,6 +266,7 @@ pub(crate) async fn handle_poll_range(
 	let ReqCtx {
 		garage, bucket_id, ..
 	} = ctx;
+	let monotonic_read = is_monotonic_read(&req)?;
 	use garage_model::k2v::sub::PollRange;
 
 	let query = req.into_body().json::<PollRangeQuery>().await?;
@@ -281,6 +288,7 @@ pub(crate) async fn handle_poll_range(
 			},
 			query.seen_marker,
 			timeout_msec,
+			monotonic_read,
 		)
 		.await
 		.map_err(pass_helper_error)?;

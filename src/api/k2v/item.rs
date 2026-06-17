@@ -5,6 +5,7 @@ use hyper::{Request, Response, StatusCode};
 
 use garage_model::k2v::causality::*;
 use garage_model::k2v::item_table::*;
+use garage_model::k2v::rpc::K2VMonotonicRead;
 
 use garage_api_common::helpers::*;
 
@@ -12,6 +13,7 @@ use crate::api_server::{ReqBody, ResBody};
 use crate::error::*;
 
 pub const X_GARAGE_CAUSALITY_TOKEN: &str = "X-Garage-Causality-Token";
+pub const X_GARAGE_NON_MONOTONIC_READ: &str = "X-Garage-Non-Monotonic-Read";
 
 pub enum ReturnFormat {
 	Json,
@@ -21,6 +23,21 @@ pub enum ReturnFormat {
 
 pub(crate) fn parse_causality_token(s: &str) -> Result<CausalContext, Error> {
 	CausalContext::parse(s).ok_or(Error::InvalidCausalityToken)
+}
+
+pub(crate) fn is_monotonic_read(req: &Request<ReqBody>) -> Result<K2VMonotonicRead, Error> {
+	let v_opt = req
+		.headers()
+		.get(X_GARAGE_NON_MONOTONIC_READ)
+		.map(|s| s.to_str())
+		.transpose()?;
+
+	match v_opt {
+		Some("true") => Ok(K2VMonotonicRead::NonMonotonic),
+		// Reads are monotonic by default
+		Some("false") | None => Ok(K2VMonotonicRead::Monotonic),
+		Some(s) => Err(Error::InvalidNonMonotonicRead(s.to_string())),
+	}
 }
 
 impl ReturnFormat {
@@ -108,21 +125,26 @@ pub async fn handle_read_item(
 	let ReqCtx {
 		garage, bucket_id, ..
 	} = &ctx;
-
+	let monotonic_read = is_monotonic_read(req)?;
 	let format = ReturnFormat::from(req)?;
+	let partition_key = K2VItemPartition {
+		bucket_id: *bucket_id,
+		partition_key: partition_key.to_string(),
+	};
 
-	let item = garage
-		.k2v
-		.item_table
-		.get(
-			&K2VItemPartition {
-				bucket_id: *bucket_id,
-				partition_key: partition_key.to_string(),
-			},
-			sort_key,
-		)
-		.await?
-		.ok_or(Error::NoSuchKey)?;
+	let item = match monotonic_read {
+		K2VMonotonicRead::Monotonic => {
+			garage
+				.k2v
+				.item_table
+				.get_monotonic(&partition_key, sort_key)
+				.await?
+		}
+		K2VMonotonicRead::NonMonotonic => {
+			garage.k2v.item_table.get(&partition_key, sort_key).await?
+		}
+	}
+	.ok_or(Error::NoSuchKey)?;
 
 	format.make_response(&item)
 }
@@ -214,6 +236,7 @@ pub async fn handle_poll_item(
 	let ReqCtx {
 		garage, bucket_id, ..
 	} = &ctx;
+	let monotonic_read = is_monotonic_read(req)?;
 	let format = ReturnFormat::from(req)?;
 
 	let causal_context =
@@ -230,6 +253,7 @@ pub async fn handle_poll_item(
 			sort_key,
 			causal_context,
 			timeout_msec,
+			monotonic_read,
 		)
 		.await?;
 

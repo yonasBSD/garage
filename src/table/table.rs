@@ -293,7 +293,26 @@ impl<F: TableSchema, R: TableReplication> Table<F, R> {
 		let span = tracer.start(format!("{} get", F::TABLE_NAME));
 
 		let res = self
-			.get_internal(partition_key, sort_key)
+			.get_internal(partition_key, sort_key, false)
+			.bound_record_duration(&self.data.metrics.get_request_duration)
+			.with_context(Context::current_with_span(span))
+			.await?;
+
+		self.data.metrics.get_request_counter.add(1);
+
+		Ok(res)
+	}
+
+	pub async fn get_monotonic(
+		self: &Arc<Self>,
+		partition_key: &F::P,
+		sort_key: &F::S,
+	) -> Result<Option<F::E>, Error> {
+		let tracer = opentelemetry::global::tracer("garage_table");
+		let span = tracer.start(format!("{} get_monotonic", F::TABLE_NAME));
+
+		let res = self
+			.get_internal(partition_key, sort_key, true)
 			.bound_record_duration(&self.data.metrics.get_request_duration)
 			.with_context(Context::current_with_span(span))
 			.await?;
@@ -307,6 +326,7 @@ impl<F: TableSchema, R: TableReplication> Table<F, R> {
 		self: &Arc<Self>,
 		partition_key: &F::P,
 		sort_key: &F::S,
+		monotonic_read: bool,
 	) -> Result<Option<F::E>, Error> {
 		let hash = partition_key.hash();
 		let who = self.data.replication.read_nodes(&hash)?;
@@ -326,34 +346,37 @@ impl<F: TableSchema, R: TableReplication> Table<F, R> {
 
 		let mut ret = None;
 		let mut not_all_same = false;
-		for resp in resps {
-			if let TableRpc::ReadEntryResponse(value) = resp {
-				if let Some(v_bytes) = value {
-					let v = self.data.decode_entry(v_bytes.as_slice())?;
-					ret = match ret {
-						None => Some(v),
-						Some(mut x) => {
-							if x != v {
-								not_all_same = true;
-								x.merge(&v);
+		{
+			let mut vals_nb = 0;
+			for resp in &resps {
+				if let TableRpc::ReadEntryResponse(value) = resp {
+					if let Some(v_bytes) = value {
+						vals_nb += 1;
+						let v = self.data.decode_entry(v_bytes.as_slice())?;
+						ret = match ret {
+							None => Some(v),
+							Some(mut x) => {
+								if x != v {
+									not_all_same = true;
+									x.merge(&v);
+								}
+								Some(x)
 							}
-							Some(x)
 						}
 					}
+				} else {
+					return Err(Error::Message("Invalid return value to read".to_string()));
 				}
-			} else {
-				return Err(Error::Message("Invalid return value to read".to_string()));
+			}
+			// Only some nodes store this value; we must propagate it during repair
+			if vals_nb < resps.len() {
+				not_all_same = true;
 			}
 		}
+
 		if let Some(ret_entry) = &ret {
-			if not_all_same {
-				let self2 = self.clone();
-				let ent2 = ret_entry.clone();
-				tokio::spawn(async move {
-					if let Err(e) = self2.repair_on_read(&who[..], ent2).await {
-						warn!("Error doing repair on read: {}", e);
-					}
-				});
+			if monotonic_read && not_all_same {
+				self.repair_on_read(&who, &[ret_entry]).await?;
 			}
 		}
 
@@ -378,6 +401,36 @@ impl<F: TableSchema, R: TableReplication> Table<F, R> {
 				filter,
 				limit,
 				enumeration_order,
+				false,
+			)
+			.bound_record_duration(&self.data.metrics.get_request_duration)
+			.with_context(Context::current_with_span(span))
+			.await?;
+
+		self.data.metrics.get_request_counter.add(1);
+
+		Ok(res)
+	}
+
+	pub async fn get_range_monotonic(
+		self: &Arc<Self>,
+		partition_key: &F::P,
+		begin_sort_key: Option<F::S>,
+		filter: Option<F::Filter>,
+		limit: usize,
+		enumeration_order: EnumerationOrder,
+	) -> Result<Vec<F::E>, Error> {
+		let tracer = opentelemetry::global::tracer("garage_table");
+		let span = tracer.start(format!("{} get_range_monotonic", F::TABLE_NAME));
+
+		let res = self
+			.get_range_internal(
+				partition_key,
+				begin_sort_key,
+				filter,
+				limit,
+				enumeration_order,
+				true,
 			)
 			.bound_record_duration(&self.data.metrics.get_request_duration)
 			.with_context(Context::current_with_span(span))
@@ -395,6 +448,7 @@ impl<F: TableSchema, R: TableReplication> Table<F, R> {
 		filter: Option<F::Filter>,
 		limit: usize,
 		enumeration_order: EnumerationOrder,
+		monotonic_read: bool,
 	) -> Result<Vec<F::E>, Error> {
 		let hash = partition_key.hash();
 		let who = self.data.replication.read_nodes(&hash)?;
@@ -421,11 +475,26 @@ impl<F: TableSchema, R: TableReplication> Table<F, R> {
 
 		let mut ret: BTreeMap<Vec<u8>, F::E> = BTreeMap::new();
 		let mut to_repair = BTreeSet::new();
-		for resp in resps {
-			if let TableRpc::Update(entries) = resp {
-				for entry_bytes in entries.iter() {
-					let entry = self.data.decode_entry(entry_bytes.as_slice())?;
-					let entry_key = self.data.tree_key(entry.partition_key(), entry.sort_key());
+		{
+			let mut all_entries: BTreeMap<Vec<u8>, Vec<F::E>> = BTreeMap::new();
+			for resp in &resps {
+				if let TableRpc::Update(entries) = resp {
+					for entry_bytes in entries.iter() {
+						let entry = self.data.decode_entry(entry_bytes.as_slice())?;
+						let entry_key = self.data.tree_key(entry.partition_key(), entry.sort_key());
+						all_entries.entry(entry_key).or_default().push(entry);
+					}
+				} else {
+					return Err(Error::unexpected_rpc_message(resp));
+				}
+			}
+			for (entry_key, entries) in all_entries {
+				// Only some nodes store this entry; we must propagate it during repair
+				if entries.len() < resps.len() {
+					to_repair.insert(entry_key.clone());
+				}
+				// Merge all entries for this key together
+				for entry in entries {
 					match ret.get_mut(&entry_key) {
 						Some(e) => {
 							if *e != entry {
@@ -434,28 +503,19 @@ impl<F: TableSchema, R: TableReplication> Table<F, R> {
 							}
 						}
 						None => {
-							ret.insert(entry_key, entry);
+							ret.insert(entry_key.clone(), entry);
 						}
 					}
 				}
-			} else {
-				return Err(Error::unexpected_rpc_message(resp));
 			}
 		}
 
-		if !to_repair.is_empty() {
-			let self2 = self.clone();
-			let to_repair = to_repair
+		if monotonic_read && !to_repair.is_empty() {
+			let to_repair: Vec<_> = to_repair
 				.into_iter()
-				.map(|k| ret.get(&k).unwrap().clone())
-				.collect::<Vec<_>>();
-			tokio::spawn(async move {
-				for v in to_repair {
-					if let Err(e) = self2.repair_on_read(&who[..], v).await {
-						warn!("Error doing repair on read: {}", e);
-					}
-				}
-			});
+				.map(|k| ret.get(&k).unwrap())
+				.collect();
+			self.repair_on_read(&who, &to_repair).await?;
 		}
 
 		// At this point, the `ret` btreemap might contain more than `limit`
@@ -493,14 +553,17 @@ impl<F: TableSchema, R: TableReplication> Table<F, R> {
 
 	// =============== UTILITY FUNCTION FOR CLIENT OPERATIONS ===============
 
-	async fn repair_on_read(&self, who: &[Uuid], what: F::E) -> Result<(), Error> {
-		let what_enc = Arc::new(ByteBuf::from(what.encode()?));
+	pub async fn repair_on_read(&self, who: &[Uuid], what: &[&F::E]) -> Result<(), Error> {
+		let what_enc = what
+			.iter()
+			.map(|v| Ok(Arc::new(ByteBuf::from(v.encode()?))))
+			.collect::<Result<Vec<_>, Error>>()?;
 		self.system
 			.rpc_helper()
 			.try_call_many(
 				&self.endpoint,
 				who,
-				TableRpc::<F>::Update(vec![what_enc]),
+				TableRpc::<F>::Update(what_enc),
 				RequestStrategy::with_priority(PRIO_NORMAL).with_quorum(who.len()),
 			)
 			.await?;
