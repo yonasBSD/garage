@@ -393,7 +393,7 @@ impl Cli {
 		&self,
 		opt: CleanupIncompleteUploadsOpt,
 	) -> Result<(), Error> {
-		let older_than = parse_duration::parse::parse(&opt.older_than)
+		let older_than = garage_util::time::parse_duration(&opt.older_than)
 			.ok_or_message("Invalid duration passed for --older-than parameter")?;
 
 		for b in opt.buckets.iter() {

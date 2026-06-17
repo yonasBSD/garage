@@ -304,7 +304,7 @@ impl Garage {
 		self.k2v.spawn_workers(bg);
 
 		if let Some(itv) = self.config.metadata_auto_snapshot_interval.as_deref() {
-			let interval = parse_duration::parse(itv)
+			let interval = garage_util::time::parse_duration(itv)
 				.ok_or_message("Invalid `metadata_auto_snapshot_interval`")?;
 			if interval < std::time::Duration::from_secs(600) {
 				return Err(Error::Message(

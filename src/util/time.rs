@@ -1,6 +1,9 @@
 //! Module containing helper functions to manipulate time
 use chrono::{SecondsFormat, TimeZone, Utc};
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::convert::TryInto;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
+
+use crate::error::Error;
 
 /// Returns milliseconds since UNIX Epoch
 pub fn now_msec() -> u64 {
@@ -27,4 +30,14 @@ pub fn msec_to_rfc3339(msecs: u64) -> String {
 	let nanos = (msecs as i64 % 1000) as u32 * 1_000_000;
 	let timestamp = Utc.timestamp_opt(secs, nanos).unwrap();
 	timestamp.to_rfc3339_opts(SecondsFormat::Millis, true)
+}
+
+/// Parse a systemd-style duration using fundu
+pub fn parse_duration(s: &str) -> Result<Duration, Error> {
+	fundu_systemd::parse(s, Some(fundu::TimeUnit::Second), None)
+		.map_err(|err| Error::Message(err.to_string()))
+		.and_then(|dur| {
+			dur.try_into()
+				.map_err(|err: fundu::TryFromDurationError| Error::Message(err.to_string()))
+		})
 }

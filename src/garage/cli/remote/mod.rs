@@ -169,7 +169,7 @@ pub fn table_list_abbr<T: IntoIterator<Item = S>, S: AsRef<str>>(values: T) -> S
 pub fn parse_expires_in(expires_in: &Option<String>) -> Result<Option<DateTime<Utc>>, Error> {
 	expires_in
 		.as_ref()
-		.map(|x| parse_duration::parse::parse(x).map(|dur| Utc::now() + dur))
+		.map(|x| garage_util::time::parse_duration(x).map(|dur| Utc::now() + dur))
 		.transpose()
 		.ok_or_message("Invalid duration passed for --expires-in parameter")
 }

@@ -448,7 +448,7 @@ If this value is set, Garage will automatically take a snapshot of the metadata
 DB file at a regular interval and save it in the metadata directory,
 or in [`metadata_snapshots_dir`](#metadata_snapshots_dir) if it is set.
 This parameter can take any duration string that can be parsed by
-the [`parse_duration`](https://docs.rs/parse_duration/latest/parse_duration/#syntax) crate.
+the [`fundu_systemd`](https://docs.rs/fundu-systemd) crate.
 
 Snapshots can allow to recover from situations where the metadata DB file is
 corrupted, for instance after an unclean shutdown.  See [this
