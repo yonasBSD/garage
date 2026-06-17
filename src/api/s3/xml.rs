@@ -44,10 +44,13 @@ pub struct LocationConstraint {
 pub struct Deleted {
 	#[serde(rename = "Key")]
 	pub key: Value,
-	#[serde(rename = "VersionId")]
-	pub version_id: Value,
-	#[serde(rename = "DeleteMarkerVersionId")]
-	pub delete_marker_version_id: Value,
+	#[serde(rename = "VersionId", skip_serializing_if = "Option::is_none")]
+	pub version_id: Option<Value>,
+	#[serde(
+		rename = "DeleteMarkerVersionId",
+		skip_serializing_if = "Option::is_none"
+	)]
+	pub delete_marker_version_id: Option<Value>,
 }
 
 #[derive(Debug, Serialize, PartialEq, Eq)]
@@ -497,13 +500,13 @@ mod tests {
 			deleted: vec![
 				Deleted {
 					key: Value("a/plop".to_string()),
-					version_id: Value("qsdfjklm".to_string()),
-					delete_marker_version_id: Value("wxcvbn".to_string()),
+					version_id: Some(Value("qsdfjklm".to_string())),
+					delete_marker_version_id: Some(Value("wxcvbn".to_string())),
 				},
 				Deleted {
 					key: Value("b/plip".to_string()),
-					version_id: Value("1234".to_string()),
-					delete_marker_version_id: Value("4321".to_string()),
+					version_id: Some(Value("1234".to_string())),
+					delete_marker_version_id: Some(Value("4321".to_string())),
 				},
 			],
 			errors: vec![

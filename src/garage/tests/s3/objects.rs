@@ -554,7 +554,7 @@ async fn test_deleteobject() {
 
 	assert!(l.contents.is_none());
 
-	// Deleting a non-existing object shouldn't be a problem
+	// Deleting a non-existing object shouldn't be a problem...
 	ctx.client
 		.delete_object()
 		.bucket(&bucket)
@@ -562,4 +562,27 @@ async fn test_deleteobject() {
 		.send()
 		.await
 		.unwrap();
+
+	// ...and bulk-deleting a non-existing object shouldn't be either
+	let r = ctx
+		.client
+		.delete_objects()
+		.bucket(&bucket)
+		.delete(
+			Delete::builder()
+				.objects(
+					ObjectIdentifier::builder()
+						.key("does-not-exist")
+						.build()
+						.unwrap(),
+				)
+				.build()
+				.unwrap(),
+		)
+		.send()
+		.await
+		.unwrap();
+
+	assert_eq!(r.deleted.unwrap().len(), 1); // reported as deleted...
+	assert!(r.errors.unwrap_or_default().is_empty()); // ...not as an error
 }
