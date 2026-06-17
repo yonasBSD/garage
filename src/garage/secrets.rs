@@ -137,14 +137,18 @@ fn read_secret_file(file_path: &PathBuf, allow_world_readable: bool) -> Result<S
 		#[cfg(unix)]
 		{
 			use std::os::unix::fs::MetadataExt;
-			let metadata = std::fs::metadata(file_path)?;
+			let metadata = std::fs::metadata(file_path).map_err(|e| {
+				format!("Failed to read secret file {}: {}", file_path.display(), e)
+			})?;
+
 			if metadata.mode() & 0o077 != 0 {
 				return Err(format!("File {} is world-readable! (mode: 0{:o}, expected 0600)\nRefusing to start until this is fixed, or environment variable GARAGE_ALLOW_WORLD_READABLE_SECRETS is set to true.", file_path.display(), metadata.mode()).into());
 			}
 		}
 	}
 
-	let secret_buf = std::fs::read_to_string(file_path)?;
+	let secret_buf = std::fs::read_to_string(file_path)
+		.map_err(|e| format!("Failed to read secret file {}: {}", file_path.display(), e))?;
 
 	// trim_end: allows for use case such as `echo "$(openssl rand -hex 32)" > somefile`.
 	//           also editors sometimes add a trailing newline

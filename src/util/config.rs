@@ -282,7 +282,13 @@ pub fn default_block_max_concurrent_writes_per_request() -> usize {
 }
 /// Read and parse configuration
 pub fn read_config(config_file: PathBuf) -> Result<Config, Error> {
-	let config = std::fs::read_to_string(config_file)?;
+	let config = std::fs::read_to_string(&config_file).map_err(|e| {
+		format!(
+			"Failed to read config file {}: {}",
+			config_file.display(),
+			e
+		)
+	})?;
 
 	Ok(toml::from_str(&config)?)
 }
