@@ -554,6 +554,7 @@ pub(crate) struct ResyncWorker {
 	tranquilizer: Tranquilizer,
 	next_delay: Duration,
 	persister: PersisterShared<ResyncPersistedConfig>,
+	had_decode_error: bool,
 }
 
 impl ResyncWorker {
@@ -565,6 +566,7 @@ impl ResyncWorker {
 			tranquilizer: Tranquilizer::new(30),
 			next_delay: Duration::from_secs(10),
 			persister,
+			had_decode_error: false,
 		}
 	}
 }
@@ -612,6 +614,15 @@ impl Worker for ResyncWorker {
 				self.next_delay = delay;
 				Ok(WorkerState::Idle)
 			}
+			Err(db::Error::Decode(e)) => {
+				// We give it one second chance in the very unlikely case that the bytes would somehow
+				// have been corrupted during read and that a new read would lead to a correct decoding.
+				if self.had_decode_error {
+					panic!("An error has happened when decoding something stored in the local k/v store: {}.", e);
+				}
+				self.had_decode_error = true;
+				Ok(WorkerState::Busy)
+			}
 			Err(e) => {
 				// The errors that we have here are only db errors
 				// We don't really know how to handle them so just ¯\_(ツ)_/¯
@@ -619,6 +630,7 @@ impl Worker for ResyncWorker {
 				// if it does there is not much we can do -- TODO should we just panic?)
 				// Here we just give the error to the worker manager,
 				// it will print it to the logs and increment a counter
+				self.had_decode_error = false;
 				Err(e.into())
 			}
 		}
