@@ -163,6 +163,7 @@ impl<T: CountedItem> TableSchema for CounterTable<T> {
 
 pub struct IndexCounter<T: CountedItem> {
 	this_node: Uuid,
+	// TODO: migrate to TypedTree
 	local_counter: db::Tree,
 	pub table: Arc<Table<CounterTable<T>, TableShardedReplication>>,
 }
