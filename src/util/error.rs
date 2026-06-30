@@ -79,6 +79,18 @@ impl Error {
 	}
 }
 
+impl From<garage_db::DbError> for Error {
+	fn from(e: garage_db::DbError) -> Error {
+		Error::Db(e.into())
+	}
+}
+
+impl From<garage_db::DecodeError> for Error {
+	fn from(e: garage_db::DecodeError) -> Error {
+		Error::Db(e.into())
+	}
+}
+
 impl From<garage_db::TxError<Error>> for Error {
 	fn from(e: garage_db::TxError<Error>) -> Error {
 		match e {

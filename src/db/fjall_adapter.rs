@@ -12,7 +12,7 @@ use fjall::{
 
 use crate::{
 	open::{Engine, OpenOpt},
-	Db, Error, IDb, ITx, ITxFn, OnCommit, Result, TxError, TxFnResult, TxOpError, TxOpResult,
+	Db, DbError, DbResult, Error, IDb, ITx, ITxFn, OnCommit, TxError, TxFnResult, TxOpError,
 	TxResult, TxValueIter, Value, ValueIter,
 };
 
@@ -20,10 +20,10 @@ pub use fjall;
 
 // --
 
-pub(crate) fn open_db(path: &Path, opt: &OpenOpt) -> Result<Db> {
+pub(crate) fn open_db(path: &Path, opt: &OpenOpt) -> DbResult<Db> {
 	info!("Opening Fjall database at: {}", path.display());
 	if opt.fsync {
-		return Err(Error(
+		return Err(DbError(
 			"metadata_fsync is not supported with the Fjall database engine".into(),
 		));
 	}
@@ -37,21 +37,27 @@ pub(crate) fn open_db(path: &Path, opt: &OpenOpt) -> Result<Db> {
 
 // -- err
 
-impl From<fjall::Error> for Error {
-	fn from(e: fjall::Error) -> Error {
-		Error(format!("fjall: {}", e).into())
+impl From<fjall::Error> for DbError {
+	fn from(e: fjall::Error) -> DbError {
+		DbError(format!("fjall: {}", e).into())
 	}
 }
 
-impl From<fjall::LsmError> for Error {
-	fn from(e: fjall::LsmError) -> Error {
-		Error(format!("fjall lsm_tree: {}", e).into())
+impl From<fjall::LsmError> for DbError {
+	fn from(e: fjall::LsmError) -> DbError {
+		DbError(format!("fjall lsm_tree: {}", e).into())
+	}
+}
+
+impl From<fjall::Error> for Error {
+	fn from(e: fjall::Error) -> Error {
+		Error::Db(DbError::from(e))
 	}
 }
 
 impl From<fjall::Error> for TxOpError {
 	fn from(e: fjall::Error) -> TxOpError {
-		TxOpError(e.into())
+		DbError::from(e).into()
 	}
 }
 
@@ -76,11 +82,11 @@ impl FjallDb {
 	fn get_tree(
 		&self,
 		i: usize,
-	) -> Result<MappedRwLockReadGuard<'_, TransactionalPartitionHandle>> {
+	) -> DbResult<MappedRwLockReadGuard<'_, TransactionalPartitionHandle>> {
 		RwLockReadGuard::try_map(self.trees.read(), |trees: &Vec<_>| {
 			trees.get(i).map(|tup| &tup.1)
 		})
-		.map_err(|_| Error("invalid tree id".into()))
+		.map_err(|_| DbError("invalid tree id".into()))
 	}
 }
 
@@ -89,7 +95,7 @@ impl IDb for FjallDb {
 		"Fjall (EXPERIMENTAL!)".into()
 	}
 
-	fn open_tree(&self, name: &str) -> Result<usize> {
+	fn open_tree(&self, name: &str) -> DbResult<usize> {
 		let mut trees = self.trees.write();
 		let safe_name = encode_name(name)?;
 		if let Some(i) = trees.iter().position(|(name, _)| *name == safe_name) {
@@ -104,15 +110,15 @@ impl IDb for FjallDb {
 		}
 	}
 
-	fn list_trees(&self) -> Result<Vec<String>> {
+	fn list_trees(&self) -> DbResult<Vec<String>> {
 		self.keyspace
 			.list_partitions()
 			.iter()
 			.map(|n| decode_name(n))
-			.collect::<Result<Vec<_>>>()
+			.collect::<DbResult<Vec<_>>>()
 	}
 
-	fn snapshot(&self, base_path: &Path) -> Result<()> {
+	fn snapshot(&self, base_path: &Path) -> DbResult<()> {
 		std::fs::create_dir_all(base_path)?;
 		let path = Engine::Fjall.db_path(base_path);
 
@@ -138,7 +144,7 @@ impl IDb for FjallDb {
 
 	// ----
 
-	fn get(&self, tree_idx: usize, key: &[u8]) -> Result<Option<Value>> {
+	fn get(&self, tree_idx: usize, key: &[u8]) -> DbResult<Option<Value>> {
 		let tree = self.get_tree(tree_idx)?;
 		let tx = self.keyspace.read_tx();
 		let val = tx.get(&tree, key)?;
@@ -148,17 +154,17 @@ impl IDb for FjallDb {
 		}
 	}
 
-	fn approximate_len(&self, tree_idx: usize) -> Result<usize> {
+	fn approximate_len(&self, tree_idx: usize) -> DbResult<usize> {
 		let tree = self.get_tree(tree_idx)?;
 		Ok(tree.approximate_len())
 	}
-	fn is_empty(&self, tree_idx: usize) -> Result<bool> {
+	fn is_empty(&self, tree_idx: usize) -> DbResult<bool> {
 		let tree = self.get_tree(tree_idx)?;
 		let tx = self.keyspace.read_tx();
 		Ok(tx.is_empty(&tree)?)
 	}
 
-	fn insert(&self, tree_idx: usize, key: &[u8], value: &[u8]) -> Result<()> {
+	fn insert(&self, tree_idx: usize, key: &[u8], value: &[u8]) -> DbResult<()> {
 		let tree = self.get_tree(tree_idx)?;
 		let mut tx = self.keyspace.write_tx();
 		tx.insert(&tree, key, value);
@@ -166,7 +172,7 @@ impl IDb for FjallDb {
 		Ok(())
 	}
 
-	fn remove(&self, tree_idx: usize, key: &[u8]) -> Result<()> {
+	fn remove(&self, tree_idx: usize, key: &[u8]) -> DbResult<()> {
 		let tree = self.get_tree(tree_idx)?;
 		let mut tx = self.keyspace.write_tx();
 		tx.remove(&tree, key);
@@ -174,11 +180,11 @@ impl IDb for FjallDb {
 		Ok(())
 	}
 
-	fn clear(&self, tree_idx: usize) -> Result<()> {
+	fn clear(&self, tree_idx: usize) -> DbResult<()> {
 		let mut trees = self.trees.write();
 
 		if tree_idx >= trees.len() {
-			return Err(Error("invalid tree id".into()));
+			return Err(DbError("invalid tree id".into()));
 		}
 		let (name, tree) = trees.remove(tree_idx);
 
@@ -191,13 +197,13 @@ impl IDb for FjallDb {
 		Ok(())
 	}
 
-	fn iter(&self, tree_idx: usize) -> Result<ValueIter<'_>> {
+	fn iter(&self, tree_idx: usize) -> DbResult<ValueIter<'_>> {
 		let tree = self.get_tree(tree_idx)?;
 		let tx = self.keyspace.read_tx();
 		Ok(Box::new(tx.iter(&tree).map(iterator_remap)))
 	}
 
-	fn iter_rev(&self, tree_idx: usize) -> Result<ValueIter<'_>> {
+	fn iter_rev(&self, tree_idx: usize) -> DbResult<ValueIter<'_>> {
 		let tree = self.get_tree(tree_idx)?;
 		let tx = self.keyspace.read_tx();
 		Ok(Box::new(tx.iter(&tree).rev().map(iterator_remap)))
@@ -208,7 +214,7 @@ impl IDb for FjallDb {
 		tree_idx: usize,
 		low: Bound<&'r [u8]>,
 		high: Bound<&'r [u8]>,
-	) -> Result<ValueIter<'_>> {
+	) -> DbResult<ValueIter<'_>> {
 		let tree = self.get_tree(tree_idx)?;
 		let tx = self.keyspace.read_tx();
 		Ok(Box::new(
@@ -221,7 +227,7 @@ impl IDb for FjallDb {
 		tree_idx: usize,
 		low: Bound<&'r [u8]>,
 		high: Bound<&'r [u8]>,
-	) -> Result<ValueIter<'_>> {
+	) -> DbResult<ValueIter<'_>> {
 		let tree = self.get_tree(tree_idx)?;
 		let tx = self.keyspace.read_tx();
 		Ok(Box::new(
@@ -252,9 +258,9 @@ impl IDb for FjallDb {
 			}
 			TxFnResult::DbErr => {
 				tx.tx.rollback();
-				Err(TxError::Db(Error(
-					"(this message will be discarded)".into(),
-				)))
+				Err(TxError::Db(
+					DbError("(this message will be discarded)".into()).into(),
+				))
 			}
 		}
 	}
@@ -268,47 +274,47 @@ struct FjallTx<'a> {
 }
 
 impl<'a> FjallTx<'a> {
-	fn get_tree(&self, i: usize) -> TxOpResult<&TransactionalPartitionHandle> {
+	fn get_tree(&self, i: usize) -> DbResult<&TransactionalPartitionHandle> {
 		self.trees.get(i).map(|tup| &tup.1).ok_or_else(|| {
-			TxOpError(Error(
+			DbError(
 				"invalid tree id (it might have been opened after the transaction started)".into(),
-			))
+			)
 		})
 	}
 }
 
 impl<'a> ITx for FjallTx<'a> {
-	fn get(&self, tree_idx: usize, key: &[u8]) -> TxOpResult<Option<Value>> {
+	fn get(&self, tree_idx: usize, key: &[u8]) -> DbResult<Option<Value>> {
 		let tree = self.get_tree(tree_idx)?;
 		match self.tx.get(tree, key)? {
 			Some(v) => Ok(Some(v.to_vec())),
 			None => Ok(None),
 		}
 	}
-	fn len(&self, tree_idx: usize) -> TxOpResult<usize> {
+	fn len(&self, tree_idx: usize) -> DbResult<usize> {
 		let tree = self.get_tree(tree_idx)?;
 		Ok(self.tx.len(tree)?)
 	}
 
-	fn insert(&mut self, tree_idx: usize, key: &[u8], value: &[u8]) -> TxOpResult<()> {
+	fn insert(&mut self, tree_idx: usize, key: &[u8], value: &[u8]) -> DbResult<()> {
 		let tree = self.get_tree(tree_idx)?.clone();
 		self.tx.insert(&tree, key, value);
 		Ok(())
 	}
-	fn remove(&mut self, tree_idx: usize, key: &[u8]) -> TxOpResult<()> {
+	fn remove(&mut self, tree_idx: usize, key: &[u8]) -> DbResult<()> {
 		let tree = self.get_tree(tree_idx)?.clone();
 		self.tx.remove(&tree, key);
 		Ok(())
 	}
-	fn clear(&mut self, _tree_idx: usize) -> TxOpResult<()> {
+	fn clear(&mut self, _tree_idx: usize) -> DbResult<()> {
 		unimplemented!("LSM tree clearing in cross-partition transaction is not supported")
 	}
 
-	fn iter(&self, tree_idx: usize) -> TxOpResult<TxValueIter<'_>> {
+	fn iter(&self, tree_idx: usize) -> DbResult<TxValueIter<'_>> {
 		let tree = self.get_tree(tree_idx)?.clone();
 		Ok(Box::new(self.tx.iter(&tree).map(iterator_remap_tx)))
 	}
-	fn iter_rev(&self, tree_idx: usize) -> TxOpResult<TxValueIter<'_>> {
+	fn iter_rev(&self, tree_idx: usize) -> DbResult<TxValueIter<'_>> {
 		let tree = self.get_tree(tree_idx)?.clone();
 		Ok(Box::new(self.tx.iter(&tree).rev().map(iterator_remap_tx)))
 	}
@@ -318,7 +324,7 @@ impl<'a> ITx for FjallTx<'a> {
 		tree_idx: usize,
 		low: Bound<&'r [u8]>,
 		high: Bound<&'r [u8]>,
-	) -> TxOpResult<TxValueIter<'_>> {
+	) -> DbResult<TxValueIter<'_>> {
 		let tree = self.get_tree(tree_idx)?;
 		let low = clone_bound(low);
 		let high = clone_bound(high);
@@ -333,7 +339,7 @@ impl<'a> ITx for FjallTx<'a> {
 		tree_idx: usize,
 		low: Bound<&'r [u8]>,
 		high: Bound<&'r [u8]>,
-	) -> TxOpResult<TxValueIter<'_>> {
+	) -> DbResult<TxValueIter<'_>> {
 		let tree = self.get_tree(tree_idx)?;
 		let low = clone_bound(low);
 		let high = clone_bound(high);
@@ -348,14 +354,14 @@ impl<'a> ITx for FjallTx<'a> {
 
 // -- maps fjall's (k, v) to ours
 
-fn iterator_remap(r: fjall::Result<(fjall::Slice, fjall::Slice)>) -> Result<(Value, Value)> {
+fn iterator_remap(r: fjall::Result<(fjall::Slice, fjall::Slice)>) -> DbResult<(Value, Value)> {
 	r.map(|(k, v)| (k.to_vec(), v.to_vec()))
-		.map_err(|e| e.into())
+		.map_err(DbError::from)
 }
 
-fn iterator_remap_tx(r: fjall::Result<(fjall::Slice, fjall::Slice)>) -> TxOpResult<(Value, Value)> {
+fn iterator_remap_tx(r: fjall::Result<(fjall::Slice, fjall::Slice)>) -> DbResult<(Value, Value)> {
 	r.map(|(k, v)| (k.to_vec(), v.to_vec()))
-		.map_err(|e| e.into())
+		.map_err(DbError::from)
 }
 
 // -- utils to deal with Garage's tightness on Bound lifetimes
@@ -378,7 +384,7 @@ fn clone_bound(bound: Bound<&[u8]>) -> ByteVecBound {
 
 // -- utils to encode table names --
 
-fn encode_name(s: &str) -> Result<String> {
+fn encode_name(s: &str) -> DbResult<String> {
 	let base = 'A' as u32;
 
 	let mut ret = String::with_capacity(s.len() + 10);
@@ -392,7 +398,7 @@ fn encode_name(s: &str) -> Result<String> {
 			ret.push(char::from_u32(base + c_hi).unwrap());
 			ret.push(char::from_u32(base + c_lo).unwrap());
 		} else {
-			return Err(Error(
+			return Err(DbError(
 				format!("table name {} could not be safely encoded", s).into(),
 			));
 		}
@@ -400,10 +406,10 @@ fn encode_name(s: &str) -> Result<String> {
 	Ok(ret)
 }
 
-fn decode_name(s: &str) -> Result<String> {
+fn decode_name(s: &str) -> DbResult<String> {
 	use std::convert::TryFrom;
 
-	let errfn = || Error(format!("encoded table name {} is invalid", s).into());
+	let errfn = || DbError(format!("encoded table name {} is invalid", s).into());
 	let c_map = |c: char| {
 		let c = c as u32;
 		let base = 'A' as u32;

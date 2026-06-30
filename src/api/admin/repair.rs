@@ -360,14 +360,7 @@ impl Worker for BlockRcRepair {
 		_must_exit: &mut watch::Receiver<bool>,
 	) -> Result<WorkerState, GarageError> {
 		for _i in 0..RC_REPAIR_ITER_COUNT {
-			let next1 = self
-				.block_manager
-				.rc
-				.rc_table
-				.range(self.cursor.as_slice()..)?
-				.next()
-				.transpose()?
-				.map(|(k, _)| Hash::try_from(k.as_slice()).unwrap());
+			let next1 = self.block_manager.rc.get_first_hash_from(self.cursor)?;
 			let next2 = self
 				.block_ref_table
 				.data

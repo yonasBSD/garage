@@ -84,6 +84,7 @@ pub struct K2VRpcHandler {
 	// Using a mutex on the local_timestamp_tree is not strictly necessary,
 	// but it helps to not try to do several inserts at the same time,
 	// which would create transaction conflicts and force many useless retries.
+	// TODO: migrate to TypedTree
 	local_timestamp_tree: Mutex<db::Tree>,
 
 	endpoint: Arc<Endpoint<K2VRpc, Self>>,

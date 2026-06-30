@@ -26,15 +26,20 @@ pub struct TableData<F: TableSchema, R: TableReplication> {
 	pub instance: F,
 	pub replication: R,
 
+	// TODO: migrate to TypedTree
 	pub store: db::Tree,
 
+	// TODO: migrate to TypedTree
 	pub(crate) merkle_tree: db::Tree,
+	// TODO: migrate to TypedTree
 	pub(crate) merkle_todo: db::Tree,
 	pub(crate) merkle_todo_notify: Notify,
 
+	// TODO: migrate to TypedTree
 	pub(crate) insert_queue: db::Tree,
 	pub(crate) insert_queue_notify: Arc<Notify>,
 
+	// TODO: migrate to TypedTree
 	pub(crate) gc_todo: db::Tree,
 
 	pub(crate) metrics: TableMetrics,

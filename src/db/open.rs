@@ -1,6 +1,6 @@
 use std::path::{Path, PathBuf};
 
-use crate::{Db, Error, Result};
+use crate::{Db, DbError, Error, Result};
 
 /// List of supported database engine types
 ///
@@ -49,14 +49,14 @@ impl std::str::FromStr for Engine {
 			"lmdb" | "heed" => Ok(Self::Lmdb),
 			"sqlite" | "sqlite3" | "rusqlite" => Ok(Self::Sqlite),
             "fjall" => Ok(Self::Fjall),
-			"sled" => Err(Error("Sled is no longer supported as a database engine. Converting your old metadata db can be done using an older Garage binary (e.g. v0.9.4).".into())),
-			kind => Err(Error(
+			"sled" => Err(DbError("Sled is no longer supported as a database engine. Converting your old metadata db can be done using an older Garage binary (e.g. v0.9.4).".into()).into()),
+			kind => Err(DbError(
 				format!(
 					"Invalid DB engine: {} (options are: lmdb, sqlite, fjall)",
 					kind
 				)
 				.into(),
-			)),
+			).into()),
 		}
 	}
 }
@@ -72,22 +72,23 @@ pub fn open_db(path: &PathBuf, engine: Engine, opt: &OpenOpt) -> Result<Db> {
 	match engine {
 		// ---- Sqlite DB ----
 		#[cfg(feature = "sqlite")]
-		Engine::Sqlite => crate::sqlite_adapter::open_db(path, opt),
+		Engine::Sqlite => Ok(crate::sqlite_adapter::open_db(path, opt)?),
 
 		// ---- LMDB DB ----
 		#[cfg(feature = "lmdb")]
-		Engine::Lmdb => crate::lmdb_adapter::open_db(path, opt),
+		Engine::Lmdb => Ok(crate::lmdb_adapter::open_db(path, opt)?),
 
 		// ---- Fjall DB ----
 		#[cfg(feature = "fjall")]
-		Engine::Fjall => crate::fjall_adapter::open_db(path, opt),
+		Engine::Fjall => Ok(crate::fjall_adapter::open_db(path, opt)?),
 
 		// Pattern is unreachable when all supported DB engines are compiled into binary. The allow
 		// attribute is added so that we won't have to change this match in case stop building
 		// support for one or more engines by default.
 		#[allow(unreachable_patterns)]
-		engine => Err(Error(
+		engine => Err(DbError(
 			format!("DB engine support not available in this build: {}", engine).into(),
-		)),
+		)
+		.into()),
 	}
 }
