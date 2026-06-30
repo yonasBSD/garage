@@ -26,6 +26,10 @@ mod error;
 
 pub use error::Error;
 
+// Re-export these crates: values from these are passed to K2vClient::new_with_client
+pub use hyper_rustls;
+pub use hyper_util;
+
 pub type Body = FullBody<Bytes>;
 
 const DEFAULT_TIMEOUT: Duration = Duration::from_secs(5);
@@ -46,6 +50,7 @@ const PATH_ENCODE_SET: AsciiSet = NON_ALPHANUMERIC
 	.remove(b'.')
 	.remove(b'~');
 
+#[derive(Debug, Clone)]
 pub struct K2vClientConfig {
 	pub endpoint: String,
 	pub region: String,
@@ -56,6 +61,7 @@ pub struct K2vClientConfig {
 }
 
 /// Client used to query a K2V server.
+#[derive(Debug, Clone)]
 pub struct K2vClient {
 	config: K2vClientConfig,
 	user_agent: HeaderValue,
